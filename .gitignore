@@ -37,3 +37,12 @@ CLAUDE.local.md
 # per-run working state (findings + fix statuses), not authored content.
 .cc-suite/audits/
 # <<< cc-suite <<<
+
+# Application dependencies, generated output, and local data
+node_modules/
+.output/
+.data/
+.env
+.env.*
+!.env.example
+*.tsbuildinfo
