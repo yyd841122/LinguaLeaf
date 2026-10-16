@@ -1,0 +1,111 @@
+# Spec: LinguaLeaf v1 — 英文电子书标注阅读器
+
+Status: ready-for-agent
+
+## Problem Statement
+
+读英文书时，生词和难句迫使人频繁中断去查词典和翻译，阅读体验支离破碎。
+现有工具要么是"分页阅读器 + 点词弹窗"（想知道一句英文怎么读，得一个词一个词点），
+要么是"整段双语对照"（没有逐句的词级音标）。没有一个工具能把
+"逐句音标 + 逐句中文翻译"直接铺在原文下面对照着读，并且想关就关。
+
+## Solution
+
+LinguaLeaf：自用的英文电子书标注阅读器。导入 EPUB/Markdown 格式的书，
+服务端在导入时把整本书处理成"句子块"——每个句子一组三行：原文行、音标行（美式 IPA）、
+译文行（自然意译的简体中文）。阅读时逐句对照展示，音标行和译文行各有独立显示开关；
+点击任意词可查看音标、词性、中文释义并发音。形态为 Web app：电脑上跑一个轻量服务端
+（Node + SQLite），手机和电脑浏览器通过局域网访问同一服务。
+
+## User Stories
+
+导入与书架：
+1. As a 读者, I want to 导入一个 EPUB 文件, so that 我自己的书能在 LinguaLeaf 里标注阅读
+2. As a 读者, I want to 导入一个 Markdown 文件, so that 轻量的文本资料也能标注阅读
+3. As a 读者, I want to 在导入时看到处理进度, so that 我知道要等多久、系统没卡死
+4. As a 读者, I want to 在书架看到所有已导入的书（书名、导入时间、阅读进度）, so that 我能挑选继续读的书
+5. As a 读者, I want to 删除一本书, so that 书架保持整洁
+6. As a 读者, I want to 再次打开一本书时从上次读到的位置继续, so that 不用手动找进度
+
+阅读：
+7. As a 读者, I want to 看到每个句子显示为句子块（原文行、音标行、译文行三行一组）, so that 我能逐句对照读音和意思
+8. As a 读者, I want to 单独关闭音标行, so that 想测自己认读能力时屏幕不被剧透
+9. As a 读者, I want to 单独关闭译文行, so that 想先自己理解时不被中文抢先
+10. As a 读者, I want to 显示开关的状态被记住, so that 下次打开不用重新设置（每台设备独立记忆）
+11. As a 读者, I want to 调节正文字号并记住, so that 不同设备上都能舒服阅读
+12. As a 读者, I want to 通过目录跳转章节, so that 长书里能快速到达目标位置
+13. As a 读者, I want to 章节标题原样显示（不生成标注）、图片原样显示, so that 书的结构和插图不丢失
+14. As a 读者, I want to Markdown 的代码块和链接不做标注只显示原文, so that 代码和网址不被无意义的音标污染
+
+点词查详情与发音：
+15. As a 读者, I want to 点击原文中的任意词, so that 弹窗看到它的音标、词性和中文释义
+16. As a 读者, I want to 点击变形词（复数、时态等）也能查到, so that books/travelled 这类词形不落空
+17. As a 读者, I want to 在弹窗里点发音按钮听到该词读音, so that 音标之外还能听真实读音
+18. As a 读者, I want to 关掉弹窗继续阅读, so that 查词不打断阅读流
+
+容错：
+19. As a 读者, I want to 词库里查不到的词在音标行中留空跳过, so that 一个生僻词不破坏整句展示
+20. As a 读者, I want to 个别句子翻译失败时该书仍能正常导入和阅读（该句只显示原文行+音标行）, so that 翻译服务抖动不阻塞使用
+
+## Implementation Decisions
+
+架构：
+- TypeScript 全栈。服务端 Node + Express + better-sqlite3，同一进程托管 API 与构建后的前端静态文件
+- 前端 React + Vite；路由：书架 `/`，阅读 `/book/:id/:chapter`
+- 偏好（两个显示开关、字号）存浏览器 localStorage，每设备独立，无同步 API
+- DeepSeek key、base URL、模型名放服务端 .env，v1 不做设置界面
+
+数据模型（概念级）：
+- Book：书名、格式、导入时间、当前章节与块位置（进度）
+- Chapter：所属书、章节序、标题
+- SentenceBlock：所属章节、章内序、原文文本、音标文本、译文文本（后两者可空）
+- 查词不做持久缓存（ECDICT 本地查询足够快）
+
+导入管线（全在服务端，各阶段顺序）：
+1. 解压解析：EPUB 用 JSZip + cheerio 取 spine 顺序章节的文本；Markdown 用 markdown-it 转 HTML 后走同一抽取路径
+2. 抽取章节、段落、标题、图片占位；标题不生成标注，图片保留原样
+3. 分句（JS 断句库，如 sbd / wink-nlp）
+4. 音标：分词 → 词形还原（ECDICT 附带词表）→ 查 ECDICT 美式音标字段；查不到留空
+5. 译文：句子分批调 DeepSeek（OpenAI 兼容客户端，提示词要求自然意译、学习者友好；批量与重试策略参照 bilingual_book_maker）
+6. 入库。任一句音标或译文失败只影响该句，不阻塞整本
+
+API 合同（测试缝 1）：
+- POST /api/books — 上传 EPUB/MD 文件，创建书并异步触发导入管线，返回书 id
+- GET /api/books — 书架列表（含进度）
+- GET /api/books/:id — 目录（章节列表）
+- GET /api/books/:id/chapters/:n — 该章句子块数组
+- GET /api/lookup/:word — 词形还原后的音标 + 词性 + 中文释义
+- PATCH /api/books/:id/progress — 保存阅读进度
+- DELETE /api/books/:id — 删书
+
+其他：
+- 词库：ECDICT 官方发布版导入服务端本地 SQLite；ipa-dict 作音标缺失兜底（可选）
+- 发音：浏览器 Web Speech API，失败静默不报错
+- 安全：上传限制文件大小与类型；渲染的只是库内分句文本（不渲染原始 EPUB HTML），天然规避书籍内容 XSS
+- 相关 ADR：0001（自建句子块视图，不用阅读器引擎）、0002（导入时整本预生成）
+
+## Testing Decisions
+
+- 全系统只有两条测试缝（已与用户对齐）：
+  1. 服务端 HTTP API：用真实样例文件（小型 EPUB：含标题、多段落、图片；Markdown：含标题、代码块、链接）走 POST /api/books，断言 GET 返回的句子块结构、目录、进度、删书、查词结果
+  2. 阅读界面组件：给定句子块数据，断言三行结构渲染、两个显示开关各自隐藏对应行、点词弹窗内容、发音按钮触发语音合成、字号生效
+- 好测试只验外部行为（缝上的输入/输出），不测缝下的解析、分句、翻译函数等实现细节
+- 无既有测试 prior art（greenfield）；新测试按上述两缝组织
+- DeepSeek 调用在测试中不打真实 API：缝 1 测试关注管线对"翻译成功/失败"的容错行为，用可注入的假翻译器
+
+## Out of Scope
+
+- PDF 导入（v2，且仅支持文本层完好的 PDF；扫描件永久排除）
+- 生词本（v2，届时参考 Lute v3 / Lexora 的交互）
+- 导出标注版 EPUB/Markdown/PDF（v2）
+- PWA、外网访问（Tailscale 之类内网穿透）
+- 账号、多用户、付费
+- 整句/整段朗读（发音仅词级）
+- 显示偏好跨设备同步、翻译风格设置界面（提示词写在服务端配置里）
+- EPUB 原始 CSS 版式还原（我们不渲染原始版式，见 ADR-0001）
+
+## Further Notes
+
+- `research/reuse-survey.md`：复用调研及修正（核心交互无现成实现；ECDICT/koodo/bilingual_book_maker 等结论）
+- `GLOSSARY.md`：本 spec 及所有 issue 的用语以其为准（书、导入、句子块、原文行、音标行、译文行、显示开关、点词查详情、发音、标注、导出）
+- 交互参考：沉浸式翻译（双语混排排版）、Readest/koodo-reader（书架与设置，AGPL，仅看思路禁抄代码）
