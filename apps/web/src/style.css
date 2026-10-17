@@ -50,6 +50,30 @@ main {
   border: 1px solid #dde3d8;
   border-radius: 0.5rem;
   padding: 0.75rem 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.book-info {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.delete-book {
+  border: 1px solid #dcb4aa;
+  color: #a03d2e;
+  background: none;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.delete-book:hover {
+  background: #f6e8e4;
 }
 
 .book-list a {
@@ -76,13 +100,86 @@ main {
   color: #5c6f64;
 }
 
+/* Header dropdowns (ticket 05): the TOC and the reading settings panel
+   hover over the text instead of pushing the chapter down. */
+.reading-top {
+  position: relative;
+}
+
+.reading-toolbar {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.reading-toolbar button {
+  border: 1px solid #b8c4bc;
+  background: none;
+  border-radius: 0.375rem;
+  padding: 0.15rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: inherit;
+}
+
+.header-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% - 1.4rem);
+  z-index: 10;
+  background: #ffffff;
+  border: 1px solid #dde3d8;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+}
+
+.toc-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+  max-height: 60vh;
+  overflow-y: auto;
+  min-width: 16rem;
+}
+
+.toc-panel a {
+  display: block;
+  padding: 0.2rem 0.4rem;
+  border-radius: 0.25rem;
+  color: inherit;
+}
+
+.toc-panel a:hover {
+  background: #ecefe6;
+}
+
+.toc-panel a[aria-current="page"] {
+  font-weight: 600;
+  background: #ecefe6;
+}
+
+.reading-settings {
+  display: grid;
+  gap: 0.6rem;
+  min-width: 12rem;
+}
+
+.setting-toggle {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  cursor: pointer;
+}
+
 .sentence-block {
   margin: 0 0 1.25rem;
 }
 
 .original-line {
   margin: 0;
-  font-size: 1.15rem;
+  font-size: var(--original-size, 1.15rem);
 }
 
 /* Annotation lines are dimmer and hold their space even when empty so the
@@ -128,13 +225,13 @@ main {
   color: #5c6f64;
 }
 
-.ipa-size-control {
+.size-stepper {
   display: flex;
   align-items: center;
   gap: 0.4rem;
 }
 
-.ipa-size-control button {
+.size-stepper button {
   border: 1px solid #b8c4bc;
   background: none;
   border-radius: 0.375rem;
@@ -143,12 +240,12 @@ main {
   font-size: 0.85rem;
 }
 
-.ipa-size-control button:disabled {
+.size-stepper button:disabled {
   opacity: 0.4;
   cursor: default;
 }
 
-.ipa-size-value {
+.size-value {
   color: #5c6f64;
   font-size: 0.85rem;
   min-width: 3.2rem;

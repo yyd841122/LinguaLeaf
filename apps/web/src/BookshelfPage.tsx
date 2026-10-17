@@ -1,12 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ApiError, fetchJson } from "./api";
+import type { ReadingProgress } from "./readingProgress";
 
 type BookSummary = {
   id: number;
   title: string;
   format: string;
   createdAt: string;
+  progress: ReadingProgress | null;
 };
 
 function formatImportedAt(iso: string): string {
@@ -57,6 +59,22 @@ export function BookshelfPage() {
     }
   };
 
+  const removeBook = async (book: BookSummary) => {
+    if (!window.confirm(`删除《${book.title}》？书和它的标注会一并移除。`)) {
+      return;
+    }
+    setError(null);
+    try {
+      await fetchJson(`/api/books/${book.id}`, { method: "DELETE" });
+      // Update the list in place — no refetch flash.
+      setBooks((current) =>
+        current ? current.filter((candidate) => candidate.id !== book.id) : null
+      );
+    } catch {
+      setError("删除失败，请重试。");
+    }
+  };
+
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const input = event.currentTarget.elements.namedItem("file");
@@ -93,10 +111,26 @@ export function BookshelfPage() {
         <ul className="book-list">
           {books.map((book) => (
             <li key={book.id}>
-              <Link to={`/book/${book.id}/1`}>{book.title}</Link>
-              <span className="meta">
-                {book.format} · 导入于 {formatImportedAt(book.createdAt)}
-              </span>
+              <div className="book-info">
+                {/* Reopen where the reader left off (ticket 05): the link
+                    lands on the saved chapter; the reading page restores the
+                    saved block. */}
+                <Link to={`/book/${book.id}/${book.progress?.chapter ?? 1}`}>
+                  {book.title}
+                </Link>
+                <span className="meta">
+                  {book.format} · 导入于 {formatImportedAt(book.createdAt)}
+                  {book.progress ? ` · 读到第 ${book.progress.chapter} 章` : ""}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="delete-book"
+                aria-label={`删除《${book.title}》`}
+                onClick={() => void removeBook(book)}
+              >
+                删除
+              </button>
             </li>
           ))}
         </ul>

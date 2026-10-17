@@ -62,23 +62,56 @@ function WordSegments({ block }: { block: SentenceBlock }) {
 // One sentence block: the original line (words paired with their IPA when
 // the import stored slots), plus the translation line. Books imported
 // before slots existed fall back to the flat IPA line under the sentence.
-function SentenceBlockView({ block }: { block: SentenceBlock }) {
+// The annotation lines are individually hideable (ticket 05 toggles); the
+// original line never is.
+function SentenceBlockView({
+  block,
+  showIpa,
+  showTranslation,
+}: {
+  block: SentenceBlock;
+  showIpa: boolean;
+  showTranslation: boolean;
+}) {
   const wordCount = [...block.originalText.matchAll(WORD_PATTERN)].length;
-  const paired = block.ipaSlots !== null && block.ipaSlots.length === wordCount;
+  // Two separate facts: whether slots pair with the words, and whether the
+  // reader wants IPA at all. With IPA hidden the original line renders as
+  // plain text — the word units exist to carry the transcriptions.
+  const slotPaired =
+    block.ipaSlots !== null && block.ipaSlots.length === wordCount;
+  const paired = showIpa && slotPaired;
   return (
     <div className="sentence-block" data-position={block.position}>
       <p className="original-line">
         {paired ? <WordSegments block={block} /> : block.originalText}
       </p>
-      {paired ? null : <p className="ipa-line">{block.ipaText ?? ""}</p>}
-      <p className="translation-line">{block.translationText ?? ""}</p>
+      {showIpa && !slotPaired ? (
+        <p className="ipa-line">{block.ipaText ?? ""}</p>
+      ) : null}
+      {showTranslation ? (
+        <p className="translation-line">{block.translationText ?? ""}</p>
+      ) : null}
     </div>
   );
 }
 
-function BlockView({ block }: { block: Block }) {
+function BlockView({
+  block,
+  showIpa,
+  showTranslation,
+}: {
+  block: Block;
+  showIpa: boolean;
+  showTranslation: boolean;
+}) {
   if (block.kind === "sentence") {
-    return <SentenceBlockView block={block} />;
+    return (
+      <SentenceBlockView
+        block={block}
+        showIpa={showIpa}
+        showTranslation={showTranslation}
+      />
+    );
   }
   if (block.kind === "code") {
     return (
@@ -97,24 +130,38 @@ function BlockView({ block }: { block: Block }) {
 export function ReadingView({
   chapter,
   ipaSize,
+  originalSize,
+  showIpa = true,
+  showTranslation = true,
 }: {
   chapter: ChapterContent;
   ipaSize?: number;
+  originalSize?: number;
+  showIpa?: boolean;
+  showTranslation?: boolean;
 }) {
   return (
     <section
       className="reading"
       aria-labelledby="chapter-title"
       style={
-        ipaSize === undefined
-          ? undefined
-          : ({ "--ipa-size": `${ipaSize}px` } as React.CSSProperties)
+        {
+          ...(ipaSize === undefined ? null : { "--ipa-size": `${ipaSize}px` }),
+          ...(originalSize === undefined
+            ? null
+            : { "--original-size": `${originalSize}px` }),
+        } as React.CSSProperties
       }
     >
       <h1 id="chapter-title">{chapter.title}</h1>
       <div className="blocks">
         {chapter.blocks.map((block) => (
-          <BlockView key={block.position} block={block} />
+          <BlockView
+            key={block.position}
+            block={block}
+            showIpa={showIpa}
+            showTranslation={showTranslation}
+          />
         ))}
       </div>
     </section>

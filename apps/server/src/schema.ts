@@ -5,7 +5,9 @@ import type Database from "better-sqlite3";
 // from the local dictionary (ticket 03); `translation_text` is filled at
 // import time by the configured translator (ticket 04) and stays NULL for
 // sentences whose translation failed or when none is configured. NULL
-// renders as an empty placeholder in the reading view.
+// renders as an empty placeholder in the reading view. `reading_progress`
+// (ticket 05) remembers where each book was last read — one row per book,
+// server-side so reopening on any device restores the position.
 export function migrateSchema(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS books (
@@ -34,6 +36,13 @@ export function migrateSchema(database: Database.Database): void {
       ipa_text TEXT,
       translation_text TEXT,
       UNIQUE (chapter_id, position)
+    );
+
+    CREATE TABLE IF NOT EXISTS reading_progress (
+      book_id INTEGER PRIMARY KEY REFERENCES books(id) ON DELETE CASCADE,
+      chapter_position INTEGER NOT NULL,
+      block_position INTEGER NOT NULL,
+      updated_at TEXT NOT NULL
     );
   `);
   // Databases created before ticket 03's word-pairing work lack the slots

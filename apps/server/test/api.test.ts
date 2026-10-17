@@ -13,6 +13,12 @@ const sampleBookPath = fileURLToPath(
   new URL("./fixtures/sample-book.md", import.meta.url)
 );
 
+// Shared by every describe that needs a book on the shelf through the real
+// upload seam.
+async function importSampleBook(app: Express) {
+  return request(app).post("/api/books").attach("file", sampleBookPath);
+}
+
 describe("Markdown import through the HTTP API seam", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof openDictionary>;
@@ -28,12 +34,8 @@ describe("Markdown import through the HTTP API seam", () => {
     dictionary.close();
   });
 
-  async function importSampleBook() {
-    return request(app).post("/api/books").attach("file", sampleBookPath);
-  }
-
   it("imports a markdown file and lists the book on the bookshelf", async () => {
-    const created = await importSampleBook();
+    const created = await importSampleBook(app);
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({
       title: "The Way of the Test",
@@ -53,7 +55,7 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns the table of contents divided by headings", async () => {
-    const created = await importSampleBook();
+    const created = await importSampleBook(app);
     const toc = await request(app).get(`/api/books/${created.body.id}`);
     expect(toc.status).toBe(200);
     expect(toc.body).toMatchObject({
@@ -71,7 +73,7 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns chapter blocks with sentences split and passthrough items intact", async () => {
-    const created = await importSampleBook();
+    const created = await importSampleBook(app);
 
     const titlePage = await request(app).get(
       `/api/books/${created.body.id}/chapters/1`
@@ -157,7 +159,7 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("splits list items and blockquotes into annotated sentences", async () => {
-    const created = await importSampleBook();
+    const created = await importSampleBook(app);
     const evidence = await request(app).get(
       `/api/books/${created.body.id}/chapters/5`
     );
@@ -217,7 +219,7 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns an empty block list for a heading-only chapter", async () => {
-    const created = await importSampleBook();
+    const created = await importSampleBook(app);
     const green = await request(app).get(
       `/api/books/${created.body.id}/chapters/3`
     );
@@ -231,7 +233,7 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns 404 for chapters outside the book", async () => {
-    const created = await importSampleBook();
+    const created = await importSampleBook(app);
     expect(
       (await request(app).get(`/api/books/${created.body.id}/chapters/99`))
         .status
@@ -377,6 +379,113 @@ describe("HTTP API seam", () => {
     ).get("/api/missing");
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: "API route not found" });
+  });
+});
+
+describe("reading progress and book deletion through the HTTP API seam", () => {
+  let database: Database.Database;
+  let app: Express;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    app = createApp(database, openDictionary(":memory:"));
+  });
+  afterEach(() => {
+    database.close();
+  });
+
+  async function importBookId() {
+    const created = await importSampleBook(app);
+    expect(created.status).toBe(201);
+    return created.body.id as number;
+  }
+
+  it("saves reading progress and returns it for restore, with the shelf listing it", async () => {
+    const bookId = await importBookId();
+
+    const saved = await request(app)
+      .put(`/api/books/${bookId}/progress`)
+      .send({ chapter: 3, block: 5 });
+    expect(saved.status).toBe(200);
+    expect(saved.body).toMatchObject({ chapter: 3, block: 5 });
+
+    const restored = await request(app).get(`/api/books/${bookId}/progress`);
+    expect(restored.status).toBe(200);
+    expect(restored.body).toMatchObject({ chapter: 3, block: 5 });
+
+    const shelf = await request(app).get("/api/books");
+    expect(shelf.body.books[0].progress).toEqual({ chapter: 3, block: 5 });
+
+    const moved = await request(app)
+      .put(`/api/books/${bookId}/progress`)
+      .send({ chapter: 4, block: 1 });
+    expect(moved.status).toBe(200);
+    expect(
+      (await request(app).get(`/api/books/${bookId}/progress`)).body
+    ).toMatchObject({ chapter: 4, block: 1 });
+  });
+
+  it("rejects progress payloads that are not positive integer positions", async () => {
+    const bookId = await importBookId();
+
+    for (const payload of [
+      { chapter: "3", block: 1 },
+      { chapter: 3 },
+      { chapter: 0, block: 1 },
+      { chapter: 3, block: 0 },
+    ]) {
+      const saved = await request(app)
+        .put(`/api/books/${bookId}/progress`)
+        .send(payload);
+      expect(saved.status).toBe(400);
+    }
+    // Nothing was stored by the rejected attempts.
+    expect(
+      (await request(app).get(`/api/books/${bookId}/progress`)).status
+    ).toBe(404);
+  });
+
+  it("404s progress for books that have none or do not exist", async () => {
+    const bookId = await importBookId();
+    expect(
+      (await request(app).get(`/api/books/${bookId}/progress`)).body
+    ).toEqual({ error: "no reading progress" });
+    expect((await request(app).get("/api/books/999/progress")).body).toEqual({
+      error: "book not found",
+    });
+    const saved = await request(app)
+      .put("/api/books/999/progress")
+      .send({ chapter: 1, block: 1 });
+    expect(saved.status).toBe(404);
+  });
+
+  it("deletes a book together with its chapters, blocks, and progress", async () => {
+    const bookId = await importBookId();
+    await request(app)
+      .put(`/api/books/${bookId}/progress`)
+      .send({ chapter: 2, block: 3 });
+
+    const deleted = await request(app).delete(`/api/books/${bookId}`);
+    expect(deleted.status).toBe(204);
+    expect(deleted.body).toEqual({});
+
+    expect((await request(app).get(`/api/books/${bookId}`)).status).toBe(404);
+    expect((await request(app).get("/api/books")).body.books).toEqual([]);
+    expect(
+      (await request(app).get(`/api/books/${bookId}/progress`)).status
+    ).toBe(404);
+
+    // The cascade must reach every child table, not just the shelf listing.
+    for (const table of ["chapters", "blocks", "reading_progress"]) {
+      const row = database
+        .prepare(`SELECT COUNT(*) AS n FROM ${table}`)
+        .get() as { n: number };
+      expect(row.n).toBe(0);
+    }
+
+    expect((await request(app).delete(`/api/books/${bookId}`)).status).toBe(
+      404
+    );
   });
 });
 

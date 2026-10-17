@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, json, type Request } from "express";
 import multer from "multer";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
@@ -15,11 +15,26 @@ type BookRow = {
   created_at: string;
 };
 
+// Shelf row: the book plus where it was last read, null before the first
+// reading session (LEFT JOIN from reading_progress).
+type ShelfRow = BookRow & {
+  progress_chapter: number | null;
+  progress_block: number | null;
+};
+
 const toBookJson = (row: BookRow) => ({
   id: row.id,
   title: row.title,
   format: row.format,
   createdAt: row.created_at,
+});
+
+const toShelfJson = (row: ShelfRow) => ({
+  ...toBookJson(row),
+  progress:
+    row.progress_chapter === null || row.progress_block === null
+      ? null
+      : { chapter: row.progress_chapter, block: row.progress_block },
 });
 
 export function createBooksRouter(
@@ -69,20 +84,96 @@ export function createBooksRouter(
 
   router.get("/", (_request, response) => {
     const rows = database
-      .prepare("SELECT id, title, format, created_at FROM books ORDER BY id")
-      .all() as BookRow[];
-    response.json({ books: rows.map(toBookJson) });
+      .prepare(
+        `SELECT b.id, b.title, b.format, b.created_at,
+                p.chapter_position AS progress_chapter,
+                p.block_position AS progress_block
+         FROM books b
+         LEFT JOIN reading_progress p ON p.book_id = b.id
+         ORDER BY b.id`
+      )
+      .all() as ShelfRow[];
+    response.json({ books: rows.map(toShelfJson) });
   });
 
-  router.get("/:id", (request, response) => {
+  const findBook = (id: number) =>
+    database
+      .prepare("SELECT id, title, format, created_at FROM books WHERE id = ?")
+      .get(id) as BookRow | undefined;
+
+  // One parse-and-lookup for every /:id handler: a non-integer id is just a
+  // book that is not there.
+  const bookFromParams = (request: Request): BookRow | undefined => {
     const id = Number(request.params.id);
-    if (!Number.isInteger(id)) {
+    return Number.isInteger(id) ? findBook(id) : undefined;
+  };
+
+  router.get("/:id/progress", (request, response) => {
+    const book = bookFromParams(request);
+    if (!book) {
       response.status(404).json({ error: "book not found" });
       return;
     }
-    const book = database
-      .prepare("SELECT id, title, format, created_at FROM books WHERE id = ?")
-      .get(id) as BookRow | undefined;
+    const row = database
+      .prepare(
+        "SELECT chapter_position, block_position FROM reading_progress WHERE book_id = ?"
+      )
+      .get(book.id) as
+      { chapter_position: number; block_position: number } | undefined;
+    if (!row) {
+      response.status(404).json({ error: "no reading progress" });
+      return;
+    }
+    response.json({ chapter: row.chapter_position, block: row.block_position });
+  });
+
+  router.delete("/:id", (request, response) => {
+    const book = bookFromParams(request);
+    if (!book) {
+      response.status(404).json({ error: "book not found" });
+      return;
+    }
+    // Chapters, blocks, and reading_progress go with the book through their
+    // ON DELETE CASCADE foreign keys (foreign_keys pragma is on).
+    database.prepare("DELETE FROM books WHERE id = ?").run(book.id);
+    response.status(204).end();
+  });
+
+  // Progress positions must be whole positive numbers; the guard doubles as
+  // the type narrowing TS needs before the values hit SQLite.
+  const isPositiveInteger = (value: unknown): value is number =>
+    typeof value === "number" && Number.isInteger(value) && value >= 1;
+
+  router.put("/:id/progress", json(), (request, response) => {
+    const body = request.body as { chapter?: unknown; block?: unknown };
+    const chapter = body?.chapter;
+    const block = body?.block;
+    if (!isPositiveInteger(chapter) || !isPositiveInteger(block)) {
+      response.status(400).json({
+        error: "chapter and block must be positive integers",
+      });
+      return;
+    }
+    const book = bookFromParams(request);
+    if (!book) {
+      response.status(404).json({ error: "book not found" });
+      return;
+    }
+    database
+      .prepare(
+        `INSERT INTO reading_progress (book_id, chapter_position, block_position, updated_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(book_id) DO UPDATE SET
+           chapter_position = excluded.chapter_position,
+           block_position = excluded.block_position,
+           updated_at = excluded.updated_at`
+      )
+      .run(book.id, chapter, block, new Date().toISOString());
+    response.json({ chapter, block });
+  });
+
+  router.get("/:id", (request, response) => {
+    const book = bookFromParams(request);
     if (!book) {
       response.status(404).json({ error: "book not found" });
       return;
@@ -91,7 +182,7 @@ export function createBooksRouter(
       .prepare(
         "SELECT position, title, level FROM chapters WHERE book_id = ? ORDER BY position"
       )
-      .all(id);
+      .all(book.id);
     response.json({ ...toBookJson(book), chapters });
   });
 
