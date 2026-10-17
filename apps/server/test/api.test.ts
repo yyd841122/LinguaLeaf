@@ -87,6 +87,7 @@ describe("Markdown import through the HTTP API seam", () => {
         kind: "sentence",
         originalText:
           "A short sample used by LinguaLeaf's API seam tests and manual demos.",
+        ipaSlots: ["ə", "", "", "", "", "", "", "", "", "", "", ""],
         ipaText: "ə",
         translationText: null,
       },
@@ -102,6 +103,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 1,
         kind: "sentence",
         originalText: "Mr. Gupta woke early.",
+        ipaSlots: ["", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -109,6 +111,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 2,
         kind: "sentence",
         originalText: "The morning was quiet, and the sea was calm.",
+        ipaSlots: ["", "", "", "", "", "", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -116,6 +119,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 3,
         kind: "sentence",
         originalText: "He wrote a failing test first.",
+        ipaSlots: ["hi", "roʊt", "ə", "ˈfeɪlɪŋ", "test", "fɜːst"],
         ipaText: "hi roʊt ə ˈfeɪlɪŋ test fɜːst",
         translationText: null,
       },
@@ -123,6 +127,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 4,
         kind: "sentence",
         originalText: "Then he made it pass!",
+        ipaSlots: ["", "hi", "", "", ""],
         ipaText: "hi",
         translationText: null,
       },
@@ -137,6 +142,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 1,
         kind: "sentence",
         originalText: "Run the whole suite with:",
+        ipaSlots: ["", "", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -161,6 +167,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 1,
         kind: "sentence",
         originalText: "The community kept three rules:",
+        ipaSlots: ["", "", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -168,6 +175,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 2,
         kind: "sentence",
         originalText: "Write the failing test first.",
+        ipaSlots: ["raɪt", "", "ˈfeɪlɪŋ", "test", "fɜːst"],
         ipaText: "raɪt  ˈfeɪlɪŋ test fɜːst",
         translationText: null,
       },
@@ -175,6 +183,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 3,
         kind: "sentence",
         originalText: "Refactor with the suite green.",
+        ipaSlots: ["", "", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -182,6 +191,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 4,
         kind: "sentence",
         originalText: "Keep the list short.",
+        ipaSlots: ["", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -190,6 +200,7 @@ describe("Markdown import through the HTTP API seam", () => {
         kind: "sentence",
         originalText:
           "A test that passes the moment it is written has told you nothing.",
+        ipaSlots: ["ə", "test", "", "", "", "", "", "", "raɪt", "", "", "", ""],
         ipaText: "ə test       raɪt",
         translationText: null,
       },
@@ -197,6 +208,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 6,
         kind: "sentence",
         originalText: "It merely records the code as it is.",
+        ipaSlots: ["", "", "", "", "", "", "", ""],
         ipaText: "",
         translationText: null,
       },
@@ -333,6 +345,8 @@ describe("import with an empty dictionary", () => {
     expect(chapter.status).toBe(200);
     for (const block of chapter.body.blocks) {
       expect(block.ipaText).toBe("");
+      expect(Array.isArray(block.ipaSlots)).toBe(true);
+      expect(block.ipaSlots.every((slot: string) => slot === "")).toBe(true);
     }
   });
 });

@@ -112,12 +112,13 @@ export function createBooksRouter(
     }
     const blockRows = database
       .prepare(
-        "SELECT position, kind, original_text, ipa_text, translation_text FROM blocks WHERE chapter_id = ? ORDER BY position"
+        "SELECT position, kind, original_text, ipa_slots, ipa_text, translation_text FROM blocks WHERE chapter_id = ? ORDER BY position"
       )
       .all(chapter.id) as {
       position: number;
       kind: string;
       original_text: string;
+      ipa_slots: string | null;
       ipa_text: string | null;
       translation_text: string | null;
     }[];
@@ -127,6 +128,9 @@ export function createBooksRouter(
             position: row.position,
             kind: "sentence" as const,
             originalText: row.original_text,
+            ipaSlots: row.ipa_slots
+              ? (JSON.parse(row.ipa_slots) as string[])
+              : null,
             ipaText: row.ipa_text,
             translationText: row.translation_text,
           }

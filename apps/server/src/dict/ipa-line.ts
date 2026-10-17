@@ -10,13 +10,23 @@ export function tokenizeWords(sentence: string): string[] {
   return sentence.match(WORD_PATTERN) ?? [];
 }
 
-// The IPA line: one slot per word, joined with single spaces. A word no
-// source knows leaves its slot empty — middle slots keep the two-space gap
-// so each transcription stays tied to its word (HTML collapses the gap
-// visually); leading and trailing empties are trimmed away.
+// One IPA slot per word token, in token order; a word no source knows
+// leaves its slot as an empty string. This array is the word-pairing source
+// of truth — the flat line cannot be re-split reliably because IPA
+// transcriptions may contain spaces themselves (USA: "ˌjuː es ˈeɪ").
+export function buildIpaSlots(
+  dictionary: Dictionary,
+  sentence: string
+): string[] {
+  return tokenizeWords(sentence).map(
+    (word) => resolveIpa(dictionary, word) ?? ""
+  );
+}
+
+// The flat IPA line: slots joined with single spaces. A word no source knows
+// leaves its slot empty — middle slots keep the two-space gap so each
+// transcription stays tied to its word (HTML collapses the gap visually);
+// leading and trailing empties are trimmed away.
 export function buildIpaLine(dictionary: Dictionary, sentence: string): string {
-  return tokenizeWords(sentence)
-    .map((word) => resolveIpa(dictionary, word) ?? "")
-    .join(" ")
-    .trim();
+  return buildIpaSlots(dictionary, sentence).join(" ").trim();
 }

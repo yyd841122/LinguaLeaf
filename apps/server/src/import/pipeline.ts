@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Dictionary } from "../dict/dictionary.js";
-import { buildIpaLine } from "../dict/ipa-line.js";
+import { buildIpaSlots } from "../dict/ipa-line.js";
 import { MARKDOWN_EXTENSION, renderMarkdownToChapters } from "./markdown.js";
 import { splitSentences } from "./sentences.js";
 
@@ -41,7 +41,7 @@ export function importMarkdownBook(
       "INSERT INTO chapters (book_id, position, title, level) VALUES (?, ?, ?, ?)"
     );
     const insertBlock = database.prepare(
-      "INSERT INTO blocks (chapter_id, position, kind, original_text, ipa_text) VALUES (?, ?, ?, ?, ?)"
+      "INSERT INTO blocks (chapter_id, position, kind, original_text, ipa_slots, ipa_text) VALUES (?, ?, ?, ?, ?, ?)"
     );
     chapters.forEach((chapter, chapterIndex) => {
       const chapterId = Number(
@@ -57,19 +57,28 @@ export function importMarkdownBook(
         if (item.kind === "paragraph") {
           for (const sentence of splitSentences(item.text)) {
             position += 1;
+            const slots = buildIpaSlots(dictionary, sentence);
             insertBlock.run(
               chapterId,
               position,
               "sentence",
               sentence,
-              buildIpaLine(dictionary, sentence)
+              JSON.stringify(slots),
+              slots.join(" ").trim()
             );
           }
         } else {
           position += 1;
           // Code and passthrough items are never annotated (spec: 代码块与
           // 链接不做标注), so their annotation columns stay NULL.
-          insertBlock.run(chapterId, position, item.kind, item.text, null);
+          insertBlock.run(
+            chapterId,
+            position,
+            item.kind,
+            item.text,
+            null,
+            null
+          );
         }
       }
     });

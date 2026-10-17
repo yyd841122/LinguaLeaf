@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { expect, it } from "vitest";
 import { ReadingView, type Block } from "../src/ReadingView";
 
@@ -7,6 +7,7 @@ const blocks: Block[] = [
     position: 1,
     kind: "sentence",
     originalText: "Mr. Gupta woke early.",
+    ipaSlots: null,
     ipaText: null,
     translationText: null,
   },
@@ -18,17 +19,14 @@ const blocks: Block[] = [
   },
 ];
 
-it("renders each sentence as a three-line block with placeholder rows", () => {
+it("renders a sentence without slots as original line, flat IPA line, translation line", () => {
   render(
     <ReadingView chapter={{ position: 2, title: "Chapter One: Red", blocks }} />
   );
 
-  const reading = screen.getByRole("region", { name: "Chapter One: Red" });
-  expect(
-    within(reading).getByRole("heading", { name: "Chapter One: Red" })
-  ).toBeVisible();
-
-  const sentenceBlock = reading.querySelector(".sentence-block");
+  const sentenceBlock = screen
+    .getByRole("region", { name: "Chapter One: Red" })
+    .querySelector(".sentence-block");
   expect(sentenceBlock).not.toBeNull();
 
   const lines = sentenceBlock?.querySelectorAll(
@@ -36,9 +34,49 @@ it("renders each sentence as a three-line block with placeholder rows", () => {
   );
   expect(lines).toHaveLength(3);
   expect(lines?.[0]).toHaveTextContent("Mr. Gupta woke early.");
-  // Annotation lines stay in the structure but empty until tickets 03/04 fill them.
+  // Annotation lines stay in the structure but empty until the tickets fill them.
   expect(lines?.[1]).toBeEmptyDOMElement();
   expect(lines?.[2]).toBeEmptyDOMElement();
+});
+
+it("pairs each word with its IPA beneath it when slots are available", () => {
+  const paired: Block[] = [
+    {
+      position: 1,
+      kind: "sentence",
+      originalText: "Mr. Gupta woke early.",
+      ipaSlots: ["", "ˈɡʊptə", "ˈwoʊk", "ˈɝːli"],
+      ipaText: "ˈɡʊptə ˈwoʊk ˈɝːli",
+      translationText: null,
+    },
+  ];
+  render(
+    <ReadingView
+      chapter={{ position: 2, title: "Chapter One: Red", blocks: paired }}
+    />
+  );
+
+  const sentenceBlock = screen
+    .getByRole("region", { name: "Chapter One: Red" })
+    .querySelector(".sentence-block");
+  expect(sentenceBlock).not.toBeNull();
+  // The IPA travels with the words; no separate flat line anymore.
+  expect(sentenceBlock?.querySelector(".ipa-line")).toBeNull();
+
+  const units = sentenceBlock?.querySelectorAll(".ipa-word");
+  expect(units).toHaveLength(3);
+  const gupta = units?.[0];
+  expect(gupta?.querySelector(".ipa-word-text")?.textContent).toBe("Gupta");
+  expect(gupta?.querySelector(".ipa-word-ipa")?.textContent).toBe("ˈɡʊptə");
+  expect(units?.[1]?.querySelector(".ipa-word-ipa")?.textContent).toBe("ˈwoʊk");
+  expect(units?.[2]?.querySelector(".ipa-word-ipa")?.textContent).toBe("ˈɝːli");
+
+  // A word without a transcription stays plain — no empty box next to it.
+  expect(sentenceBlock?.querySelectorAll(".ipa-word-text")).toHaveLength(3);
+  expect(sentenceBlock?.textContent).toContain("Mr.");
+
+  // The translation row is untouched by the pairing.
+  expect(sentenceBlock?.querySelector(".translation-line")).not.toBeNull();
 });
 
 it("shows code blocks and link paragraphs verbatim without sentence rows", () => {
