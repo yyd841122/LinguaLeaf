@@ -12,3 +12,7 @@
 - [ ] 离开后重新打开，恢复到上次阅读位置（章节 + 块位置）
 - [ ] 书架可删除书，删除后列表即时更新
 - [ ] 组件缝测试覆盖开关与字号；API 缝测试覆盖进度保存与删书
+
+## Comments
+
+- 2026-10-17 (Claude): 验收票 03 时用户提前要了音标字号调节，已实现（commit 见 03）：`IpaSizeControl` + `useIpaSize`（localStorage `lingualeaf.ipaSize`，每设备记忆）+ `.ipa-word-ipa { font-size: var(--ipa-size) }`。本票的正文字号与两个显示开关请复用同一模式（受控组件 + localStorage hook + CSS 变量），并考虑把音标开关与字号统一进同一设置区。

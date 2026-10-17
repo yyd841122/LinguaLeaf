@@ -1,6 +1,12 @@
-import { render, screen } from "@testing-library/react";
-import { expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
 import { ReadingView, type Block } from "../src/ReadingView";
+import {
+  IpaSizeControl,
+  MAX_IPA_SIZE,
+  MIN_IPA_SIZE,
+  readStoredIpaSize,
+} from "../src/IpaSizeControl";
 
 const blocks: Block[] = [
   {
@@ -92,4 +98,41 @@ it("shows code blocks and link paragraphs verbatim without sentence rows", () =>
     "Reading more: the official handbook. It is free."
   );
   expect(raw?.querySelector(".original-line")).toBeNull();
+});
+
+it("ipa size control steps one pixel per click and clamps at the bounds", () => {
+  const onChange = vi.fn();
+  const { rerender } = render(<IpaSizeControl size={12} onChange={onChange} />);
+  fireEvent.click(screen.getByRole("button", { name: "调大音标字号" }));
+  expect(onChange).toHaveBeenCalledWith(13);
+  rerender(<IpaSizeControl size={MIN_IPA_SIZE} onChange={onChange} />);
+  expect(
+    (screen.getByRole("button", { name: "调小音标字号" }) as HTMLButtonElement)
+      .disabled
+  ).toBe(true);
+  rerender(<IpaSizeControl size={MAX_IPA_SIZE} onChange={onChange} />);
+  expect(
+    (screen.getByRole("button", { name: "调大音标字号" }) as HTMLButtonElement)
+      .disabled
+  ).toBe(true);
+});
+
+it("reads the remembered ipa size from localStorage, defaulting on garbage", () => {
+  window.localStorage.setItem("lingualeaf.ipaSize", "16");
+  expect(readStoredIpaSize()).toBe(16);
+  window.localStorage.setItem("lingualeaf.ipaSize", "big");
+  expect(readStoredIpaSize()).toBe(12);
+  window.localStorage.removeItem("lingualeaf.ipaSize");
+  expect(readStoredIpaSize()).toBe(12);
+});
+
+it("reading view exposes the ipa size to CSS as a variable", () => {
+  render(
+    <ReadingView
+      chapter={{ position: 2, title: "Chapter One: Red", blocks }}
+      ipaSize={16}
+    />
+  );
+  const reading = screen.getByRole("region", { name: "Chapter One: Red" });
+  expect(reading.style.getPropertyValue("--ipa-size")).toBe("16px");
 });

@@ -94,9 +94,23 @@ function BlockView({ block }: { block: Block }) {
   );
 }
 
-export function ReadingView({ chapter }: { chapter: ChapterContent }) {
+export function ReadingView({
+  chapter,
+  ipaSize,
+}: {
+  chapter: ChapterContent;
+  ipaSize?: number;
+}) {
   return (
-    <section className="reading" aria-labelledby="chapter-title">
+    <section
+      className="reading"
+      aria-labelledby="chapter-title"
+      style={
+        ipaSize === undefined
+          ? undefined
+          : ({ "--ipa-size": `${ipaSize}px` } as React.CSSProperties)
+      }
+    >
       <h1 id="chapter-title">{chapter.title}</h1>
       <div className="blocks">
         {chapter.blocks.map((block) => (

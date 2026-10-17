@@ -107,7 +107,7 @@ main {
 
 .ipa-word-ipa {
   color: #5c6f64;
-  font-size: 0.72rem;
+  font-size: var(--ipa-size, 0.75rem);
   line-height: 1.35;
 }
 
@@ -126,6 +126,33 @@ main {
 .raw-block {
   margin: 0 0 1.25rem;
   color: #5c6f64;
+}
+
+.ipa-size-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.ipa-size-control button {
+  border: 1px solid #b8c4bc;
+  background: none;
+  border-radius: 0.375rem;
+  padding: 0.1rem 0.5rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.ipa-size-control button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ipa-size-value {
+  color: #5c6f64;
+  font-size: 0.85rem;
+  min-width: 3.2rem;
+  text-align: center;
 }
 
 .chapter-nav {
