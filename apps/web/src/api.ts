@@ -17,5 +17,10 @@ export async function fetchJson<T>(
   if (!response.ok) {
     throw new ApiError(response.status, url, init?.method ?? "GET");
   }
+  // 204 No Content (book deletion) has no body: parsing it as JSON throws
+  // and would make a successful request look like a failure.
+  if (response.status === 204) {
+    return undefined as T;
+  }
   return (await response.json()) as T;
 }
