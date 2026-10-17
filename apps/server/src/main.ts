@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createApp } from "./app.js";
 import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
@@ -8,6 +9,7 @@ import {
   createDeepSeekTranslator,
   deepSeekConfigFromEnv,
 } from "./translate/deepseek.js";
+import { findDeepSeekEnvDrift } from "./translate/env-guard.js";
 
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -37,10 +39,35 @@ if (!dictionary.prepare("SELECT 1 FROM dict_words LIMIT 1").get()) {
 // API key configured means no translator: books import with empty
 // translation lines until .env is set up (see README), same stance as the
 // empty dictionary above.
+// The .env file the launcher loaded (`--env-file-if-exists=.env` is
+// CWD-relative), inspected for the two misconfiguration classes that fail
+// silently later: shell values overriding the file, and glued-on non-ASCII
+// bytes. Tails only — never the full key.
+const envFilePath = resolve(process.cwd(), ".env");
+const envFile = existsSync(envFilePath)
+  ? readFileSync(envFilePath, "utf8")
+  : null;
+const envDrift = findDeepSeekEnvDrift(process.env, envFile);
+if (envDrift.shadowed.length > 0) {
+  console.warn(
+    `Shell environment overrides .env for ${envDrift.shadowed.join(", ")} — ` +
+      "Node --env-file does not override existing variables, so the .env values are inert."
+  );
+}
+if (envDrift.dirty.length > 0) {
+  console.warn(
+    `${envDrift.dirty.join(", ")} contain non-ASCII bytes — ` +
+      "an editor likely glued a comment onto the value; fix the variable or .env."
+  );
+}
 const deepSeekConfig = deepSeekConfigFromEnv();
 if (!deepSeekConfig) {
   console.warn(
     "DEEPSEEK_API_KEY is not set — imported books will have empty translation lines (see README)."
+  );
+} else {
+  console.log(
+    `DeepSeek translator: base=${deepSeekConfig.baseUrl} model=${deepSeekConfig.model} key=…${deepSeekConfig.apiKey.slice(-4)}`
   );
 }
 const translator = deepSeekConfig
