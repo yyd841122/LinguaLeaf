@@ -3,6 +3,7 @@ import multer from "multer";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
 import { isMarkdownFilename } from "./import/markdown.js";
+import type { Translator } from "./translate/translator.js";
 import { importMarkdownBook } from "./import/pipeline.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
@@ -23,7 +24,8 @@ const toBookJson = (row: BookRow) => ({
 
 export function createBooksRouter(
   database: Database.Database,
-  dictionary: Dictionary
+  dictionary: Dictionary,
+  translator?: Translator | null
 ): Router {
   const router = Router();
   const upload = multer({
@@ -44,7 +46,7 @@ export function createBooksRouter(
         next(error);
       });
     },
-    (request, response) => {
+    async (request, response) => {
       const file = request.file;
       if (!file || !isMarkdownFilename(file.originalname)) {
         response.status(415).json({
@@ -52,13 +54,14 @@ export function createBooksRouter(
         });
         return;
       }
-      const book = importMarkdownBook(
+      const book = await importMarkdownBook(
         database,
         {
           filename: file.originalname,
           content: file.buffer.toString("utf8"),
         },
-        dictionary
+        dictionary,
+        translator
       );
       response.status(201).json(book);
     }

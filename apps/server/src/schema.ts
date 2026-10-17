@@ -2,9 +2,10 @@ import type Database from "better-sqlite3";
 
 // Schema for the import pipeline. `ipa_slots` (JSON array, one entry per
 // word token) and `ipa_text` (flat fallback line) are filled at import time
-// from the local dictionary (ticket 03); `translation_text` stays NULL until
-// the translation ticket (04) fills them. NULL renders as an empty
-// placeholder in the reading view.
+// from the local dictionary (ticket 03); `translation_text` is filled at
+// import time by the configured translator (ticket 04) and stays NULL for
+// sentences whose translation failed or when none is configured. NULL
+// renders as an empty placeholder in the reading view.
 export function migrateSchema(database: Database.Database): void {
   database.exec(`
     CREATE TABLE IF NOT EXISTS books (

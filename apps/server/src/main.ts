@@ -4,6 +4,10 @@ import { createApp } from "./app.js";
 import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
+import {
+  createDeepSeekTranslator,
+  deepSeekConfigFromEnv,
+} from "./translate/deepseek.js";
 
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
@@ -29,7 +33,20 @@ if (!dictionary.prepare("SELECT 1 FROM dict_words LIMIT 1").get()) {
     "Dictionary is empty — run the dict:import-* scripts (see README) to fill the IPA line and lookup API."
   );
 }
-const app = createApp(database, dictionary);
+// The DeepSeek translator fills the translation line at import time. No
+// API key configured means no translator: books import with empty
+// translation lines until .env is set up (see README), same stance as the
+// empty dictionary above.
+const deepSeekConfig = deepSeekConfigFromEnv();
+if (!deepSeekConfig) {
+  console.warn(
+    "DEEPSEEK_API_KEY is not set — imported books will have empty translation lines (see README)."
+  );
+}
+const translator = deepSeekConfig
+  ? createDeepSeekTranslator(deepSeekConfig)
+  : null;
+const app = createApp(database, dictionary, translator);
 const server = createServer(app);
 let closeFrontend: CloseFrontend = async () => {};
 

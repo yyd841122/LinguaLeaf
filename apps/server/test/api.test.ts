@@ -7,6 +7,7 @@ import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
+import { createFakeTranslator } from "./fixtures/translator.js";
 
 const sampleBookPath = fileURLToPath(
   new URL("./fixtures/sample-book.md", import.meta.url)
@@ -376,5 +377,92 @@ describe("HTTP API seam", () => {
     ).get("/api/missing");
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: "API route not found" });
+  });
+});
+
+describe("translation at the HTTP API seam", () => {
+  let database: Database.Database;
+  let dictionary: ReturnType<typeof openDictionary>;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    dictionary = createFixtureDictionary();
+  });
+  afterEach(() => {
+    database.close();
+    dictionary.close();
+  });
+
+  it("fills the translation lines of an imported book from the injected translator", async () => {
+    const translator = createFakeTranslator((batch) =>
+      batch.map((sentence) => `译:${sentence}`)
+    );
+    const app = createApp(database, dictionary, translator);
+
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(201);
+
+    const red = await request(app).get(
+      `/api/books/${created.body.id}/chapters/2`
+    );
+    expect(red.status).toBe(200);
+    expect(
+      red.body.blocks.map(
+        (block: { translationText: string | null }) => block.translationText
+      )
+    ).toEqual([
+      "译:Mr. Gupta woke early.",
+      "译:The morning was quiet, and the sea was calm.",
+      "译:He wrote a failing test first.",
+      "译:Then he made it pass!",
+    ]);
+  });
+
+  it("leaves a sentence empty when its translation fails, and still imports the book", async () => {
+    const translator = createFakeTranslator((batch) =>
+      batch.map((sentence) =>
+        sentence.includes("failing") ? null : `译:${sentence}`
+      )
+    );
+    const app = createApp(database, dictionary, translator);
+
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(201);
+
+    const red = await request(app).get(
+      `/api/books/${created.body.id}/chapters/2`
+    );
+    const blocks = red.body.blocks as {
+      originalText: string;
+      translationText: string | null;
+    }[];
+    expect(
+      blocks.find((block) => block.originalText.includes("failing"))
+    ).toMatchObject({ translationText: null });
+    expect(
+      blocks.find((block) => block.originalText.startsWith("Mr."))
+    ).toMatchObject({ translationText: "译:Mr. Gupta woke early." });
+  });
+
+  it("imports with empty translation lines when no translator is configured", async () => {
+    const app = createApp(database, dictionary);
+
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(201);
+
+    const red = await request(app).get(
+      `/api/books/${created.body.id}/chapters/2`
+    );
+    for (const block of red.body.blocks as {
+      translationText: string | null;
+    }[]) {
+      expect(block.translationText).toBeNull();
+    }
   });
 });
