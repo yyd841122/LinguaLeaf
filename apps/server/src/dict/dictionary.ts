@@ -68,13 +68,21 @@ export function isSingleWordForm(token: string): boolean {
   return WORD_SHAPE.test(token);
 }
 
-// Default on-disk location of the server-local dictionary: the .data
-// directory next to the book database at the repository root. Overridable
-// through ECDICT_PATH, which main.ts honors the same way.
+// On-disk location of the server-local dictionary, under a runtime root:
+// the .data directory next to the book database. DICTIONARY_PATH overrides
+// the default (absolute paths pass through resolve untouched), and both the
+// server and the importer CLIs resolve through this one function.
+export function dictionaryPathUnder(root: string): string {
+  return resolve(
+    root,
+    process.env.DICTIONARY_PATH ?? ".data/dictionary.sqlite"
+  );
+}
+
+// Importers run from source via tsx, so the repository root is four levels
+// up from this file (src/dict -> src -> apps/server -> apps -> root).
 export function defaultDictionaryPath(): string {
-  if (process.env.ECDICT_PATH) return process.env.ECDICT_PATH;
-  // src/dict -> src -> apps/server -> apps -> repository root
-  return resolve(import.meta.dirname, "../../../..", ".data/ecdict.sqlite");
+  return dictionaryPathUnder(resolve(import.meta.dirname, "../../../.."));
 }
 
 // ECDICT's `pos` column holds corpus frequency codes (n:96/v:4) that are not
@@ -107,22 +115,6 @@ function lemmaOf(dictionary: Dictionary, word: string): string | null {
   return inflection ? inflection.lemma : null;
 }
 
-// ECDICT fills entries for inflected forms it has no senses for with a bare
-// pointer line ("be的过去式", "pl. man的复数") instead of real senses. Such
-// an entry carries nothing a reader needs — no part of speech, no meaning —
-// so the lookup sees through it to the lemma's entry. Entries whose
-// translation contains any real sense line ("gone": "a. 离去的…\ngo的过去分词")
-// are kept as they are.
-const POINTER_LINE =
-  /^[a-z.]*\s*[\w'-]*的(?:过去式|过去分词|现在分词|复数|第三人称单数|比较级|最高级)$/;
-
-function isInflectionPointer(translation: string): boolean {
-  const lines = translation.split("\n").filter((line) => line.trim());
-  return (
-    lines.length > 0 && lines.every((line) => POINTER_LINE.test(line.trim()))
-  );
-}
-
 // American IPA first (the IPA line's primary source), ECDICT's phonetic as
 // the fallback, resolved through the inflection index when the exact form
 // has nothing. Tokens come in raw from text; normalization happens here so
@@ -152,28 +144,22 @@ export function resolveIpa(
   return null;
 }
 
+// The lookup contract is the spec's "词形还原后的…释义": whenever the
+// inflection index knows the lemma and the lemma has an entry, the response
+// shows the lemma's senses and part of speech — ECDICT's own entries for
+// inflected forms are thin (bare "be的过去式" pointers or a sense recap plus
+// "（book的复数）"), so they never win over the lemma. The IPA stays the
+// surface form's own (how THIS spelling is read, /ˈbʊks/ not /ˈbʊk/).
 export function lookupWord(
   dictionary: Dictionary,
   token: string
 ): WordLookup | null {
   const word = normalizeLookupToken(token);
   if (!word) return null;
-  let entry = findEntry(dictionary, word);
-  let lemma: string | null = null;
-  if (entry && isInflectionPointer(entry.translation)) {
-    // The exact entry is a bare "X的过去式" style pointer: show the lemma's
-    // real entry instead, keeping the pointer entry only as a fallback.
-    const resolved = lemmaOf(dictionary, word);
-    const lemmaEntry = resolved ? findEntry(dictionary, resolved) : undefined;
-    if (resolved && lemmaEntry) {
-      entry = lemmaEntry;
-      lemma = resolved;
-    }
-  }
-  if (!entry) {
-    lemma = lemmaOf(dictionary, word);
-    if (lemma) entry = findEntry(dictionary, lemma);
-  }
+  const lemma = lemmaOf(dictionary, word);
+  const lemmaEntry = lemma ? findEntry(dictionary, lemma) : undefined;
+  const entry = (lemmaEntry ?? findEntry(dictionary, word)) as
+    EntryRow | undefined;
   if (!entry) return null;
   return {
     word,

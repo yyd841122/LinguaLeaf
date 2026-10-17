@@ -10,6 +10,14 @@ export const FIXTURE_WORDS = {
     translation: "n. 书, 簿, 账册\nv. 预订, 登记",
     exchange: "s:books/p:booked/i:booking/3:books",
   },
+  // Real ECDICT also carries entries for the inflected forms themselves —
+  // thin ones (a sense recap plus a parenthetical pointer), not just bare
+  // "X的过去式" pointers. The lookup must still reach the lemma's entry.
+  books: {
+    phonetic: "",
+    translation: "n. 书（book的复数）",
+    exchange: "1:s3/0:book",
+  },
   write: {
     phonetic: "raɪt",
     translation: "v. 写, 作曲, 写信",

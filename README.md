@@ -13,7 +13,7 @@ npm run dev
 
 ## 词库导入（音标行与查词 API 的数据源）
 
-服务端的音标与查词全部走本地词库 `.data/ecdict.sqlite`（可用环境变量 `ECDICT_PATH` 改路径），由两个可重复执行的导入脚本灌入：
+服务端的音标与查词全部走本地词库 `.data/dictionary.sqlite`（可用环境变量 `DICTIONARY_PATH` 改路径），由两个可重复执行的导入脚本灌入：
 
 1. **ECDICT**（词性、中文释义、词形还原索引）——下载 [ECDICT 1.0.28](https://github.com/skywind3000/ECDICT/releases/tag/1.0.28) 的 `ecdict-sqlite-28.zip`，解压得到 `stardict.db`：
 
