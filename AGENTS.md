@@ -14,6 +14,10 @@ Default five canonical triage role labels: `needs-triage`, `needs-info`, `ready-
 
 Single-context layout: `GLOSSARY.md` at repo root + `docs/adr/`. See `docs/agents/domain.md`.
 
+### Coding standards
+
+Judgement-call rules the review stage enforces live in `CODING_STANDARDS.md` at the repo root (tooling-enforced rules are not listed there).
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
