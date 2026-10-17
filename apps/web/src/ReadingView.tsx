@@ -131,12 +131,14 @@ export function ReadingView({
   chapter,
   ipaSize,
   originalSize,
+  translationSize,
   showIpa = true,
   showTranslation = true,
 }: {
   chapter: ChapterContent;
   ipaSize?: number;
   originalSize?: number;
+  translationSize?: number;
   showIpa?: boolean;
   showTranslation?: boolean;
 }) {
@@ -150,6 +152,9 @@ export function ReadingView({
           ...(originalSize === undefined
             ? null
             : { "--original-size": `${originalSize}px` }),
+          ...(translationSize === undefined
+            ? null
+            : { "--translation-size": `${translationSize}px` }),
         } as React.CSSProperties
       }
     >

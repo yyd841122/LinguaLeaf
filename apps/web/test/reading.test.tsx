@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { act, renderHook } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ApiError } from "../src/api";
+import { ApiError, fetchJson } from "../src/api";
 import { ReadingView, type Block } from "../src/ReadingView";
 import {
   IpaSizeControl,
@@ -16,9 +16,12 @@ import {
 } from "../src/prefs";
 import {
   MAX_ORIGINAL_SIZE,
+  MAX_TRANSLATION_SIZE,
   MIN_ORIGINAL_SIZE,
+  MIN_TRANSLATION_SIZE,
   ReadingSettings,
   readStoredOriginalSize,
+  readStoredTranslationSize,
 } from "../src/ReadingSettings";
 import { fetchReadingProgress } from "../src/readingProgress";
 
@@ -162,6 +165,17 @@ it("reading view exposes the original size to CSS as a variable", () => {
   expect(reading.style.getPropertyValue("--original-size")).toBe("18px");
 });
 
+it("reading view exposes the translation size to CSS as a variable", () => {
+  render(
+    <ReadingView
+      chapter={{ position: 2, title: "Chapter One: Red", blocks }}
+      translationSize={16}
+    />
+  );
+  const reading = screen.getByRole("region", { name: "Chapter One: Red" });
+  expect(reading.style.getPropertyValue("--translation-size")).toBe("16px");
+});
+
 it("reads stored boolean prefs, defaulting on missing or unrecognized values", () => {
   window.localStorage.setItem("lingualeaf.showIpa", "false");
   expect(readStoredBoolean("lingualeaf.showIpa", true)).toBe(false);
@@ -198,6 +212,7 @@ it("settings panel drives both toggles and both font sizes", () => {
   const onShowTranslationChange = vi.fn();
   const onIpaSizeChange = vi.fn();
   const onOriginalSizeChange = vi.fn();
+  const onTranslationSizeChange = vi.fn();
   render(
     <ReadingSettings
       showIpa={true}
@@ -208,6 +223,8 @@ it("settings panel drives both toggles and both font sizes", () => {
       onIpaSizeChange={onIpaSizeChange}
       originalSize={18}
       onOriginalSizeChange={onOriginalSizeChange}
+      translationSize={14}
+      onTranslationSizeChange={onTranslationSizeChange}
     />
   );
 
@@ -229,10 +246,13 @@ it("settings panel drives both toggles and both font sizes", () => {
   expect(onOriginalSizeChange).toHaveBeenCalledWith(19);
   fireEvent.click(screen.getByRole("button", { name: "调大音标字号" }));
   expect(onIpaSizeChange).toHaveBeenCalledWith(13);
+  fireEvent.click(screen.getByRole("button", { name: "调大译文字号" }));
+  expect(onTranslationSizeChange).toHaveBeenCalledWith(15);
 });
 
-it("clamps the original size stepper at its bounds", () => {
+it("clamps the original and translation size steppers at their bounds", () => {
   const onOriginalSizeChange = vi.fn();
+  const onTranslationSizeChange = vi.fn();
   const props = {
     showIpa: true,
     onShowIpaChange: vi.fn(),
@@ -241,17 +261,36 @@ it("clamps the original size stepper at its bounds", () => {
     ipaSize: 12,
     onIpaSizeChange: vi.fn(),
     onOriginalSizeChange,
+    onTranslationSizeChange,
   };
   const { rerender } = render(
-    <ReadingSettings {...props} originalSize={MIN_ORIGINAL_SIZE} />
+    <ReadingSettings
+      {...props}
+      originalSize={MIN_ORIGINAL_SIZE}
+      translationSize={MIN_TRANSLATION_SIZE}
+    />
   );
   expect(
     (screen.getByRole("button", { name: "调小原文字号" }) as HTMLButtonElement)
       .disabled
   ).toBe(true);
-  rerender(<ReadingSettings {...props} originalSize={MAX_ORIGINAL_SIZE} />);
+  expect(
+    (screen.getByRole("button", { name: "调小译文字号" }) as HTMLButtonElement)
+      .disabled
+  ).toBe(true);
+  rerender(
+    <ReadingSettings
+      {...props}
+      originalSize={MAX_ORIGINAL_SIZE}
+      translationSize={MAX_TRANSLATION_SIZE}
+    />
+  );
   expect(
     (screen.getByRole("button", { name: "调大原文字号" }) as HTMLButtonElement)
+      .disabled
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "调大译文字号" }) as HTMLButtonElement)
       .disabled
   ).toBe(true);
 });
@@ -263,6 +302,32 @@ it("reads the remembered original size from localStorage, defaulting on garbage"
   expect(readStoredOriginalSize()).toBe(28);
   window.localStorage.removeItem("lingualeaf.originalSize");
   expect(readStoredOriginalSize()).toBe(18);
+});
+
+it("reads the remembered translation size from localStorage, defaulting on garbage", () => {
+  window.localStorage.setItem("lingualeaf.translationSize", "18");
+  expect(readStoredTranslationSize()).toBe(18);
+  window.localStorage.setItem("lingualeaf.translationSize", "big");
+  expect(readStoredTranslationSize()).toBe(14);
+  window.localStorage.removeItem("lingualeaf.translationSize");
+  expect(readStoredTranslationSize()).toBe(14);
+});
+
+it("parses a bodyless 204 as success instead of a failure", async () => {
+  try {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 204 }))
+    );
+    // Book deletion returns 204 No Content. Parsing its (empty) body as
+    // JSON throws and made the bookshelf report 删除失败 for a delete that
+    // actually succeeded.
+    await expect(
+      fetchJson("/api/books/1", { method: "DELETE" })
+    ).resolves.toBeUndefined();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it("reads a 404 as no saved progress but lets real failures throw", async () => {

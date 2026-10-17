@@ -10,12 +10,23 @@ export const MIN_ORIGINAL_SIZE = 14;
 export const MAX_ORIGINAL_SIZE = 28;
 export const DEFAULT_ORIGINAL_SIZE = 18;
 
+// Translation-line (译文行) font size: the dimmer auxiliary line runs a
+// touch smaller than the original and gets the same per-device memory.
+export const MIN_TRANSLATION_SIZE = 12;
+export const MAX_TRANSLATION_SIZE = 24;
+export const DEFAULT_TRANSLATION_SIZE = 14;
+
 const ORIGINAL_SIZE_STORAGE_KEY = "lingualeaf.originalSize";
+const TRANSLATION_SIZE_STORAGE_KEY = "lingualeaf.translationSize";
 const SHOW_IPA_STORAGE_KEY = "lingualeaf.showIpa";
 const SHOW_TRANSLATION_STORAGE_KEY = "lingualeaf.showTranslation";
 
 export function clampOriginalSize(value: number): number {
   return Math.min(MAX_ORIGINAL_SIZE, Math.max(MIN_ORIGINAL_SIZE, value));
+}
+
+export function clampTranslationSize(value: number): number {
+  return Math.min(MAX_TRANSLATION_SIZE, Math.max(MIN_TRANSLATION_SIZE, value));
 }
 
 export function readStoredOriginalSize(): number {
@@ -26,11 +37,27 @@ export function readStoredOriginalSize(): number {
   );
 }
 
+export function readStoredTranslationSize(): number {
+  return readStoredNumber(
+    TRANSLATION_SIZE_STORAGE_KEY,
+    DEFAULT_TRANSLATION_SIZE,
+    clampTranslationSize
+  );
+}
+
 export function useOriginalSize(): [number, (size: number) => void] {
   return useStoredNumber(
     ORIGINAL_SIZE_STORAGE_KEY,
     DEFAULT_ORIGINAL_SIZE,
     clampOriginalSize
+  );
+}
+
+export function useTranslationSize(): [number, (size: number) => void] {
+  return useStoredNumber(
+    TRANSLATION_SIZE_STORAGE_KEY,
+    DEFAULT_TRANSLATION_SIZE,
+    clampTranslationSize
   );
 }
 
@@ -62,9 +89,27 @@ export function OriginalSizeControl({
   );
 }
 
-// The reading settings panel: the two annotation toggles plus both font
-// size steppers in one place (ticket 05). Controlled throughout — the page
-// owns the persisted state, this only renders and reports.
+export function TranslationSizeControl({
+  size,
+  onChange,
+}: {
+  size: number;
+  onChange: (size: number) => void;
+}) {
+  return (
+    <SizeStepper
+      label="译文"
+      size={size}
+      min={MIN_TRANSLATION_SIZE}
+      max={MAX_TRANSLATION_SIZE}
+      onChange={(next) => onChange(clampTranslationSize(next))}
+    />
+  );
+}
+
+// The reading settings panel: the two annotation toggles plus all three
+// font size steppers in one place (ticket 05). Controlled throughout — the
+// page owns the persisted state, this only renders and reports.
 export function ReadingSettings({
   showIpa,
   onShowIpaChange,
@@ -74,6 +119,8 @@ export function ReadingSettings({
   onIpaSizeChange,
   originalSize,
   onOriginalSizeChange,
+  translationSize,
+  onTranslationSizeChange,
 }: {
   showIpa: boolean;
   onShowIpaChange: (value: boolean) => void;
@@ -83,6 +130,8 @@ export function ReadingSettings({
   onIpaSizeChange: (size: number) => void;
   originalSize: number;
   onOriginalSizeChange: (size: number) => void;
+  translationSize: number;
+  onTranslationSizeChange: (size: number) => void;
 }) {
   return (
     <div className="reading-settings">
@@ -106,6 +155,10 @@ export function ReadingSettings({
       <OriginalSizeControl
         size={originalSize}
         onChange={onOriginalSizeChange}
+      />
+      <TranslationSizeControl
+        size={translationSize}
+        onChange={onTranslationSizeChange}
       />
     </div>
   );

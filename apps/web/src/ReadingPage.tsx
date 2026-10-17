@@ -7,6 +7,7 @@ import {
   useOriginalSize,
   useShowIpa,
   useShowTranslation,
+  useTranslationSize,
 } from "./ReadingSettings";
 import {
   fetchReadingProgress,
@@ -51,6 +52,7 @@ export function ReadingPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [ipaSize, setIpaSize] = useIpaSize();
   const [originalSize, setOriginalSize] = useOriginalSize();
+  const [translationSize, setTranslationSize] = useTranslationSize();
   const [showIpa, setShowIpa] = useShowIpa();
   const [showTranslation, setShowTranslation] = useShowTranslation();
 
@@ -250,6 +252,8 @@ export function ReadingPage() {
               onIpaSizeChange={setIpaSize}
               originalSize={originalSize}
               onOriginalSizeChange={setOriginalSize}
+              translationSize={translationSize}
+              onTranslationSizeChange={setTranslationSize}
             />
           </div>
         )}
@@ -258,6 +262,7 @@ export function ReadingPage() {
         chapter={content}
         ipaSize={ipaSize}
         originalSize={originalSize}
+        translationSize={translationSize}
         showIpa={showIpa}
         showTranslation={showTranslation}
       />

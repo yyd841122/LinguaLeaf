@@ -21,3 +21,5 @@
 
 - 2026-10-17 (Claude): 验收票 03 时用户提前要了音标字号调节，已实现（commit 见 03）：`IpaSizeControl` + `useIpaSize`（localStorage `lingualeaf.ipaSize`，每设备记忆）+ `.ipa-word-ipa { font-size: var(--ipa-size) }`。本票的正文字号与两个显示开关请复用同一模式（受控组件 + localStorage hook + CSS 变量），并考虑把音标开关与字号统一进同一设置区。
 - 2026-10-17 (yyd841122): 人工验收通过 —— 显示开关/字号刷新后记忆保持、目录跳章、离开后重开恢复位置、删书即时更新，全部实测通过。
+- 2026-10-17 (Claude): 人工验收揪出删书 bug:接口 204 无响应体,前端 `fetchJson` 无条件 `response.json()` 抛 SyntaxError,`removeBook` 的 catch 误报「删除失败」,列表也不原地更新(服务端实际已删,刷新才见)。修在根上:fetchJson 对 204 直接返回 undefined(组件缝新增 204 测试,修复前红:`promise rejected SyntaxError`),未来任何 204 端点一并受益。API 缝测试没逮住它属预期:supertest 不经过前端 fetch 层——正是「组件缝只覆盖开关与字号」这行验收留下的盲区,由人工验收补位。
+- 2026-10-17 (Claude): 用户提出补译文行字号:同一模式第三个步进器 `TranslationSizeControl`(label 译文,12–24px 默认 14≈原 0.9rem),`--translation-size` CSS 变量,存储 `lingualeaf.translationSize`,设置面板五控件。组件缝新增面板驱动/边界钳制/存储回退/CSS 变量共 3 测,门禁 80/80 全绿(退出码已验)。
