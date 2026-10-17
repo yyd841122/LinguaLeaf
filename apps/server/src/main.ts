@@ -1,37 +1,44 @@
-import { createServer } from 'node:http';
-import { resolve } from 'node:path';
-import { createApp } from './app.js';
-import { openDatabase } from './database.js';
-import { attachFrontend } from './frontend.js';
+import { createServer } from "node:http";
+import { resolve } from "node:path";
+import { createApp } from "./app.js";
+import { openDatabase } from "./database.js";
+import { attachFrontend, type CloseFrontend } from "./frontend.js";
 
 const port = Number(process.env.PORT ?? 3000);
 if (!Number.isInteger(port) || port < 0 || port > 65535) {
-  throw new Error('PORT must be an integer between 0 and 65535');
+  throw new Error("PORT must be an integer between 0 and 65535");
 }
-const host = process.env.HOST ?? '0.0.0.0';
-const projectRoot = resolve(import.meta.dirname, '../../..');
+const host = process.env.HOST ?? "0.0.0.0";
+const sourceRoot = resolve(import.meta.dirname, "../../..");
 // Source is apps/server/src; the compiled entry is .output/server.
-const root = process.argv.includes('--dev') ? projectRoot : resolve(import.meta.dirname, '../..');
-const database = openDatabase(resolve(root, process.env.DATABASE_PATH ?? '.data/lingualeaf.sqlite'));
+const development = process.argv.includes("--dev");
+const runtimeRoot = development
+  ? sourceRoot
+  : resolve(import.meta.dirname, "../..");
+const database = openDatabase(
+  resolve(runtimeRoot, process.env.DATABASE_PATH ?? ".data/lingualeaf.sqlite")
+);
 const app = createApp(database);
 const server = createServer(app);
-let closeFrontend: () => Promise<void> = async () => {};
+let closeFrontend: CloseFrontend = async () => {};
 
 try {
   closeFrontend = await attachFrontend(app, server, {
-    development: process.argv.includes('--dev'),
-    projectRoot: root,
+    development,
+    runtimeRoot,
   });
 
   await new Promise<void>((resolveListening, reject) => {
-    server.once('error', reject);
+    server.once("error", reject);
     server.listen(port, host, () => {
-      server.removeListener('error', reject);
+      server.removeListener("error", reject);
       resolveListening();
     });
   });
   const address = server.address();
-  console.log(`LinguaLeaf listening on http://${host}:${typeof address === 'object' && address ? address.port : port}`);
+  console.log(
+    `LinguaLeaf listening on http://${host}:${typeof address === "object" && address ? address.port : port}`
+  );
 
   let closing = false;
   const shutdown = async () => {
@@ -42,7 +49,7 @@ try {
     try {
       await closeFrontend();
       await new Promise<void>((resolveClosed, reject) => {
-        server.close((error) => error ? reject(error) : resolveClosed());
+        server.close((error) => (error ? reject(error) : resolveClosed()));
         server.closeAllConnections();
       });
     } catch (error) {
@@ -53,8 +60,12 @@ try {
       clearTimeout(timeout);
     }
   };
-  process.once('SIGINT', () => { void shutdown(); });
-  process.once('SIGTERM', () => { void shutdown(); });
+  process.once("SIGINT", () => {
+    void shutdown();
+  });
+  process.once("SIGTERM", () => {
+    void shutdown();
+  });
 } catch (error) {
   await closeFrontend();
   database.close();

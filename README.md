@@ -5,7 +5,7 @@
 需要 Node.js 22.12+（建议 Node.js 24 LTS）与 npm。`better-sqlite3` 通常使用预编译包；没有对应平台的预编译包时，需要 Python 3 和 C/C++ 编译工具。
 
 ```sh
-npm install --package-lock=false
+npm install
 npm run dev
 ```
 
