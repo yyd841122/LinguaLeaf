@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 Markdown 导入到句子块阅读（第一条曳光弹）
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] 有可重复执行的 ECDICT 数据导入步骤，词库查询走服务端本地
 - [x] 导入后的书音标行显示每词美式 IPA
@@ -20,4 +20,4 @@
 - 2026-10-17 (Claude): 门禁全绿（退出码已验）：typecheck、35/35 测试、lint、build；生产 + dev E2E（curl --noproxy）真词库导样例书：全句美式 IPA（Mr. Gupta woke early. → /ˈmɪstɝ ˈɡʊptə ˈwoʊk ˈɝɫi/）、`LinguaLeaf's` 留空槽其余正常、wrote→write / was→be 还原、unknown 404。修复过程发现两处自伤并纠正：门禁退出码曾被管道 tail 吞掉（test/frontend.test.ts 旧签名漏改）；`defaultDictionaryPath` 的源码相对路径在编译版跑偏（改由 main.ts 按 runtimeRoot 解析，与 DATABASE_PATH 同模式）。- 2026-10-17 (Claude): code-review(Standards+Spec 双轴)后修复：① 变形词查词契约收敛为"还原原型后"：只要还原索引知道原型且原型有词条，词性与释义一律取原型词条（ECDICT 给变形词的词条要么是纯指针"be的过去式"要么是"（book的复数）"式薄条目，不值得展示）；音标仍保留词形自己的美式读音（books /ˈbʊks/ 而非 /bʊk/），`lemma` 字段供弹窗标注"XX的原型"。② 词库路径双源合一：`dictionaryPathUnder(root)` 单点解析，`DICTIONARY_PATH` 覆盖（原 `ECDICT_PATH` 以单一数据源命名整个词库，改名；文件同步改为 `.data/dictionary.sqlite`）。③ 工单补记：音标行"美式"为尽力而为——ipa-dict 没有的词回落 ECDICT phonetic（英式转写，如 zebra→/zebrə/），一行内可能混口音。复核后不改：`lemma` 字段超出合同行（弹窗需要，票 06 受益）；dictionary.ts 同时承载 DDL/路径/解析系 mild 内聚问题，暂不分拆。
 - 2026-10-17 (Claude): **测试缝偏离备案**：spec Testing Decisions 约定全系统两条测试缝（HTTP API + 阅读组件），本票另加了 dictionary.test.ts / dict-import.test.ts 单元缝——理由：两个导入器是 CLI，落在两条缝之外无覆盖落点；还原链边界情况（纯指针/薄词条/空槽/归一化）在 API 缝上构造 fixture 成本高且失败定位粗。若人工验收认为违背约定，删这两个文件即可，API 缝测试保留票面要求的三类覆盖。- 2026-10-17 (yyd841122): 验收反馈：音标行有位无音标（旧书是 02 期导入的 NULL，重导后解决）；但音标与单词错位，长句折行后完全对不上，要求逐词同步、随行折行。
 - 2026-10-17 (Claude): 逐词配对修复。数据层加 `blocks.ipa_slots`（JSON 数组，与分词一一对应；平铺 `ipa_text` 不可靠切分——USA 的音标 "ˌjuː es ˈeɪ" 自带空格），schema 对旧库就地 ALTER 迁移（已用副本实测）。阅读端把每个词渲染成"词+正下方音标"的 inline-flex 单元，随文换行：任何窗口宽度下每个视觉行都是"一行原文、其音标在其下"，无需 JS 测量折行（窗口缩放、票 05 字号调整天然安全）。未知词/标点保持纯文本，无空盒。旧书（无 slots）回退平铺行样式；查看配对效果需重新导入。API 缝断言补 `ipaSlots`（36/36），web 组件缝改配对契约（3/3），GLOSSARY 音标行/句子块定义同步改写。门禁全绿（退出码已验），生产 E2E 确认 slots 与词一一对应。- 2026-10-17 (yyd841122): 重新导入后音标对齐确认。追加需求：音标大小可调。
-- 2026-10-17 (Claude): 已加音标字号调节：阅读页头部 A−/A+ 步进（9–20px，夹取边界禁用），`--ipa-size` CSS 变量驱动，localStorage 每设备记忆（`lingualeaf.ipaSize`，坏值回退 12px）。组件缝测试 +3（步进/边界禁用/记忆读取/CSS 变量），门禁全绿（typecheck、39/39、lint、build）。
+- 2026-10-17 (Claude): 已加音标字号调节：阅读页头部 A−/A+ 步进（9–20px，夹取边界禁用），`--ipa-size` CSS 变量驱动，localStorage 每设备记忆（`lingualeaf.ipaSize`，坏值回退 12px）。组件缝测试 +3（步进/边界禁用/记忆读取/CSS 变量），门禁全绿（typecheck、39/39、lint、build）。- 2026-10-17 (yyd841122): 人工验收通过 —— 重新导入后音标逐词对齐，字号可调，阅读体验符合预期。
