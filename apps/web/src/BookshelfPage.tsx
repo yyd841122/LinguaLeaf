@@ -1,0 +1,108 @@
+import { useEffect, useState, type FormEvent } from "react";
+import { Link } from "react-router";
+
+type BookSummary = {
+  id: number;
+  title: string;
+  format: string;
+  createdAt: string;
+};
+
+function formatImportedAt(iso: string): string {
+  return new Date(iso).toLocaleString("zh-CN", {
+    dateStyle: "short",
+    timeStyle: "short",
+  });
+}
+
+export function BookshelfPage() {
+  const [books, setBooks] = useState<BookSummary[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/books")
+      .then((response) =>
+        response.ok ? response.json() : Promise.reject(response.status)
+      )
+      .then((data: { books: BookSummary[] }) => {
+        if (!cancelled) setBooks(data.books);
+      })
+      .catch(() => {
+        if (!cancelled) setError("书架加载失败，请确认服务端正在运行。");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const uploadBook = async (file: File) => {
+    setImporting(true);
+    setError(null);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/books", { method: "POST", body });
+      if (!response.ok) {
+        setError("导入失败：只接受 .md 或 .markdown 文件（≤20MB）。");
+        return;
+      }
+      const { books: refreshed } = (await fetch("/api/books").then((r) =>
+        r.json()
+      )) as { books: BookSummary[] };
+      setBooks(refreshed);
+    } catch {
+      setError("导入失败，请重试。");
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const input = event.currentTarget.elements.namedItem("file");
+    const file = input instanceof HTMLInputElement && input.files?.[0];
+    if (file) void uploadBook(file);
+  };
+
+  return (
+    <main className="bookshelf">
+      <h1>LinguaLeaf</h1>
+      <p className="subtitle">英文电子书标注阅读器</p>
+
+      <form onSubmit={handleSubmit}>
+        <label>
+          导入 Markdown 书籍
+          <input type="file" name="file" accept=".md,.markdown" required />
+        </label>
+        <button type="submit" disabled={importing}>
+          {importing ? "导入中…" : "导入"}
+        </button>
+      </form>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+
+      <h2>书架</h2>
+      {books === null ? (
+        <p>加载中…</p>
+      ) : books.length === 0 ? (
+        <p>还没有书，先导入一本吧。</p>
+      ) : (
+        <ul className="book-list">
+          {books.map((book) => (
+            <li key={book.id}>
+              <Link to={`/book/${book.id}/1`}>{book.title}</Link>
+              <span className="meta">
+                {book.format} · 导入于 {formatImportedAt(book.createdAt)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </main>
+  );
+}

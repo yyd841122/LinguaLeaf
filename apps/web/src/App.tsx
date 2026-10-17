@@ -1,11 +1,14 @@
-import { ReadingView } from './ReadingView';
+import { BrowserRouter, Route, Routes } from "react-router";
+import { BookshelfPage } from "./BookshelfPage";
+import { ReadingPage } from "./ReadingPage";
 
 export function App() {
   return (
-    <main>
-      <h1>LinguaLeaf</h1>
-      <p>英文电子书标注阅读器</p>
-      <ReadingView />
-    </main>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<BookshelfPage />} />
+        <Route path="/book/:id/:chapter" element={<ReadingPage />} />
+      </Routes>
+    </BrowserRouter>
   );
 }

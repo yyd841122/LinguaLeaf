@@ -1,13 +1,15 @@
-import { mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import Database from 'better-sqlite3';
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import Database from "better-sqlite3";
+import { migrateSchema } from "./schema.js";
 
 export function openDatabase(filename: string): Database.Database {
-  if (filename !== ':memory:') {
+  if (filename !== ":memory:") {
     mkdirSync(dirname(filename), { recursive: true });
   }
   const database = new Database(filename);
-  database.pragma('journal_mode = WAL');
-  database.pragma('foreign_keys = ON');
+  database.pragma("journal_mode = WAL");
+  database.pragma("foreign_keys = ON");
+  migrateSchema(database);
   return database;
 }

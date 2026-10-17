@@ -1,18 +1,21 @@
-import express from 'express';
-import type Database from 'better-sqlite3';
+import express from "express";
+import type Database from "better-sqlite3";
+import { createBooksRouter } from "./books-router.js";
 
 export function createApp(database: Database.Database) {
   const app = express();
-  app.disable('x-powered-by');
+  app.disable("x-powered-by");
 
-  app.get('/api/health', (_request, response) => {
-    database.prepare('SELECT 1').get();
-    response.json({ status: 'ok' });
+  app.get("/api/health", (_request, response) => {
+    database.prepare("SELECT 1").get();
+    response.json({ status: "ok" });
   });
 
+  app.use("/api/books", createBooksRouter(database));
+
   // Keep unknown API requests out of the frontend's SPA fallback.
-  app.use('/api', (_request, response) => {
-    response.status(404).json({ error: 'API route not found' });
+  app.use("/api", (_request, response) => {
+    response.status(404).json({ error: "API route not found" });
   });
 
   return app;
