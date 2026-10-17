@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
+import { ApiError, fetchJson } from "./api";
 
 type BookSummary = {
   id: number;
@@ -22,11 +23,8 @@ export function BookshelfPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/books")
-      .then((response) =>
-        response.ok ? response.json() : Promise.reject(response.status)
-      )
-      .then((data: { books: BookSummary[] }) => {
+    fetchJson<{ books: BookSummary[] }>("/api/books")
+      .then((data) => {
         if (!cancelled) setBooks(data.books);
       })
       .catch(() => {
@@ -43,17 +41,17 @@ export function BookshelfPage() {
     try {
       const body = new FormData();
       body.append("file", file);
-      const response = await fetch("/api/books", { method: "POST", body });
-      if (!response.ok) {
-        setError("导入失败：只接受 .md 或 .markdown 文件（≤20MB）。");
-        return;
-      }
-      const { books: refreshed } = (await fetch("/api/books").then((r) =>
-        r.json()
-      )) as { books: BookSummary[] };
+      await fetchJson("/api/books", { method: "POST", body });
+      const { books: refreshed } = await fetchJson<{ books: BookSummary[] }>(
+        "/api/books"
+      );
       setBooks(refreshed);
-    } catch {
-      setError("导入失败，请重试。");
+    } catch (error) {
+      setError(
+        error instanceof ApiError && error.status === 415
+          ? "导入失败：只接受 .md 或 .markdown 文件（≤20MB）。"
+          : "导入失败，请重试。"
+      );
     } finally {
       setImporting(false);
     }

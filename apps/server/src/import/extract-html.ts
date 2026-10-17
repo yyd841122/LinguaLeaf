@@ -24,6 +24,19 @@ export function extractChaptersFromHtml(html: string): ExtractedChapter[] {
   let current: ExtractedChapter = { title: "", level: null, items: [] };
   chapters.push(current);
 
+  // Paragraph-shaped content joins the chapter: link-bearing paragraphs stay
+  // unsplit `raw` items, everything else is sentence-split downstream.
+  const addParagraph = (paragraph: ReturnType<typeof $>) => {
+    const text = paragraph.text().replace(/\s+/g, " ").trim();
+    // Empty paragraphs (e.g. image-only, until ticket 07 adds placeholders) are dropped.
+    if (!text) return;
+    current.items.push(
+      paragraph.find("a").length > 0
+        ? { kind: "raw", text }
+        : { kind: "paragraph", text }
+    );
+  };
+
   for (const element of $("body").children().toArray()) {
     const node = $(element);
     const tag = (element.tagName ?? "").toLowerCase();
@@ -43,17 +56,24 @@ export function extractChaptersFromHtml(html: string): ExtractedChapter[] {
       continue;
     }
     if (tag === "p") {
-      const text = node.text().replace(/\s+/g, " ").trim();
-      // Empty paragraphs (e.g. image-only, until ticket 07 adds placeholders) are dropped.
-      if (!text) continue;
-      current.items.push(
-        node.find("a").length > 0
-          ? { kind: "raw", text }
-          : { kind: "paragraph", text }
-      );
+      addParagraph(node);
+      continue;
     }
-    // Lists, blockquotes, tables and friends are outside the tracer bullet;
-    // later tickets extend the walk when their scope needs them.
+    // Lists and blockquotes are prose: their items/paragraphs are annotated
+    // like any other paragraph instead of vanishing from the book.
+    if (tag === "ul" || tag === "ol") {
+      node.find("li").each((_index, li) => addParagraph($(li)));
+      continue;
+    }
+    if (tag === "blockquote") {
+      node.children("p").each((_index, p) => addParagraph($(p)));
+      continue;
+    }
+    // Anything else with text passes through verbatim rather than silently
+    // dropping content (tables, definitions, ...); ticket 07 refines this for
+    // images.
+    const passthrough = node.text().replace(/\s+/g, " ").trim();
+    if (passthrough) current.items.push({ kind: "raw", text: passthrough });
   }
   // The untitled lead-in only exists when content precedes the first heading;
   // an empty shell would just be TOC noise.

@@ -60,6 +60,7 @@ describe("Markdown import through the HTTP API seam", () => {
       { position: 2, title: "Chapter One: Red", level: 2 },
       { position: 3, title: "Chapter Two: Green", level: 2 },
       { position: 4, title: "Interlude: The Command", level: 3 },
+      { position: 5, title: "Chapter Three: Evidence", level: 2 },
     ]);
   });
 
@@ -139,6 +140,60 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 3,
         kind: "raw",
         originalText: "Reading more: the official handbook. It is free.",
+      },
+    ]);
+  });
+
+  it("splits list items and blockquotes into annotated sentences", async () => {
+    const created = await importSampleBook();
+    const evidence = await request(app).get(
+      `/api/books/${created.body.id}/chapters/5`
+    );
+    expect(evidence.status).toBe(200);
+    expect(evidence.body.title).toBe("Chapter Three: Evidence");
+    expect(evidence.body.blocks).toEqual([
+      {
+        position: 1,
+        kind: "sentence",
+        originalText: "The community kept three rules:",
+        ipaText: null,
+        translationText: null,
+      },
+      {
+        position: 2,
+        kind: "sentence",
+        originalText: "Write the failing test first.",
+        ipaText: null,
+        translationText: null,
+      },
+      {
+        position: 3,
+        kind: "sentence",
+        originalText: "Refactor with the suite green.",
+        ipaText: null,
+        translationText: null,
+      },
+      {
+        position: 4,
+        kind: "sentence",
+        originalText: "Keep the list short.",
+        ipaText: null,
+        translationText: null,
+      },
+      {
+        position: 5,
+        kind: "sentence",
+        originalText:
+          "A test that passes the moment it is written has told you nothing.",
+        ipaText: null,
+        translationText: null,
+      },
+      {
+        position: 6,
+        kind: "sentence",
+        originalText: "It merely records the code as it is.",
+        ipaText: null,
+        translationText: null,
       },
     ]);
   });

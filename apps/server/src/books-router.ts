@@ -1,9 +1,24 @@
 import { Router } from "express";
 import multer from "multer";
 import type Database from "better-sqlite3";
+import { isMarkdownFilename } from "./import/markdown.js";
 import { importMarkdownBook } from "./import/pipeline.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+type BookRow = {
+  id: number;
+  title: string;
+  format: string;
+  created_at: string;
+};
+
+const toBookJson = (row: BookRow) => ({
+  id: row.id,
+  title: row.title,
+  format: row.format,
+  createdAt: row.created_at,
+});
 
 export function createBooksRouter(database: Database.Database): Router {
   const router = Router();
@@ -27,20 +42,15 @@ export function createBooksRouter(database: Database.Database): Router {
     },
     (request, response) => {
       const file = request.file;
-      if (!file || !/\.(md|markdown)$/i.test(file.originalname)) {
+      if (!file || !isMarkdownFilename(file.originalname)) {
         response.status(415).json({
           error: "only .md or .markdown files are accepted",
         });
         return;
       }
-      const title =
-        typeof request.body?.title === "string"
-          ? request.body.title
-          : undefined;
       const book = importMarkdownBook(database, {
         filename: file.originalname,
         content: file.buffer.toString("utf8"),
-        title,
       });
       response.status(201).json(book);
     }
@@ -49,20 +59,8 @@ export function createBooksRouter(database: Database.Database): Router {
   router.get("/", (_request, response) => {
     const rows = database
       .prepare("SELECT id, title, format, created_at FROM books ORDER BY id")
-      .all() as {
-      id: number;
-      title: string;
-      format: string;
-      created_at: string;
-    }[];
-    response.json({
-      books: rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        format: row.format,
-        createdAt: row.created_at,
-      })),
-    });
+      .all() as BookRow[];
+    response.json({ books: rows.map(toBookJson) });
   });
 
   router.get("/:id", (request, response) => {
@@ -73,9 +71,7 @@ export function createBooksRouter(database: Database.Database): Router {
     }
     const book = database
       .prepare("SELECT id, title, format, created_at FROM books WHERE id = ?")
-      .get(id) as
-      | { id: number; title: string; format: string; created_at: string }
-      | undefined;
+      .get(id) as BookRow | undefined;
     if (!book) {
       response.status(404).json({ error: "book not found" });
       return;
@@ -85,13 +81,7 @@ export function createBooksRouter(database: Database.Database): Router {
         "SELECT position, title, level FROM chapters WHERE book_id = ? ORDER BY position"
       )
       .all(id);
-    response.json({
-      id: book.id,
-      title: book.title,
-      format: book.format,
-      createdAt: book.created_at,
-      chapters,
-    });
+    response.json({ ...toBookJson(book), chapters });
   });
 
   router.get("/:id/chapters/:chapter", (request, response) => {

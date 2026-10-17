@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { renderMarkdownToChapters } from "./markdown.js";
+import { MARKDOWN_EXTENSION, renderMarkdownToChapters } from "./markdown.js";
 import { splitSentences } from "./sentences.js";
 
 export type ImportedBook = {
@@ -14,15 +14,14 @@ export type ImportedBook = {
 // with the annotation tickets.
 export function importMarkdownBook(
   database: Database.Database,
-  upload: { filename: string; content: string; title?: string }
+  upload: { filename: string; content: string }
 ): ImportedBook {
   const chapters = renderMarkdownToChapters(upload.content);
+  // Prefer the book's own first heading, then the file name.
+  const fileTitle = upload.filename.replace(MARKDOWN_EXTENSION, "").trim();
   const title =
-    normalizeTitle(upload.title) ??
-    // Prefer the book's own first heading, then the file name.
     chapters.find((chapter) => chapter.level !== null)?.title ??
-    baseName(upload.filename) ??
-    "Untitled";
+    (fileTitle || "Untitled");
   const createdAt = new Date().toISOString();
 
   const importBook = database.transaction((): number => {
@@ -65,14 +64,4 @@ export function importMarkdownBook(
   });
 
   return { id: importBook(), title, format: "markdown", createdAt };
-}
-
-function normalizeTitle(title: string | undefined): string | null {
-  const trimmed = title?.trim();
-  return trimmed ? trimmed : null;
-}
-
-function baseName(filename: string): string | null {
-  const withoutExtension = filename.replace(/\.(md|markdown)$/i, "");
-  return withoutExtension || null;
 }

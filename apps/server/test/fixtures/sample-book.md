@@ -19,3 +19,14 @@ npm test -- --filter core
 ```
 
 Reading more: [the official handbook](https://example.com/handbook). It is free.
+
+## Chapter Three: Evidence
+
+The community kept three rules:
+
+- Write the failing test first.
+- Refactor with the suite green.
+- Keep the list short.
+
+> A test that passes the moment it is written has told you nothing. It merely
+> records the code as it is.

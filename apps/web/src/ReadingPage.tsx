@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
+import { fetchJson } from "./api";
 import { ReadingView, type Block } from "./ReadingView";
 
 type TableOfContents = {
@@ -13,12 +14,6 @@ type ChapterContent = {
   title: string;
   blocks: Block[];
 };
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`${url} → ${response.status}`);
-  return (await response.json()) as T;
-}
 
 export function ReadingPage() {
   const { id, chapter } = useParams();
