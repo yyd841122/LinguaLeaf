@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import type Database from "better-sqlite3";
+import type { Dictionary } from "./dict/dictionary.js";
 import { isMarkdownFilename } from "./import/markdown.js";
 import { importMarkdownBook } from "./import/pipeline.js";
 
@@ -20,7 +21,10 @@ const toBookJson = (row: BookRow) => ({
   createdAt: row.created_at,
 });
 
-export function createBooksRouter(database: Database.Database): Router {
+export function createBooksRouter(
+  database: Database.Database,
+  dictionary: Dictionary
+): Router {
   const router = Router();
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -48,10 +52,14 @@ export function createBooksRouter(database: Database.Database): Router {
         });
         return;
       }
-      const book = importMarkdownBook(database, {
-        filename: file.originalname,
-        content: file.buffer.toString("utf8"),
-      });
+      const book = importMarkdownBook(
+        database,
+        {
+          filename: file.originalname,
+          content: file.buffer.toString("utf8"),
+        },
+        dictionary
+      );
       response.status(201).json(book);
     }
   );

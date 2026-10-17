@@ -1,8 +1,10 @@
 import express from "express";
 import type Database from "better-sqlite3";
+import type { Dictionary } from "./dict/dictionary.js";
 import { createBooksRouter } from "./books-router.js";
+import { createLookupRouter } from "./dict/lookup-router.js";
 
-export function createApp(database: Database.Database) {
+export function createApp(database: Database.Database, dictionary: Dictionary) {
   const app = express();
   app.disable("x-powered-by");
 
@@ -11,7 +13,9 @@ export function createApp(database: Database.Database) {
     response.json({ status: "ok" });
   });
 
-  app.use("/api/books", createBooksRouter(database));
+  app.use("/api/books", createBooksRouter(database, dictionary));
+
+  app.use("/api/lookup", createLookupRouter(dictionary));
 
   // Keep unknown API requests out of the frontend's SPA fallback.
   app.use("/api", (_request, response) => {

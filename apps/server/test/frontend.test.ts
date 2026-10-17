@@ -7,6 +7,7 @@ import type Database from "better-sqlite3";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../src/app.js";
+import { openDictionary } from "../src/dict/dictionary.js";
 import { openDatabase } from "../src/database.js";
 import { attachFrontend } from "../src/frontend.js";
 
@@ -35,7 +36,7 @@ describe("frontend hosting through the HTTP API seam", () => {
   });
 
   it("serves the built app, assets, chapter entry and API on one server", async () => {
-    const app = createApp(database);
+    const app = createApp(database, openDictionary(":memory:"));
     const server = createServer(app);
     await attachFrontend(app, server, {
       development: false,
@@ -60,7 +61,7 @@ describe("frontend hosting through the HTTP API seam", () => {
   });
 
   it("serves Vite HTML and the API through Express in development", async () => {
-    const app = createApp(database);
+    const app = createApp(database, openDictionary(":memory:"));
     const server = createServer(app);
     const closeFrontend = await attachFrontend(app, server, {
       development: true,

@@ -11,6 +11,26 @@ npm run dev
 
 打开 <http://localhost:3000>。Express 同一进程挂载 Vite，API、前端与 HMR 共用端口 3000；通过电脑的局域网 IP 和同一端口也可访问。修改前端会热更新，修改服务端会自动重启。
 
+## 词库导入（音标行与查词 API 的数据源）
+
+服务端的音标与查词全部走本地词库 `.data/ecdict.sqlite`（可用环境变量 `ECDICT_PATH` 改路径），由两个可重复执行的导入脚本灌入：
+
+1. **ECDICT**（词性、中文释义、词形还原索引）——下载 [ECDICT 1.0.28](https://github.com/skywind3000/ECDICT/releases/tag/1.0.28) 的 `ecdict-sqlite-28.zip`，解压得到 `stardict.db`：
+
+   ```sh
+   npm run dict:import-ecdict -- /path/to/stardict.db
+   ```
+
+2. **ipa-dict en_US**（美式 IPA，125k 词条，MIT）——下载 [ipa-dict](https://github.com/open-dict-data/ipa-dict) 仓库的 `data/en_US.txt`：
+
+   ```sh
+   npm run dict:import-ipa-dict -- /path/to/en_US.txt
+   ```
+
+音标行的解析顺序：ipa-dict 美式音标 → 词形还原后再查 → ECDICT 自带 phonetic（英式为主）兜底；都查不到的词在音标行留空。ECDICT 官方数据只有英式为主的单一 `phonetic` 字段，故美式 IPA 以 ipa-dict 为主源（2026-10-17 决策）。两个脚本都可重复执行（幂等），重跑不会产生重复词条。
+
+`GET /api/lookup/:word` 在词库就绪后返回 `{ word, lemma, ipa, pos, translation }`；词库为空或查不到时返回 404。
+
 可复制 `.env.example` 为 `.env`，配置 `HOST`、`PORT`、`DATABASE_PATH`；默认监听 `0.0.0.0:3000`，数据库保存在仓库根目录的 `.data/lingualeaf.sqlite`，相对数据库路径以仓库根目录为基准。`GET /api/health` 检查 SQLite 连接并返回 `{"status":"ok"}`。
 
 ```sh

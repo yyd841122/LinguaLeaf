@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { createApp } from "./app.js";
+import { openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
 
@@ -18,7 +19,19 @@ const runtimeRoot = development
 const database = openDatabase(
   resolve(runtimeRoot, process.env.DATABASE_PATH ?? ".data/lingualeaf.sqlite")
 );
-const app = createApp(database);
+// The dictionary lives next to the book database (.data at the runtime
+// root, ECDICT_PATH overrides). A missing file means an empty dictionary
+// (lookups miss, IPA lines come out blank) until the dict:import-* scripts
+// have run.
+const dictionary = openDictionary(
+  resolve(runtimeRoot, process.env.ECDICT_PATH ?? ".data/ecdict.sqlite")
+);
+if (!dictionary.prepare("SELECT 1 FROM dict_words LIMIT 1").get()) {
+  console.warn(
+    "Dictionary is empty — run the dict:import-* scripts (see README) to fill the IPA line and lookup API."
+  );
+}
+const app = createApp(database, dictionary);
 const server = createServer(app);
 let closeFrontend: CloseFrontend = async () => {};
 
@@ -57,6 +70,7 @@ try {
       process.exitCode = 1;
     } finally {
       database.close();
+      dictionary.close();
       clearTimeout(timeout);
     }
   };

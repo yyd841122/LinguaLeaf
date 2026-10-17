@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
 
-// Schema for the import pipeline. `ipa_text` / `translation_text` stay NULL
-// until the annotation tickets (03/04) fill them; NULL renders as an empty
+// Schema for the import pipeline. `ipa_text` is filled at import time from
+// the local dictionary (ticket 03); `translation_text` stays NULL until the
+// translation ticket (04) fills it. Either way NULL renders as an empty
 // placeholder line in the reading view.
 export function migrateSchema(database: Database.Database): void {
   database.exec(`

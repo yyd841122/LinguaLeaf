@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "dict:import-ecdict": "node --import tsx src/dict/import-ecdict.ts",
+    "dict:import-ipa-dict": "node --import tsx src/dict/import-ipa-dict.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

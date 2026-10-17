@@ -5,6 +5,8 @@ import type { Express } from "express";
 import type Database from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
+import { openDictionary } from "../src/dict/dictionary.js";
+import { createFixtureDictionary } from "./fixtures/dictionary.js";
 
 const sampleBookPath = fileURLToPath(
   new URL("./fixtures/sample-book.md", import.meta.url)
@@ -12,14 +14,17 @@ const sampleBookPath = fileURLToPath(
 
 describe("Markdown import through the HTTP API seam", () => {
   let database: Database.Database;
+  let dictionary: ReturnType<typeof openDictionary>;
   let app: Express;
 
   beforeEach(() => {
     database = openDatabase(":memory:");
-    app = createApp(database);
+    dictionary = createFixtureDictionary();
+    app = createApp(database, dictionary);
   });
   afterEach(() => {
     database.close();
+    dictionary.close();
   });
 
   async function importSampleBook() {
@@ -82,7 +87,7 @@ describe("Markdown import through the HTTP API seam", () => {
         kind: "sentence",
         originalText:
           "A short sample used by LinguaLeaf's API seam tests and manual demos.",
-        ipaText: null,
+        ipaText: "ə",
         translationText: null,
       },
     ]);
@@ -97,28 +102,28 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 1,
         kind: "sentence",
         originalText: "Mr. Gupta woke early.",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
       {
         position: 2,
         kind: "sentence",
         originalText: "The morning was quiet, and the sea was calm.",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
       {
         position: 3,
         kind: "sentence",
         originalText: "He wrote a failing test first.",
-        ipaText: null,
+        ipaText: "hi roʊt ə ˈfeɪlɪŋ test fɜːst",
         translationText: null,
       },
       {
         position: 4,
         kind: "sentence",
         originalText: "Then he made it pass!",
-        ipaText: null,
+        ipaText: "hi",
         translationText: null,
       },
     ]);
@@ -132,7 +137,7 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 1,
         kind: "sentence",
         originalText: "Run the whole suite with:",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
       { position: 2, kind: "code", originalText: "npm test -- --filter core" },
@@ -156,28 +161,28 @@ describe("Markdown import through the HTTP API seam", () => {
         position: 1,
         kind: "sentence",
         originalText: "The community kept three rules:",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
       {
         position: 2,
         kind: "sentence",
         originalText: "Write the failing test first.",
-        ipaText: null,
+        ipaText: "raɪt  ˈfeɪlɪŋ test fɜːst",
         translationText: null,
       },
       {
         position: 3,
         kind: "sentence",
         originalText: "Refactor with the suite green.",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
       {
         position: 4,
         kind: "sentence",
         originalText: "Keep the list short.",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
       {
@@ -185,14 +190,14 @@ describe("Markdown import through the HTTP API seam", () => {
         kind: "sentence",
         originalText:
           "A test that passes the moment it is written has told you nothing.",
-        ipaText: null,
+        ipaText: "ə test       raɪt",
         translationText: null,
       },
       {
         position: 6,
         kind: "sentence",
         originalText: "It merely records the code as it is.",
-        ipaText: null,
+        ipaText: "",
         translationText: null,
       },
     ]);
@@ -245,6 +250,93 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 });
 
+describe("GET /api/lookup/:word", () => {
+  let database: Database.Database;
+  let dictionary: ReturnType<typeof openDictionary>;
+  let app: Express;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    dictionary = createFixtureDictionary();
+    app = createApp(database, dictionary);
+  });
+  afterEach(() => {
+    database.close();
+    dictionary.close();
+  });
+
+  it("returns IPA, part of speech, and translation for a common word", async () => {
+    const response = await request(app).get("/api/lookup/book");
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      word: "book",
+      lemma: null,
+      ipa: "bʊk",
+      pos: "n. v.",
+      translation: "n. 书, 簿, 账册\nv. 预订, 登记",
+    });
+  });
+
+  it("resolves inflected forms back to their lemma", async () => {
+    const wrote = await request(app).get("/api/lookup/wrote");
+    expect(wrote.status).toBe(200);
+    expect(wrote.body).toEqual({
+      word: "wrote",
+      lemma: "write",
+      ipa: "roʊt",
+      pos: "v.",
+      translation: "v. 写, 作曲, 写信",
+    });
+    // "books" has its own American IPA entry: /s/ stays on the plural.
+    const books = await request(app).get("/api/lookup/books");
+    expect(books.status).toBe(200);
+    expect(books.body).toMatchObject({ lemma: "book", ipa: "bʊks" });
+  });
+
+  it("ignores case and surrounding punctuation from the path", async () => {
+    const response = await request(app).get(
+      `/api/lookup/${encodeURIComponent("Book,")}`
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ word: "book" });
+  });
+
+  it("returns 404 for words no source knows", async () => {
+    const response = await request(app).get("/api/lookup/iguana");
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "word not found" });
+  });
+});
+
+describe("import with an empty dictionary", () => {
+  let database: Database.Database;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+  });
+  afterEach(() => {
+    database.close();
+  });
+
+  it("still imports, with the IPA line generated but entirely blank", async () => {
+    const app = createApp(database, openDictionary(":memory:"));
+    const sampleBookPath = fileURLToPath(
+      new URL("./fixtures/sample-book.md", import.meta.url)
+    );
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(201);
+    const chapter = await request(app).get(
+      `/api/books/${created.body.id}/chapters/2`
+    );
+    expect(chapter.status).toBe(200);
+    for (const block of chapter.body.blocks) {
+      expect(block.ipaText).toBe("");
+    }
+  });
+});
+
 describe("HTTP API seam", () => {
   let database: Database.Database;
 
@@ -256,14 +348,18 @@ describe("HTTP API seam", () => {
   });
 
   it("reports a healthy server with a real SQLite connection", async () => {
-    const response = await request(createApp(database)).get("/api/health");
+    const response = await request(
+      createApp(database, openDictionary(":memory:"))
+    ).get("/api/health");
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("application/json");
     expect(response.body).toEqual({ status: "ok" });
   });
 
   it("returns an API 404 instead of the frontend HTML", async () => {
-    const response = await request(createApp(database)).get("/api/missing");
+    const response = await request(
+      createApp(database, openDictionary(":memory:"))
+    ).get("/api/missing");
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: "API route not found" });
   });
