@@ -1,8 +1,10 @@
 import MarkdownIt from "markdown-it";
 import {
+  deriveBookTitle,
   extractChaptersFromHtml,
   type ExtractedChapter,
 } from "./extract-html.js";
+import type { PreparedBook } from "./pipeline.js";
 
 const markdown = new MarkdownIt({ html: false, typographer: false });
 
@@ -16,8 +18,17 @@ export function isMarkdownFilename(filename: string): boolean {
 // html:false keeps raw HTML in uploaded books inert (escaped, never executed);
 // the reading view re-renders only extracted plain text. Markdown joins the
 // same extraction path as EPUB (spec: one pipeline past this point).
-export function renderMarkdownToChapters(
+export function readMarkdownBook(
+  filename: string,
   markdownText: string
-): ExtractedChapter[] {
-  return extractChaptersFromHtml(markdown.render(markdownText));
+): PreparedBook {
+  const chapters: ExtractedChapter[] = extractChaptersFromHtml(
+    markdown.render(markdownText)
+  );
+  return {
+    // No metadata rung: the book's own first heading, then the file name.
+    title: deriveBookTitle(null, chapters, filename, MARKDOWN_EXTENSION),
+    format: "markdown",
+    chapters,
+  };
 }

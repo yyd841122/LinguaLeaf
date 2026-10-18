@@ -15,7 +15,16 @@ export type PassthroughBlock = {
   originalText: string;
 };
 
-export type Block = SentenceBlock | PassthroughBlock;
+// EPUB/Markdown illustrations become placeholder blocks at their reading
+// position (ticket 07): the alt text captions the placeholder, the image
+// bytes themselves are not rendered.
+export type ImageBlock = {
+  position: number;
+  kind: "image";
+  originalText: string;
+};
+
+export type Block = SentenceBlock | PassthroughBlock | ImageBlock;
 
 export type ChapterContent = {
   position: number;
@@ -127,6 +136,18 @@ function BlockView({
       <pre className="code-block" data-position={block.position}>
         <code>{block.originalText}</code>
       </pre>
+    );
+  }
+  if (block.kind === "image") {
+    return (
+      <figure className="image-block" data-position={block.position}>
+        <span className="image-placeholder" aria-hidden="true">
+          🖼
+        </span>
+        {block.originalText ? (
+          <figcaption>{block.originalText}</figcaption>
+        ) : null}
+      </figure>
     );
   }
   return (

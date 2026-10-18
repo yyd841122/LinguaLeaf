@@ -3,13 +3,29 @@ import type { Dictionary } from "../dict/dictionary.js";
 import { buildIpaSlots } from "../dict/ipa-line.js";
 import { translateChapters } from "../translate/batch.js";
 import type { Translator } from "../translate/translator.js";
-import { MARKDOWN_EXTENSION, renderMarkdownToChapters } from "./markdown.js";
+import type { ExtractedChapter } from "./extract-html.js";
 import { splitSentences } from "./sentences.js";
+
+export type BookFormat = "markdown" | "epub";
+
+// The block kinds the data model stores — mirrors the blocks.kind CHECK in
+// schema.ts (SQL cannot import it) and the cast in books-router.ts; adding
+// a kind means touching this union and the schema CHECK together.
+export type BlockKind = "sentence" | "code" | "raw" | "image";
+
+// What the format-specific front halves (markdown.ts, epub.ts) hand to the
+// shared import: extracted chapters plus the book title. Everything past
+// this type — sentence splitting, IPA, translation, insert — is one path.
+export type PreparedBook = {
+  title: string;
+  format: BookFormat;
+  chapters: ExtractedChapter[];
+};
 
 export type ImportedBook = {
   id: number;
   title: string;
-  format: "markdown";
+  format: BookFormat;
   createdAt: string;
 };
 
@@ -17,32 +33,27 @@ export type ImportedBook = {
 // pass over the extracted chapters so the translation alignment below can
 // never drift from what gets inserted.
 type BlockRow = {
-  kind: "sentence" | "code" | "raw";
+  kind: BlockKind;
   text: string;
   ipaSlots: string[] | null;
   ipaText: string | null;
   translation: string | null;
 };
 
-// Runs the whole import: extraction, sentence splitting, per-word IPA
-// lookups against the local dictionary (all fast), plus — when a
-// translator is configured — batched translation of every sentence before
-// the insert transaction (ticket 04; spec ADR: 标注在导入时一次性生成).
-// Like an empty dictionary leaves IPA lines blank, a missing translator
-// leaves translation lines empty instead of failing the import; sentences
-// whose translation finally fails store NULL (spec: 单句失败不阻塞整本导入).
-export async function importMarkdownBook(
+// Runs the whole import: sentence splitting, per-word IPA lookups against
+// the local dictionary (all fast), plus — when a translator is configured —
+// batched translation of every sentence before the insert transaction
+// (ticket 04; spec ADR: 标注在导入时一次性生成). Like an empty dictionary
+// leaves IPA lines blank, a missing translator leaves translation lines empty
+// instead of failing the import; sentences whose translation finally fails
+// store NULL (spec: 单句失败不阻塞整本导入).
+export async function importBook(
   database: Database.Database,
-  upload: { filename: string; content: string },
+  book: PreparedBook,
   dictionary: Dictionary,
   translator?: Translator | null
 ): Promise<ImportedBook> {
-  const chapters = renderMarkdownToChapters(upload.content);
-  // Prefer the book's own first heading, then the file name.
-  const fileTitle = upload.filename.replace(MARKDOWN_EXTENSION, "").trim();
-  const title =
-    chapters.find((chapter) => chapter.level !== null)?.title ??
-    (fileTitle || "Untitled");
+  const { title, format, chapters } = book;
   const createdAt = new Date().toISOString();
 
   const chapterBlocks: BlockRow[][] = chapters.map((chapter) => {
@@ -59,6 +70,16 @@ export async function importMarkdownBook(
             translation: null,
           });
         }
+      } else if (item.kind === "image") {
+        // Images stay placeholder blocks in their reading position; the
+        // alt text rides in original_text (ticket 07).
+        blocks.push({
+          kind: "image",
+          text: item.text,
+          ipaSlots: null,
+          ipaText: null,
+          translation: null,
+        });
       } else {
         // Code and passthrough items are never annotated (spec: 代码块与
         // 链接不做标注), so their annotation columns stay NULL.
@@ -93,13 +114,13 @@ export async function importMarkdownBook(
     }
   });
 
-  const importBook = database.transaction((): number => {
+  const importBookRow = database.transaction((): number => {
     const bookId = Number(
       database
         .prepare(
           "INSERT INTO books (title, format, created_at) VALUES (?, ?, ?)"
         )
-        .run(title, "markdown", createdAt).lastInsertRowid
+        .run(title, format, createdAt).lastInsertRowid
     );
     const insertChapter = database.prepare(
       "INSERT INTO chapters (book_id, position, title, level) VALUES (?, ?, ?, ?)"
@@ -133,5 +154,5 @@ export async function importMarkdownBook(
     return bookId;
   });
 
-  return { id: importBook(), title, format: "markdown", createdAt };
+  return { id: importBookRow(), title, format, createdAt };
 }

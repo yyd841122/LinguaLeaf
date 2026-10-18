@@ -247,11 +247,11 @@ describe("Markdown import through the HTTP API seam", () => {
     );
   });
 
-  it("rejects uploads that are not markdown and leaves the shelf empty", async () => {
+  it("rejects uploads that are neither markdown nor epub and leaves the shelf empty", async () => {
     const response = await request(app)
       .post("/api/books")
       .attach("file", Buffer.from("<html>not a book</html>"), {
-        filename: "book.epub",
+        filename: "book.txt",
       });
     expect(response.status).toBe(415);
     const shelf = await request(app).get("/api/books");

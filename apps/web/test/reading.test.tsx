@@ -117,6 +117,46 @@ it("shows code blocks and link paragraphs verbatim without sentence rows", () =>
   expect(raw?.querySelector(".original-line")).toBeNull();
 });
 
+it("renders an image block as a placeholder in its reading position", () => {
+  render(
+    <ReadingView
+      chapter={{
+        position: 2,
+        title: "Chapter One: Pictures",
+        blocks: [
+          {
+            position: 1,
+            kind: "sentence",
+            originalText: "A picture sits between two sentences.",
+            ipaSlots: null,
+            ipaText: null,
+            translationText: null,
+          },
+          { position: 2, kind: "image", originalText: "A red dot" },
+          {
+            position: 3,
+            kind: "sentence",
+            originalText: "The story continues after the picture.",
+            ipaSlots: null,
+            ipaText: null,
+            translationText: null,
+          },
+        ],
+      }}
+    />
+  );
+
+  const children = screen
+    .getByRole("region", { name: "Chapter One: Pictures" })
+    .querySelectorAll(".blocks > *");
+  expect(children).toHaveLength(3);
+  const image = children[1];
+  expect(image).toHaveClass("image-block");
+  // The alt text is the placeholder's caption; no annotation lines exist.
+  expect(image).toHaveTextContent("A red dot");
+  expect(image?.querySelector(".original-line, .ipa-line")).toBeNull();
+});
+
 it("ipa size control steps one pixel per click and clamps at the bounds", () => {
   const onChange = vi.fn();
   const { rerender } = render(<IpaSizeControl size={12} onChange={onChange} />);

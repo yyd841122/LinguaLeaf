@@ -2,11 +2,17 @@ import { Router, json, type Request } from "express";
 import multer from "multer";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
-import { isMarkdownFilename } from "./import/markdown.js";
+import { EpubParseError, isEpubFilename, readEpubBook } from "./import/epub.js";
+import { isMarkdownFilename, readMarkdownBook } from "./import/markdown.js";
 import type { Translator } from "./translate/translator.js";
-import { importMarkdownBook } from "./import/pipeline.js";
+import { importBook, type BlockKind } from "./import/pipeline.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+
+// Shared body of both 415 branches of the upload handler.
+const UNSUPPORTED_FORMAT = {
+  error: "only .epub, .md or .markdown files are accepted",
+};
 
 type BookRow = {
   id: number;
@@ -63,21 +69,35 @@ export function createBooksRouter(
     },
     async (request, response) => {
       const file = request.file;
-      if (!file || !isMarkdownFilename(file.originalname)) {
-        response.status(415).json({
-          error: "only .md or .markdown files are accepted",
-        });
+      if (!file) {
+        response.status(415).json(UNSUPPORTED_FORMAT);
         return;
       }
-      const book = await importMarkdownBook(
-        database,
-        {
-          filename: file.originalname,
-          content: file.buffer.toString("utf8"),
-        },
-        dictionary,
-        translator
-      );
+      // Format front halves: bytes → extracted chapters. A broken EPUB is a
+      // client error (400); everything shared runs past this point.
+      let prepared;
+      try {
+        if (isEpubFilename(file.originalname)) {
+          prepared = await readEpubBook(file.buffer, file.originalname);
+        } else if (isMarkdownFilename(file.originalname)) {
+          prepared = readMarkdownBook(
+            file.originalname,
+            file.buffer.toString("utf8")
+          );
+        } else {
+          response.status(415).json(UNSUPPORTED_FORMAT);
+          return;
+        }
+      } catch (error) {
+        if (error instanceof EpubParseError) {
+          response
+            .status(400)
+            .json({ error: `invalid EPUB: ${error.message}` });
+          return;
+        }
+        throw error;
+      }
+      const book = await importBook(database, prepared, dictionary, translator);
       response.status(201).json(book);
     }
   );
@@ -230,7 +250,7 @@ export function createBooksRouter(
           }
         : {
             position: row.position,
-            kind: row.kind as "code" | "raw",
+            kind: row.kind as Exclude<BlockKind, "sentence">,
             originalText: row.original_text,
           }
     );

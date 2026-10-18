@@ -49,10 +49,15 @@ export function BookshelfPage() {
       );
       setBooks(refreshed);
     } catch (error) {
+      // The server's status families: 415 unknown extension (pick another
+      // file), 400 unparseable EPUB (retrying cannot fix the file), others
+      // genuinely worth a retry.
       setError(
         error instanceof ApiError && error.status === 415
-          ? "导入失败：只接受 .md 或 .markdown 文件（≤20MB）。"
-          : "导入失败，请重试。"
+          ? "导入失败：只接受 .epub、.md 或 .markdown 文件（≤20MB）。"
+          : error instanceof ApiError && error.status === 400
+            ? "导入失败：文件无法解析，可能已损坏。"
+            : "导入失败，请重试。"
       );
     } finally {
       setImporting(false);
@@ -89,8 +94,13 @@ export function BookshelfPage() {
 
       <form onSubmit={handleSubmit}>
         <label>
-          导入 Markdown 书籍
-          <input type="file" name="file" accept=".md,.markdown" required />
+          导入 EPUB / Markdown 书籍
+          <input
+            type="file"
+            name="file"
+            accept=".epub,.md,.markdown"
+            required
+          />
         </label>
         <button type="submit" disabled={importing}>
           {importing ? "导入中…" : "导入"}
