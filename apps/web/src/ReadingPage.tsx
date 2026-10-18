@@ -15,7 +15,8 @@ import {
   topmostVisibleBlock,
   type ReadingProgress,
 } from "./readingProgress";
-import { ReadingView, type Block } from "./ReadingView";
+import { ReadingView, type Block, type WordClick } from "./ReadingView";
+import { WordLookupPopup } from "./WordLookupPopup";
 
 type TableOfContents = {
   id: number;
@@ -55,6 +56,13 @@ export function ReadingPage() {
   const [translationSize, setTranslationSize] = useTranslationSize();
   const [showIpa, setShowIpa] = useShowIpa();
   const [showTranslation, setShowTranslation] = useShowTranslation();
+  // The word-lookup popup (ticket 06): which word was clicked, and where to
+  // anchor it. Clicking another word re-anchors; leaving the chapter closes.
+  const [lookup, setLookup] = useState<WordClick | null>(null);
+
+  useEffect(() => {
+    setLookup(null);
+  }, [bookId, chapterNumber]);
 
   useEffect(() => {
     if (!Number.isInteger(bookId) || !Number.isInteger(chapterNumber)) {
@@ -265,7 +273,11 @@ export function ReadingPage() {
         translationSize={translationSize}
         showIpa={showIpa}
         showTranslation={showTranslation}
+        onWordClick={setLookup}
       />
+      {lookup ? (
+        <WordLookupPopup click={lookup} onClose={() => setLookup(null)} />
+      ) : null}
       <nav className="chapter-nav" aria-label="章节导航">
         {chapterNumber > 1 && (
           <Link to={`/book/${bookId}/${chapterNumber - 1}`}>← 上一章</Link>
