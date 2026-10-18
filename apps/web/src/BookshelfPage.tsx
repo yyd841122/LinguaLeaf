@@ -55,6 +55,10 @@ export function BookshelfPage() {
   const [books, setBooks] = useState<BookSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  // Set while an import is in flight but the server has stopped answering
+  // the polls — the shelf's 「导入中」 rows would otherwise sit there
+  // silently after a crash or a failed restart.
+  const [serverUnreachable, setServerUnreachable] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,9 +83,15 @@ export function BookshelfPage() {
     if (!hasImporting) return;
     const interval = setInterval(() => {
       fetchJson<{ books: BookSummary[] }>("/api/books")
-        .then((data) => setBooks(data.books))
+        .then((data) => {
+          setBooks(data.books);
+          setServerUnreachable(false);
+        })
         .catch(() => {
-          // Transient: keep the shelf as-is; the next tick retries.
+          // Keep the shelf as-is; the next tick retries. But say the
+          // connection is gone — a stale 「导入中」 row alone would hide
+          // the outage.
+          setServerUnreachable(true);
         });
     }, IMPORT_POLL_MS);
     return () => clearInterval(interval);
@@ -161,6 +171,11 @@ export function BookshelfPage() {
       {error && (
         <p role="alert" className="error">
           {error}
+        </p>
+      )}
+      {serverUnreachable && hasImporting && (
+        <p role="alert" className="error">
+          无法连接服务端，导入进度可能已过期——请确认服务端正在运行。
         </p>
       )}
 

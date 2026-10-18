@@ -96,26 +96,26 @@ async function uploadFile(name: string) {
 }
 
 describe("BookshelfPage import states (ticket 08)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     vi.useFakeTimers();
     shelfState = { books: [] };
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url.endsWith("/api/books") && method === "POST") {
-          // The POST answers 202 with the importing row; the shelf refetch
-          // right after is what the page actually renders.
-          shelfState.books = [importingBook];
-          return jsonResponse(202, importingBook);
-        }
-        if (url.endsWith("/api/books")) {
-          return jsonResponse(200, shelfState);
-        }
-        throw new Error(`unexpected fetch: ${method} ${url}`);
-      })
-    );
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/books") && method === "POST") {
+        // The POST answers 202 with the importing row; the shelf refetch
+        // right after is what the page actually renders.
+        shelfState.books = [importingBook];
+        return jsonResponse(202, importingBook);
+      }
+      if (url.endsWith("/api/books")) {
+        return jsonResponse(200, shelfState);
+      }
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
   });
 
   afterEach(() => {
@@ -187,6 +187,36 @@ describe("BookshelfPage import states (ticket 08)", () => {
     shelfState.books = [readyBook];
     await actAdvance(2000);
     expect(screen.getByRole("button", { name: "导入" })).not.toBeDisabled();
+  });
+
+  it("warns when the server is unreachable while a book is importing", async () => {
+    renderShelf();
+    await uploadFile("held-book.md");
+    expect(screen.queryByText(/无法连接服务端/)).toBeNull();
+
+    // The dev server died: every poll fails silently into a warning, so
+    // the stale 「导入中」 row is not the only thing on screen.
+    fetchMock.mockImplementation(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    await actAdvance(2000);
+    expect(screen.getByText(/无法连接服务端/)).toBeTruthy();
+
+    // The server returns: the next poll clears the warning and lands the
+    // settled state.
+    shelfState.books = [readyBook];
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.endsWith("/api/books")) {
+          return jsonResponse(200, shelfState);
+        }
+        throw new Error(`unexpected fetch: ${String(init?.method)} ${url}`);
+      }
+    );
+    await actAdvance(2000);
+    expect(screen.queryByText(/无法连接服务端/)).toBeNull();
+    expect(screen.getByRole("link", { name: "A Finished Book" })).toBeTruthy();
   });
 
   it("shows a failed import with its reason and keeps delete available", async () => {
