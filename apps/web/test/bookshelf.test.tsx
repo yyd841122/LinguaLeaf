@@ -175,6 +175,20 @@ describe("BookshelfPage import states (ticket 08)", () => {
     expect(screen.getByText(/导入中 · 处理中/)).toBeTruthy();
   });
 
+  it("disables the import button while any book is translating", async () => {
+    renderShelf();
+    expect(screen.getByRole("button", { name: "导入" })).not.toBeDisabled();
+
+    // The POST returns in milliseconds; the button stays disabled for the
+    // whole background import, not just the request.
+    await uploadFile("held-book.md");
+    expect(screen.getByRole("button", { name: "导入中…" })).toBeDisabled();
+
+    shelfState.books = [readyBook];
+    await actAdvance(2000);
+    expect(screen.getByRole("button", { name: "导入" })).not.toBeDisabled();
+  });
+
   it("shows a failed import with its reason and keeps delete available", async () => {
     renderShelf();
     await uploadFile("held-book.md");

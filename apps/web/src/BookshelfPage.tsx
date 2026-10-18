@@ -152,8 +152,10 @@ export function BookshelfPage() {
             required
           />
         </label>
-        <button type="submit" disabled={importing}>
-          {importing ? "导入中…" : "导入"}
+        {/* Disabled for the whole import lifecycle, not just the POST:
+            a translating book means the shelf is still busy. */}
+        <button type="submit" disabled={importing || hasImporting}>
+          {importing || hasImporting ? "导入中…" : "导入"}
         </button>
       </form>
       {error && (
