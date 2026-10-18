@@ -9,6 +9,12 @@ export const SENTENCES_PER_BATCH = 20;
 // it and leaves its translation empty (spec: 最终翻译失败的句子译文留空).
 export const MAX_TRANSLATION_ROUNDS = 3;
 
+// Called after every batch request with (batches processed, sentences
+// total); the import task turns it into the shelf's percent progress
+// (ticket 08). Slots — not settled translations — are counted, so the
+// number only ever moves forward, retry rounds included.
+export type TranslationProgress = (done: number, total: number) => void;
+
 // One aligned batch result: a translation per input sentence, null where
 // the translator could not deliver (missing, blank, or out of range).
 function alignBatch(
@@ -30,12 +36,14 @@ function alignBatch(
 // round are the sentences whose translation the import gives up on.
 export async function translateSentences(
   translator: Translator,
-  sentences: string[]
+  sentences: string[],
+  onProgress?: TranslationProgress
 ): Promise<(string | null)[]> {
   const translations: (string | null)[] = sentences.map(() => null);
   // The retry queue carries each sentence with its position, so batches
   // never re-derive sentences from indices.
   let pending = sentences.map((sentence, index) => ({ index, sentence }));
+  let done = 0;
   for (
     let round = 0;
     round < MAX_TRANSLATION_ROUNDS && pending.length > 0;
@@ -57,6 +65,8 @@ export async function translateSentences(
           translations[entry.index] = translation;
         }
       });
+      done += entries.length;
+      onProgress?.(done, sentences.length);
     }
     pending = failed;
   }
@@ -69,7 +79,8 @@ export async function translateSentences(
 // chapters share one call.
 export async function translateChapters(
   translator: Translator,
-  sentencesByChapter: string[][]
+  sentencesByChapter: string[][],
+  onProgress?: TranslationProgress
 ): Promise<(string | null)[][]> {
   const sentencesByChapterWithoutTranslations = sentencesByChapter.map(
     () => [] as (string | null)[]
@@ -79,7 +90,8 @@ export async function translateChapters(
   }
   const translations = await translateSentences(
     translator,
-    sentencesByChapter.flat()
+    sentencesByChapter.flat(),
+    onProgress
   );
   const byChapter: (string | null)[][] = [];
   let cursor = 0;

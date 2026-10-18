@@ -9,6 +9,7 @@ import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
+import { waitForShelfBook } from "./fixtures/async-import.js";
 import { buildEpub, createSampleEpub } from "./fixtures/epub.js";
 
 describe("EPUB import through the HTTP API seam", () => {
@@ -39,7 +40,10 @@ describe("EPUB import through the HTTP API seam", () => {
         filename: "sample-book.epub",
         contentType: "application/epub+zip",
       });
-    expect(created.status).toBe(201);
+    // The import finishes asynchronously (ticket 08); chapter content is
+    // only queryable once the book settles ready on the shelf.
+    expect(created.status).toBe(202);
+    await waitForShelfBook(app, created.body.id, "ready");
     return created.body.id as number;
   }
 
@@ -208,7 +212,8 @@ describe("messy EPUB shapes through the HTTP API seam", () => {
       }),
       "encoded.epub"
     );
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(202);
+    await waitForShelfBook(app, created.body.id, "ready");
     const toc = await request(app).get(`/api/books/${created.body.id}`);
     expect(toc.body.chapters).toEqual([
       { position: 1, title: "Encoded Path", level: 1 },
@@ -231,7 +236,8 @@ describe("messy EPUB shapes through the HTTP API seam", () => {
       }),
       "cover.epub"
     );
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(202);
+    await waitForShelfBook(app, created.body.id, "ready");
     const toc = await request(app).get(`/api/books/${created.body.id}`);
     // The cover keeps its spine position instead of merging into chapter one.
     expect(toc.body.chapters).toEqual([
@@ -253,7 +259,7 @@ describe("messy EPUB shapes through the HTTP API seam", () => {
       }),
       "untitled.epub"
     );
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(202);
     expect(created.body.title).toBe("Heading Title");
   });
 

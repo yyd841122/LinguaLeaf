@@ -8,15 +8,24 @@ import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
+import { waitForShelfBook } from "./fixtures/async-import.js";
 
 const sampleBookPath = fileURLToPath(
   new URL("./fixtures/sample-book.md", import.meta.url)
 );
 
 // Shared by every describe that needs a book on the shelf through the real
-// upload seam.
+// upload seam. The import finishes asynchronously (ticket 08): the POST
+// returns once the book row exists; reading paths need it ready first.
 async function importSampleBook(app: Express) {
   return request(app).post("/api/books").attach("file", sampleBookPath);
+}
+
+async function importSampleBookReady(app: Express): Promise<number> {
+  const created = await importSampleBook(app);
+  expect(created.status).toBe(202);
+  await waitForShelfBook(app, created.body.id, "ready");
+  return created.body.id as number;
 }
 
 describe("Markdown import through the HTTP API seam", () => {
@@ -34,9 +43,13 @@ describe("Markdown import through the HTTP API seam", () => {
     dictionary.close();
   });
 
-  it("imports a markdown file and lists the book on the bookshelf", async () => {
+  it("creates the book importing and settles it ready on the shelf", async () => {
     const created = await importSampleBook(app);
-    expect(created.status).toBe(201);
+    // 202, not 201: the annotation work may still be running when the POST
+    // answers (ticket 08). Without a translator the task can even finish
+    // synchronously first, so only the shape is pinned here — the visible
+    // importing state has its own test with a held translator.
+    expect(created.status).toBe(202);
     expect(created.body).toMatchObject({
       title: "The Way of the Test",
       format: "markdown",
@@ -44,6 +57,7 @@ describe("Markdown import through the HTTP API seam", () => {
     expect(Number.isInteger(created.body.id)).toBe(true);
     expect(typeof created.body.createdAt).toBe("string");
 
+    await waitForShelfBook(app, created.body.id, "ready");
     const shelf = await request(app).get("/api/books");
     expect(shelf.status).toBe(200);
     expect(shelf.body.books).toHaveLength(1);
@@ -51,15 +65,19 @@ describe("Markdown import through the HTTP API seam", () => {
       id: created.body.id,
       title: "The Way of the Test",
       format: "markdown",
+      status: "ready",
+      importStage: null,
+      importPercent: null,
+      importError: null,
     });
   });
 
   it("returns the table of contents divided by headings", async () => {
-    const created = await importSampleBook(app);
-    const toc = await request(app).get(`/api/books/${created.body.id}`);
+    const bookId = await importSampleBookReady(app);
+    const toc = await request(app).get(`/api/books/${bookId}`);
     expect(toc.status).toBe(200);
     expect(toc.body).toMatchObject({
-      id: created.body.id,
+      id: bookId,
       title: "The Way of the Test",
       format: "markdown",
     });
@@ -73,11 +91,9 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns chapter blocks with sentences split and passthrough items intact", async () => {
-    const created = await importSampleBook(app);
+    const bookId = await importSampleBookReady(app);
 
-    const titlePage = await request(app).get(
-      `/api/books/${created.body.id}/chapters/1`
-    );
+    const titlePage = await request(app).get(`/api/books/${bookId}/chapters/1`);
     expect(titlePage.status).toBe(200);
     expect(titlePage.body).toMatchObject({
       position: 1,
@@ -96,9 +112,7 @@ describe("Markdown import through the HTTP API seam", () => {
       },
     ]);
 
-    const red = await request(app).get(
-      `/api/books/${created.body.id}/chapters/2`
-    );
+    const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
     expect(red.status).toBe(200);
     expect(red.body.title).toBe("Chapter One: Red");
     expect(red.body.blocks).toEqual([
@@ -136,9 +150,7 @@ describe("Markdown import through the HTTP API seam", () => {
       },
     ]);
 
-    const interlude = await request(app).get(
-      `/api/books/${created.body.id}/chapters/4`
-    );
+    const interlude = await request(app).get(`/api/books/${bookId}/chapters/4`);
     expect(interlude.status).toBe(200);
     expect(interlude.body.blocks).toEqual([
       {
@@ -159,10 +171,8 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("splits list items and blockquotes into annotated sentences", async () => {
-    const created = await importSampleBook(app);
-    const evidence = await request(app).get(
-      `/api/books/${created.body.id}/chapters/5`
-    );
+    const bookId = await importSampleBookReady(app);
+    const evidence = await request(app).get(`/api/books/${bookId}/chapters/5`);
     expect(evidence.status).toBe(200);
     expect(evidence.body.title).toBe("Chapter Three: Evidence");
     expect(evidence.body.blocks).toEqual([
@@ -219,10 +229,8 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns an empty block list for a heading-only chapter", async () => {
-    const created = await importSampleBook(app);
-    const green = await request(app).get(
-      `/api/books/${created.body.id}/chapters/3`
-    );
+    const bookId = await importSampleBookReady(app);
+    const green = await request(app).get(`/api/books/${bookId}/chapters/3`);
     expect(green.status).toBe(200);
     expect(green.body).toMatchObject({
       position: 3,
@@ -233,14 +241,12 @@ describe("Markdown import through the HTTP API seam", () => {
   });
 
   it("returns 404 for chapters outside the book", async () => {
-    const created = await importSampleBook(app);
+    const bookId = await importSampleBookReady(app);
     expect(
-      (await request(app).get(`/api/books/${created.body.id}/chapters/99`))
-        .status
+      (await request(app).get(`/api/books/${bookId}/chapters/99`)).status
     ).toBe(404);
     expect(
-      (await request(app).get(`/api/books/${created.body.id}/chapters/zero`))
-        .status
+      (await request(app).get(`/api/books/${bookId}/chapters/zero`)).status
     ).toBe(404);
     expect((await request(app).get("/api/books/999/chapters/1")).status).toBe(
       404
@@ -341,7 +347,8 @@ describe("import with an empty dictionary", () => {
     const created = await request(app)
       .post("/api/books")
       .attach("file", sampleBookPath);
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(202);
+    await waitForShelfBook(app, created.body.id, "ready");
     const chapter = await request(app).get(
       `/api/books/${created.body.id}/chapters/2`
     );
@@ -395,9 +402,7 @@ describe("reading progress and book deletion through the HTTP API seam", () => {
   });
 
   async function importBookId() {
-    const created = await importSampleBook(app);
-    expect(created.status).toBe(201);
-    return created.body.id as number;
+    return importSampleBookReady(app);
   }
 
   it("saves reading progress and returns it for restore, with the shelf listing it", async () => {
@@ -489,6 +494,176 @@ describe("reading progress and book deletion through the HTTP API seam", () => {
   });
 });
 
+// Everything that fails after the POST's parse (which answers 400/415
+// synchronously) is a fault inside the task: the shelf must say so clearly
+// and no half-built book may remain (ticket 08). The dictionary seam is
+// where the fault is injected: the pipeline's very first dictionary query
+// throws, the way a corrupted dictionary file would.
+describe("failed imports at the HTTP API seam", () => {
+  let database: Database.Database;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+  });
+  afterEach(() => {
+    database.close();
+  });
+
+  function createBrokenDictionaryApp() {
+    const dictionary = createFixtureDictionary();
+    const broken = new Proxy(dictionary, {
+      get(target, property, receiver) {
+        if (property === "prepare") {
+          return (sql: string) => {
+            if (String(sql).includes("dict_")) {
+              throw new Error("dictionary file corrupted");
+            }
+            return target.prepare(sql);
+          };
+        }
+        return Reflect.get(target, property, receiver);
+      },
+    }) as typeof dictionary;
+    return createApp(database, broken);
+  }
+
+  it("marks the book failed on the shelf with no half-built content", async () => {
+    const app = createBrokenDictionaryApp();
+
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(202);
+
+    await waitForShelfBook(app, created.body.id, "failed");
+    const shelf = await request(app).get("/api/books");
+    expect(shelf.body.books[0]).toMatchObject({
+      id: created.body.id,
+      status: "failed",
+      importStage: null,
+      importPercent: null,
+    });
+    expect(shelf.body.books[0].importError).toBeTruthy();
+
+    // The failure happened before the insert transaction: not one chapter
+    // or block may exist.
+    for (const table of ["chapters", "blocks"]) {
+      const row = database
+        .prepare(`SELECT COUNT(*) AS n FROM ${table}`)
+        .get() as { n: number };
+      expect(row.n).toBe(0);
+    }
+
+    // A failed import is removed like any other book.
+    expect(
+      (await request(app).delete(`/api/books/${created.body.id}`)).status
+    ).toBe(204);
+    expect((await request(app).get("/api/books")).body.books).toEqual([]);
+  });
+
+  it("refuses reading routes for a failed book", async () => {
+    const app = createBrokenDictionaryApp();
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    await waitForShelfBook(app, created.body.id, "failed");
+
+    const chapter = await request(app).get(
+      `/api/books/${created.body.id}/chapters/1`
+    );
+    expect(chapter.status).toBe(409);
+    expect(
+      (await request(app).get(`/api/books/${created.body.id}`)).body.status
+    ).toBe("failed");
+  });
+});
+
+// The importing state is visible to more than the shelf: reading routes
+// must refuse a book whose chapters do not exist yet, and a reader deleting
+// a book mid-import must win over the task still in flight (ticket 08).
+describe("import lifecycle guards at the HTTP API seam", () => {
+  let database: Database.Database;
+  let dictionary: ReturnType<typeof openDictionary>;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    dictionary = createFixtureDictionary();
+  });
+  afterEach(() => {
+    database.close();
+    dictionary.close();
+  });
+
+  // An app whose translator never answers until the test releases it.
+  function createHeldApp() {
+    let release!: (value: (string | null)[]) => void;
+    const held = new Promise<(string | null)[]>((resolve) => {
+      release = resolve;
+    });
+    const translator = createFakeTranslator(() => held);
+    const app = createApp(database, dictionary, translator);
+    return { app, release: () => release([]) };
+  }
+
+  async function startImport(app: Express): Promise<number> {
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(202);
+    return created.body.id as number;
+  }
+
+  it("answers 409 for reading routes while a book is still importing", async () => {
+    const { app, release } = createHeldApp();
+    const bookId = await startImport(app);
+
+    // The book itself is listable with its live status and no chapters.
+    const book = await request(app).get(`/api/books/${bookId}`);
+    expect(book.status).toBe(200);
+    expect(book.body).toMatchObject({ status: "importing", chapters: [] });
+
+    const chapter = await request(app).get(`/api/books/${bookId}/chapters/1`);
+    expect(chapter.status).toBe(409);
+    expect(chapter.body).toEqual({ error: "book is not ready for reading" });
+    expect(
+      (await request(app).get(`/api/books/${bookId}/progress`)).status
+    ).toBe(409);
+    expect(
+      (
+        await request(app)
+          .put(`/api/books/${bookId}/progress`)
+          .send({ chapter: 1, block: 1 })
+      ).status
+    ).toBe(409);
+
+    release();
+    await waitForShelfBook(app, bookId, "ready");
+    expect(
+      (await request(app).get(`/api/books/${bookId}/chapters/1`)).status
+    ).toBe(200);
+  });
+
+  it("deleting an importing book wins over the in-flight task", async () => {
+    const { app, release } = createHeldApp();
+    const bookId = await startImport(app);
+
+    const deleted = await request(app).delete(`/api/books/${bookId}`);
+    expect(deleted.status).toBe(204);
+
+    release();
+    // Let the task's continuation run out (retry rounds, persist attempt).
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    expect((await request(app).get("/api/books")).body.books).toEqual([]);
+    for (const table of ["books", "chapters", "blocks"]) {
+      const row = database
+        .prepare(`SELECT COUNT(*) AS n FROM ${table}`)
+        .get() as { n: number };
+      expect(row.n).toBe(0);
+    }
+  });
+});
+
 describe("translation at the HTTP API seam", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof openDictionary>;
@@ -508,14 +683,9 @@ describe("translation at the HTTP API seam", () => {
     );
     const app = createApp(database, dictionary, translator);
 
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", sampleBookPath);
-    expect(created.status).toBe(201);
+    const bookId = await importSampleBookReady(app);
 
-    const red = await request(app).get(
-      `/api/books/${created.body.id}/chapters/2`
-    );
+    const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
     expect(red.status).toBe(200);
     expect(
       red.body.blocks.map(
@@ -537,14 +707,9 @@ describe("translation at the HTTP API seam", () => {
     );
     const app = createApp(database, dictionary, translator);
 
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", sampleBookPath);
-    expect(created.status).toBe(201);
+    const bookId = await importSampleBookReady(app);
 
-    const red = await request(app).get(
-      `/api/books/${created.body.id}/chapters/2`
-    );
+    const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
     const blocks = red.body.blocks as {
       originalText: string;
       translationText: string | null;
@@ -557,17 +722,54 @@ describe("translation at the HTTP API seam", () => {
     ).toMatchObject({ translationText: "译:Mr. Gupta woke early." });
   });
 
-  it("imports with empty translation lines when no translator is configured", async () => {
-    const app = createApp(database, dictionary);
+  it("reports translating progress on the shelf while the translator works", async () => {
+    // Hold the first batch: the task is mid-flight and stays there until
+    // the test releases it, which pins the visible importing state.
+    let release: ((value: (string | null)[]) => void) | undefined;
+    const held = new Promise<(string | null)[]>((resolve) => {
+      release = resolve;
+    });
+    const translator = createFakeTranslator(() => held);
+    const app = createApp(database, dictionary, translator);
 
     const created = await request(app)
       .post("/api/books")
       .attach("file", sampleBookPath);
-    expect(created.status).toBe(201);
+    expect(created.status).toBe(202);
+    // The task's synchronous prefix (IPA pass, first batch dispatch) has
+    // run by the time the POST answers; the percent starts at 0.
+    expect(created.body).toMatchObject({
+      status: "importing",
+      importStage: "translating",
+      importPercent: 0,
+      importError: null,
+    });
 
-    const red = await request(app).get(
-      `/api/books/${created.body.id}/chapters/2`
-    );
+    // The shelf — what the bookshelf polls — carries the same live state.
+    const importing = await request(app).get("/api/books");
+    expect(importing.body.books[0]).toMatchObject({
+      status: "importing",
+      importStage: "translating",
+      importPercent: 0,
+    });
+
+    release?.([]);
+    await waitForShelfBook(app, created.body.id, "ready");
+    const shelf = await request(app).get("/api/books");
+    expect(shelf.body.books[0]).toMatchObject({
+      status: "ready",
+      importStage: null,
+      importPercent: null,
+      importError: null,
+    });
+  });
+
+  it("imports with empty translation lines when no translator is configured", async () => {
+    const app = createApp(database, dictionary);
+
+    const bookId = await importSampleBookReady(app);
+
+    const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
     for (const block of red.body.blocks as {
       translationText: string | null;
     }[]) {

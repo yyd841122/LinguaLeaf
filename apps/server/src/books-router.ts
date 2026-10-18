@@ -1,11 +1,16 @@
-import { Router, json, type Request } from "express";
+import { Router, json, type Request, type Response } from "express";
 import multer from "multer";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
 import { EpubParseError, isEpubFilename, readEpubBook } from "./import/epub.js";
 import { isMarkdownFilename, readMarkdownBook } from "./import/markdown.js";
 import type { Translator } from "./translate/translator.js";
-import { importBook, type BlockKind } from "./import/pipeline.js";
+import type { BlockKind } from "./import/pipeline.js";
+import {
+  createImportingBook,
+  runImportTask,
+  type BookStatus,
+} from "./import/import-task.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -19,6 +24,11 @@ type BookRow = {
   title: string;
   format: string;
   created_at: string;
+  // Asserted from the DB row; the write sites all use the task's own union.
+  status: BookStatus;
+  import_stage: string | null;
+  import_percent: number | null;
+  import_error: string | null;
 };
 
 // Shelf row: the book plus where it was last read, null before the first
@@ -33,6 +43,10 @@ const toBookJson = (row: BookRow) => ({
   title: row.title,
   format: row.format,
   createdAt: row.created_at,
+  status: row.status,
+  importStage: row.import_stage,
+  importPercent: row.import_percent,
+  importError: row.import_error,
 });
 
 const toShelfJson = (row: ShelfRow) => ({
@@ -97,8 +111,30 @@ export function createBooksRouter(
         }
         throw error;
       }
-      const book = await importBook(database, prepared, dictionary, translator);
-      response.status(201).json(book);
+      // Parsing was the synchronous half; nothing has been stored yet, so a
+      // rejected file leaves no trace. The annotation work (IPA, transla-
+      // tion) runs as a background task on the created row: the POST
+      // answers 202 immediately (a long book's translation could hold a
+      // request for hours — beyond ADR 0002's envelope), and the shelf's
+      // status carries the progress (ticket 08).
+      const bookId = createImportingBook(
+        database,
+        prepared.title,
+        prepared.format
+      );
+      void runImportTask(
+        { database, dictionary, translator: translator ?? null },
+        bookId,
+        prepared
+      );
+      const row = findBook(bookId);
+      if (!row) {
+        // Unreachable in practice — the row was just inserted — but keeps
+        // the handler total without asserting.
+        response.status(500).json({ error: "import could not start" });
+        return;
+      }
+      response.status(202).json(toBookJson(row));
     }
   );
 
@@ -106,6 +142,7 @@ export function createBooksRouter(
     const rows = database
       .prepare(
         `SELECT b.id, b.title, b.format, b.created_at,
+                b.status, b.import_stage, b.import_percent, b.import_error,
                 p.chapter_position AS progress_chapter,
                 p.block_position AS progress_block
          FROM books b
@@ -118,7 +155,9 @@ export function createBooksRouter(
 
   const findBook = (id: number) =>
     database
-      .prepare("SELECT id, title, format, created_at FROM books WHERE id = ?")
+      .prepare(
+        "SELECT id, title, format, created_at, status, import_stage, import_percent, import_error FROM books WHERE id = ?"
+      )
       .get(id) as BookRow | undefined;
 
   // One parse-and-lookup for every /:id handler: a non-integer id is just a
@@ -128,12 +167,24 @@ export function createBooksRouter(
     return Number.isInteger(id) ? findBook(id) : undefined;
   };
 
+  // Reading routes answer only settled books: an importing book has no
+  // chapters yet and a failed one never will, so both get the same 409
+  // instead of a misleading 404 or empty content.
+  const respondIfNotReady = (book: BookRow, response: Response): boolean => {
+    if (book.status !== "ready") {
+      response.status(409).json({ error: "book is not ready for reading" });
+      return true;
+    }
+    return false;
+  };
+
   router.get("/:id/progress", (request, response) => {
     const book = bookFromParams(request);
     if (!book) {
       response.status(404).json({ error: "book not found" });
       return;
     }
+    if (respondIfNotReady(book, response)) return;
     const row = database
       .prepare(
         "SELECT chapter_position, block_position FROM reading_progress WHERE book_id = ?"
@@ -179,6 +230,7 @@ export function createBooksRouter(
       response.status(404).json({ error: "book not found" });
       return;
     }
+    if (respondIfNotReady(book, response)) return;
     database
       .prepare(
         `INSERT INTO reading_progress (book_id, chapter_position, block_position, updated_at)
@@ -213,6 +265,12 @@ export function createBooksRouter(
       response.status(404).json({ error: "chapter not found" });
       return;
     }
+    const book = bookFromParams(request);
+    if (!book) {
+      response.status(404).json({ error: "chapter not found" });
+      return;
+    }
+    if (respondIfNotReady(book, response)) return;
     const chapter = database
       .prepare(
         "SELECT id, position, title, level FROM chapters WHERE book_id = ? AND position = ?"

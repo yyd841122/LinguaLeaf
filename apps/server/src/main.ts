@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { createApp } from "./app.js";
 import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
+import { failInterruptedImports } from "./import/import-task.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
 import {
   createDeepSeekTranslator,
@@ -25,6 +26,10 @@ const runtimeRoot = development
 const database = openDatabase(
   resolve(runtimeRoot, process.env.DATABASE_PATH ?? ".data/lingualeaf.sqlite")
 );
+// Imports orphaned by the previous run can never resume — their task died
+// with the process. Mark them failed before serving so the shelf never
+// shows a book stuck importing (ticket 08).
+failInterruptedImports(database);
 // The dictionary lives next to the book database (.data at the runtime
 // root, DICTIONARY_PATH overrides). A missing file means an empty dictionary
 // (lookups miss, IPA lines come out blank) until the dict:import-* scripts

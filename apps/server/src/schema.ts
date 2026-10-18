@@ -9,13 +9,23 @@ import type Database from "better-sqlite3";
 // (ticket 05) remembers where each book was last read — one row per book,
 // server-side so reopening on any device restores the position. Blocks of
 // kind 'image' (ticket 07) hold the illustration's alt text in
-// original_text and never carry annotations.
+// original_text and never carry annotations. `status` and the import_*
+// columns (ticket 08) track the asynchronous import: 'importing' from the
+// moment the book row is created until the annotation transaction flips it
+// to 'ready', or the task records 'failed' with a reason; import_stage /
+// import_percent carry the live progress while importing and are NULL once
+// the import settles.
 const booksTable = `
     CREATE TABLE IF NOT EXISTS books (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
       format TEXT NOT NULL,
-      created_at TEXT NOT NULL
+      created_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'ready'
+        CHECK (status IN ('importing', 'ready', 'failed')),
+      import_stage TEXT,
+      import_percent INTEGER,
+      import_error TEXT
     );
 `;
 
@@ -65,6 +75,22 @@ export function migrateSchema(database: Database.Database): void {
   }[];
   if (!blockColumns.some((column) => column.name === "ipa_slots")) {
     database.exec("ALTER TABLE blocks ADD COLUMN ipa_slots TEXT");
+  }
+  // Databases created before ticket 08 predate the asynchronous import; the
+  // status columns are added in place and every existing row — inserted
+  // fully or not at all by the old synchronous import — is readable.
+  // (SQLite cannot add the CHECK through ALTER; new databases get it from
+  // the CREATE above, and the task layer owns the value set everywhere.)
+  const bookColumns = database.prepare("PRAGMA table_info(books)").all() as {
+    name: string;
+  }[];
+  if (!bookColumns.some((column) => column.name === "status")) {
+    database.exec(
+      `ALTER TABLE books ADD COLUMN status TEXT NOT NULL DEFAULT 'ready';
+       ALTER TABLE books ADD COLUMN import_stage TEXT;
+       ALTER TABLE books ADD COLUMN import_percent INTEGER;
+       ALTER TABLE books ADD COLUMN import_error TEXT;`
+    );
   }
   // Databases created before ticket 07 carry a kind CHECK without 'image'.
   // SQLite cannot alter a CHECK constraint; the table is rebuilt in place

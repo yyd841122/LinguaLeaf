@@ -18,6 +18,27 @@ describe("translateSentences", () => {
     expect(translations[0]).toBe("译:Sentence 1.");
     expect(translations[44]).toBe("译:Sentence 45.");
   });
+
+  it("reports batch progress as processed slots against the total", async () => {
+    const sentences = Array.from(
+      { length: 45 },
+      (_, i) => `Sentence ${i + 1}.`
+    );
+    const translator = createFakeTranslator((batch) =>
+      batch.map((sentence) => `译:${sentence}`)
+    );
+    const progress: [number, number][] = [];
+
+    await translateSentences(translator, sentences, (done, total) => {
+      progress.push([done, total]);
+    });
+
+    expect(progress).toEqual([
+      [20, 45],
+      [40, 45],
+      [45, 45],
+    ]);
+  });
 });
 
 describe("translateSentences retry", () => {
