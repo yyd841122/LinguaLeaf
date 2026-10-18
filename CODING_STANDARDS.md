@@ -29,3 +29,52 @@ never runs the front-end fetch layer, so only human acceptance caught it
 (`.scratch/lingualeaf-v1/issues/05-reading-experience.md`). At review: when a
 diff adds a caller of a shared fetch helper, check the helper's parsing
 contract against that endpoint's real status/body shape.
+
+## Retry loops escalate persistent failure
+
+A client loop that retries through failure — polling, refresh, reconnect —
+shows the user a visible notice once failures persist, and clears it when a
+try succeeds. Transient misses may stay quiet; a loop's last rendered state
+must never outlive its credibility, or a crash renders as a frozen
+「导入中 0%」.
+
+Why: ticket 08's bookshelf poll swallowed every failed tick, so a crashed
+server left the shelf showing a stuck importing row with no hint — the human
+reported 「页面上没有任何提示」 and both review axes missed it
+(`.scratch/lingualeaf-v1/issues/08-import-progress-tolerance.md`).
+
+At review: for every catch in a retry loop, name what the user sees after N
+consecutive failures. "Nothing — the next tick retries" is the bug.
+
+## Derived UI states span the whole lifecycle
+
+A state derived from async work — a disabled button, a spinner, a status
+label — is cleared by the work's lifecycle ending, never by a request's
+response arriving: a 202 answers in milliseconds while the background work
+runs on for minutes.
+
+Why: ticket 08's import button re-enabled the moment the POST returned and
+stayed clickable through the whole translation, so re-submits were possible
+mid-import; user-reported at acceptance
+(`.scratch/lingualeaf-v1/issues/08-import-progress-tolerance.md`).
+
+At review: for each disabled or derived state in a diff, name the event that
+clears it. "The response arrived" is not a lifecycle event for background
+work.
+
+## Component tests drive the timer and form boundaries
+
+Web component tests cross three jsdom boundaries with the working shapes
+from `apps/web/test/bookshelf.test.tsx`: under fake timers, advance time
+with `advanceTimersByTimeAsync` inside `act` — RTL's findBy/waitFor polls on
+real timers and stalls; a required-file form never submits via a button
+click because constraint validation blocks it — plant the files array with
+`defineProperty` and dispatch `fireEvent.submit`; and name the fetch mock so
+a test can inject failure and recovery mid-flight.
+
+Why: ticket 08's bookshelf tests went red three times on these boundaries
+before the working shapes settled, each red a debug round the convention
+skips.
+
+At review: a component test mixing waitFor with fake timers, or clicking
+submit on a required form, walks a path that already failed once.

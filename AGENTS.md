@@ -18,6 +18,10 @@ Single-context layout: `GLOSSARY.md` at repo root + `docs/adr/`. See `docs/agent
 
 Judgement-call rules the review stage enforces live in `CODING_STANDARDS.md` at the repo root (tooling-enforced rules are not listed there).
 
+### Browser E2E
+
+Real-browser verification and live-DB diagnosis — acceptance disputes, flows no supertest seam reaches: `docs/agents/browser-e2e.md`.
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
