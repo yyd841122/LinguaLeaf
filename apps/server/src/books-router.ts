@@ -262,7 +262,7 @@ export function createBooksRouter(
     response
       .type("html")
       .attachment(annotatedBookFilename(book.title))
-      .send(renderAnnotatedBook(database, book));
+      .send(renderAnnotatedBook(database, dictionary, book));
   });
 
   router.get("/:id", (request, response) => {

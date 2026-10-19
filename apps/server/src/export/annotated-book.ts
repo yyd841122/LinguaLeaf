@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
 import type { BlockKind } from "../import/pipeline.js";
+import type { Dictionary, WordLookup } from "../dict/dictionary.js";
+import { lookupWord, normalizeLookupToken } from "../dict/dictionary.js";
 import { WORD_PATTERN } from "../dict/ipa-line.js";
 
 // The annotated book file (GLOSSARY.md): a self-contained single-file HTML
@@ -177,15 +179,56 @@ const renderBody = (title: string, chapters: ChapterRow[]): string => `
 </header>
 <main class="book">
 ${chapters.map(renderChapter).join("\n")}
-</main>`;
+</main>
+<div class="lookup-popup" id="lookup-popup" role="dialog" aria-label="词详情" hidden>
+  <div class="lookup-head">
+    <span class="lookup-head-word" id="lookup-head-word"></span>
+    <span class="lookup-lemma" id="lookup-lemma" hidden></span>
+    <span class="lookup-head-actions">
+      <button type="button" class="lookup-speak" id="lookup-speak" aria-label="发音">🔊</button>
+      <button type="button" class="lookup-close" id="lookup-close" aria-label="关闭">✕</button>
+    </span>
+  </div>
+  <p class="lookup-status" id="lookup-status" hidden></p>
+  <p class="lookup-ipa" id="lookup-ipa" hidden></p>
+  <p class="lookup-pos" id="lookup-pos" hidden></p>
+  <p class="lookup-translation" id="lookup-translation" hidden></p>
+</div>`;
 
-// The file's only script: the two display toggles (GLOSSARY: 显示开关).
-// Root classes on <body> drive the visibility CSS; the choice is remembered
-// per toggle in localStorage. Every storage touch is guarded — file://
-// contexts (and hardened browsers) may throw on access, and the file must
-// fall back to all-shown and keep working in-page regardless. No network,
-// no fetches: the self-contained red line covers the script too.
-const TOGGLE_SCRIPT = `
+// The book's deduplicated vocabulary (spec: 只嵌本书句子块词汇): every word
+// token in every sentence block, keyed by the lookup-time fold — the same
+// normalizeLookupToken the tap-lookup contract normalizes with — and the
+// server's own lookup result as the value (null when no entry knows the
+// word, so the file's popup can say "not found" instead of guessing). Raw
+// blocks, code, and chapter titles stay out; so does the rest of the
+// dictionary.
+function collectVocabulary(
+  chapters: ChapterRow[],
+  dictionary: Dictionary
+): Record<string, WordLookup | null> {
+  const vocabulary = new Map<string, WordLookup | null>();
+  for (const chapter of chapters) {
+    for (const block of chapter.blocks) {
+      if (block.kind !== "sentence") continue;
+      for (const match of block.original_text.matchAll(WORD_PATTERN)) {
+        const key = normalizeLookupToken(match[0]);
+        if (key.length > 0 && !vocabulary.has(key)) {
+          vocabulary.set(key, lookupWord(dictionary, match[0]));
+        }
+      }
+    }
+  }
+  return Object.fromEntries(vocabulary);
+}
+
+// The file's only script: the two display toggles (GLOSSARY: 显示开关)
+// and the tap-word lookup (GLOSSARY: 点词查详情). Root classes on <body>
+// drive the visibility CSS; the choice is remembered per toggle in
+// localStorage. Every storage touch is guarded — file:// contexts (and
+// hardened browsers) may throw on access, and the file must fall back to
+// all-shown and keep working in-page regardless. No network, no fetches:
+// the self-contained red line covers the script too.
+const FILE_SCRIPT = `
 (function () {
   "use strict";
   var KEY_BY_TOGGLE = {
@@ -222,16 +265,186 @@ const TOGGLE_SCRIPT = `
       writeFlag(KEY_BY_TOGGLE[id], toggle.checked ? "1" : "0");
     });
   });
+
+  // -- 点词查详情 --
+  // Words arrive pre-tokenized: every clickable word in the file was
+  // wrapped at export time by the same shared pattern the IPA line uses
+  // (dict/ipa-line.ts WORD_PATTERN — the web's ReadingView keeps its own
+  // synced copy of that pattern for its render-time wrapping; this file
+  // needs no runtime copy because the wrapping is baked into the markup).
+  // What the file does own is the lookup-key fold below: a faithful copy
+  // of the server's normalizeLookupToken (dict/dictionary.ts). Keep the
+  // two identical — a divergent fold makes case and curly-quote variants
+  // silently miss the vocabulary.
+  var VOCAB = {};
+  try {
+    VOCAB = JSON.parse(
+      document.getElementById("annotated-vocab").textContent
+    );
+  } catch (error) {
+    // A missing or corrupt vocabulary makes every popup report a miss;
+    // reading and the toggles keep working.
+  }
+  function lookupKey(token) {
+    return token
+      .trim()
+      .toLowerCase()
+      // The curly apostrophe, as its escape: the fold must survive any
+      // transcoding of this file.
+      .replace(/\\u2019/g, "'")
+      .replace(/^[^a-z']+|[^a-z']+$/g, "");
+  }
+  function lookupEntry(key) {
+    if (key.length === 0) return null;
+    // Own properties only: a miss on a word like "constructor" must read
+    // as a miss, not inherit from Object.prototype.
+    return Object.prototype.hasOwnProperty.call(VOCAB, key)
+      ? VOCAB[key]
+      : null;
+  }
+
+  var popup = document.getElementById("lookup-popup");
+  // The word the popup currently shows — what the 发音 button speaks (the
+  // clicked surface form, not the lemma, like the app).
+  var spokenWord = "";
+  // The popup's rows are filled through textContent only — book-derived
+  // values (senses, transcriptions, the words themselves) can never become
+  // markup here.
+  function fillRow(id, value) {
+    var row = document.getElementById(id);
+    row.textContent = value;
+    row.hidden = false;
+  }
+  function hideRow(id) {
+    var row = document.getElementById(id);
+    row.hidden = true;
+  }
+  // Anchor clamp mirroring the app's WordLookupPopup (plain arithmetic on
+  // the click point, no layout reads). The numbers are named after that
+  // component's constants — keep the values identical with them and with
+  // the .lookup-* stylesheet below: three sites move together.
+  var POPUP_WIDTH_PX = 288;
+  var POPUP_MAX_HEIGHT_PX = 256;
+  var POPUP_MARGIN_PX = 8;
+  var POPUP_VERTICAL_OFFSET_PX = 14;
+  var POPUP_HORIZONTAL_OFFSET_PX = 20;
+  function anchorPopup(point) {
+    var width = Math.min(
+      POPUP_WIDTH_PX,
+      window.innerWidth - 2 * POPUP_MARGIN_PX
+    );
+    var maxLeft = Math.max(
+      POPUP_MARGIN_PX,
+      window.innerWidth - width - POPUP_MARGIN_PX
+    );
+    var maxTop = Math.max(
+      POPUP_MARGIN_PX,
+      window.innerHeight - POPUP_MAX_HEIGHT_PX - POPUP_MARGIN_PX
+    );
+    popup.style.left =
+      Math.min(
+        Math.max(point.x - POPUP_HORIZONTAL_OFFSET_PX, POPUP_MARGIN_PX),
+        maxLeft
+      ) + "px";
+    popup.style.top =
+      Math.min(
+        Math.max(point.y + POPUP_VERTICAL_OFFSET_PX, POPUP_MARGIN_PX),
+        maxTop
+      ) + "px";
+  }
+  function openPopup(word, point) {
+    spokenWord = word;
+    var entry = lookupEntry(lookupKey(word));
+    fillRow("lookup-head-word", word);
+    if (entry) {
+      hideRow("lookup-status");
+      if (entry.lemma && entry.lemma !== entry.word) {
+        fillRow("lookup-lemma", "原形 " + entry.lemma);
+      } else {
+        hideRow("lookup-lemma");
+      }
+      if (entry.ipa) fillRow("lookup-ipa", "/" + entry.ipa + "/");
+      else hideRow("lookup-ipa");
+      if (entry.pos) fillRow("lookup-pos", entry.pos);
+      else hideRow("lookup-pos");
+      if (entry.translation) fillRow("lookup-translation", entry.translation);
+      else hideRow("lookup-translation");
+    } else {
+      // No entry knows the word (spec: 查不到的词提示无结果): say so, and
+      // keep every sense row from the previous lookup hidden.
+      hideRow("lookup-lemma");
+      hideRow("lookup-ipa");
+      hideRow("lookup-pos");
+      hideRow("lookup-translation");
+      fillRow("lookup-status", "词库中未收录这个词。");
+    }
+    anchorPopup(point);
+    popup.hidden = false;
+  }
+  // Dismissal mirrors the app's WordLookupPopup: a click that is neither
+  // inside the popup nor on a word closes it (clicking another word moves
+  // it instead), Escape closes it, and the ✕ button is the explicit close.
+  function closePopup() {
+    popup.hidden = true;
+  }
+  document.addEventListener("click", function (event) {
+    var target = event.target;
+    if (!(target instanceof Element)) return;
+    if (popup.contains(target)) return;
+    var word = target.closest("[data-word]");
+    if (!word) {
+      closePopup();
+      return;
+    }
+    openPopup(word.getAttribute("data-word"), {
+      x: event.clientX,
+      y: event.clientY,
+    });
+  });
+  document
+    .getElementById("lookup-close")
+    .addEventListener("click", closePopup);
+  document.addEventListener("keydown", function (event) {
+    if (event.key === "Escape") closePopup();
+  });
+
+  // -- 发音 --
+  // Browser speech synthesis for the popup's word, mirroring the app's
+  // speakWord (apps/web/src/wordLookup.ts): silent no-op where the API is
+  // missing or partial — an unsupported environment must never turn a
+  // click into an error. Repeated clicks restart from silence. Whether any
+  // sound comes out offline depends on the device's local voices.
+  document
+    .getElementById("lookup-speak")
+    .addEventListener("click", function () {
+      var synthesis = window.speechSynthesis;
+      var Utterance = window.SpeechSynthesisUtterance;
+      if (!synthesis || !Utterance) return;
+      synthesis.cancel();
+      var utterance = new Utterance(spokenWord);
+      utterance.lang = "en-US";
+      synthesis.speak(utterance);
+    });
 })();`;
 
 // Renders the whole file. Synchronous on purpose: an export is pure reads
 // over local SQLite, and the spec accepts second-scale generation without
 // progress reporting. The book rides as the narrow { id, title } shape the
-// renderer needs — the router's full row stays the router's business.
+// renderer needs — the router's full row stays the router's business. The
+// dictionary feeds the embedded vocabulary (GLOSSARY: 点词查详情).
 export function renderAnnotatedBook(
   database: Database.Database,
+  dictionary: Dictionary,
   book: { id: number; title: string }
 ): string {
+  const chapters = loadBook(database, book.id);
+  const vocabulary = collectVocabulary(chapters, dictionary);
+  // The vocabulary rides as data, not code: a JSON script element the
+  // file's script parses at startup. `<` never reaches the raw text — in a
+  // JSON string it is indistinguishable from `<` to JSON.parse, and no
+  // other JSON position can carry it — so no book- or dictionary-born
+  // `</script>` can close the tag early (spec: 内嵌 JSON 脚本安全序列化).
+  const vocabularyJson = JSON.stringify(vocabulary).replaceAll("<", "\\u003c");
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -331,6 +544,71 @@ body {
 .ipa-word:hover {
   background: #ecefe6;
 }
+/* The word-lookup popup (GLOSSARY: 点词查详情) mirrors the app's .lookup-*
+   classes (apps/web/src/style.css): a floating card anchored at the click,
+   rows filled through textContent only. Keep identical with that
+   stylesheet and with the clamp constants in the file's script — three
+   sites move together. */
+.lookup-popup {
+  position: fixed;
+  z-index: 20;
+  width: 18rem;
+  max-width: calc(100vw - 1rem);
+  max-height: 16rem;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #dde3d8;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+}
+.lookup-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin-bottom: 0.2rem;
+}
+.lookup-head-word {
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+.lookup-lemma {
+  color: #5c6f64;
+  font-size: 0.8rem;
+}
+.lookup-head-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.15rem;
+}
+.lookup-head-actions button {
+  border: none;
+  background: none;
+  padding: 0 0.2rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+.lookup-head-actions button:hover {
+  background: #ecefe6;
+  border-radius: 0.25rem;
+}
+.lookup-popup p {
+  margin: 0.15rem 0;
+}
+.lookup-ipa {
+  color: #5c6f64;
+}
+.lookup-pos {
+  color: #5c6f64;
+  font-size: 0.85rem;
+}
+.lookup-translation {
+  white-space: pre-line;
+}
+.lookup-status {
+  color: #5c6f64;
+}
 .code-block {
   background: #ecefe6;
   border-radius: 0.5rem;
@@ -383,8 +661,9 @@ body.hide-translation .translation-line {
 </style>
 </head>
 <body>
-${renderBody(book.title, loadBook(database, book.id))}
-<script>${TOGGLE_SCRIPT}</script>
+${renderBody(book.title, chapters)}
+<script id="annotated-vocab" type="application/json">${vocabularyJson}</script>
+<script>${FILE_SCRIPT}</script>
 </body>
 </html>
 `;

@@ -45,6 +45,13 @@ export const FIXTURE_WORDS = {
     translation: "v. 去, 走, 驶\nn. 轮到的机会",
     exchange: "p:went/d:gone/i:going/3:goes",
   },
+  // Words ECDICT keeps with an internal apostrophe ("don't") — the lookup
+  // fold must reach them from the curly-apostrophe surface form.
+  "don't": {
+    phonetic: "doʊnt",
+    translation: "contr. = do not",
+    exchange: "",
+  },
 } as const;
 
 // Inflection pairs the ECDICT importer derives from the exchanges above
@@ -76,6 +83,7 @@ export const FIXTURE_IPA_US = {
   failing: "ˈfeɪlɪŋ",
   test: "test",
   first: "fɜːst",
+  "don't": "doʊnt",
 } as const;
 
 export function createFixtureDictionary(): ReturnType<typeof openDictionary> {

@@ -6,6 +6,7 @@ import type { Express } from "express";
 import type Database from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
+import { normalizeLookupToken } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
@@ -14,6 +15,22 @@ const sampleBookPath = fileURLToPath(
   new URL("./fixtures/sample-book.md", import.meta.url)
 );
 
+const lookupBookPath = fileURLToPath(
+  new URL("./fixtures/lookup-book.md", import.meta.url)
+);
+
+// Find a rendered word by getAttribute and click it. Selection must read
+// the attribute, not use an attribute selector: jsdom's selector engine
+// folds attribute-value case, so [data-word="Books"] can return the
+// "books" span — the runtime itself reads data-word case-sensitively.
+function clickWord(document: Document, word: string): void {
+  const target = [...document.querySelectorAll("[data-word]")].find(
+    (element) => element.getAttribute("data-word") === word
+  ) as HTMLElement | undefined;
+  expect(target, `no rendered word: ${word}`).not.toBeUndefined();
+  target?.click();
+}
+
 // Shared by every export describe: a book on the shelf through the real
 // upload seam, with the fake translator deciding which sentences get a
 // translation line at all.
@@ -21,10 +38,15 @@ function createExportApp(
   database: Database.Database,
   translate?: (
     sentences: string[]
-  ) => (string | null)[] | Promise<(string | null)[]>
+  ) => (string | null)[] | Promise<(string | null)[]>,
+  prepareDictionary?: (
+    dictionary: ReturnType<typeof createFixtureDictionary>
+  ) => void
 ) {
   const translator = translate ? createFakeTranslator(translate) : undefined;
-  return createApp(database, createFixtureDictionary(), translator ?? null);
+  const dictionary = createFixtureDictionary();
+  prepareDictionary?.(dictionary);
+  return createApp(database, dictionary, translator ?? null);
 }
 
 async function importSampleBookReady(
@@ -110,6 +132,50 @@ describe("GET /api/books/:id/export", () => {
     );
   });
 
+  it("embeds the book's sentence-block vocabulary, folded and deduplicated, with lookup results or null", async () => {
+    const bookId = await importSampleBookReady(app);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    const dom = new JSDOM(response.text);
+    const document = dom.window.document;
+    const vocabTag = document.getElementById("annotated-vocab");
+    expect(vocabTag?.getAttribute("type")).toBe("application/json");
+    const vocab = JSON.parse(vocabTag?.textContent ?? "null") as Record<
+      string,
+      unknown
+    >;
+
+    // The key set is exactly the book's sentence-block vocabulary under the
+    // lookup-time fold: every rendered word token is covered once, nothing
+    // else rides along — the fixture dictionary's zebra/go are not in this
+    // book and must not leak in (spec: 只嵌本书词汇，不整库内嵌).
+    const rendered = new Set(
+      [...document.querySelectorAll("[data-word]")].map((word) =>
+        normalizeLookupToken(word.getAttribute("data-word") ?? "")
+      )
+    );
+    expect([...rendered]).not.toContain("");
+    expect(Object.keys(vocab).sort()).toEqual([...rendered].sort());
+    expect(Object.keys(vocab)).toContain("the"); // "The" and "the" fold to one key
+    expect(Object.keys(vocab)).not.toContain("zebra");
+    expect(Object.keys(vocab)).not.toContain("go");
+
+    // Values ride the server's own lookup contract: a hit carries the
+    // lemma's senses with the surface form's own IPA; a miss embeds null
+    // so the popup can say "not found" explicitly (spec: 查不到的词也内嵌 null).
+    expect(vocab.wrote).toEqual({
+      word: "wrote",
+      lemma: "write",
+      ipa: "roʊt",
+      pos: "v.",
+      translation: "v. 写, 作曲, 写信",
+    });
+    expect(vocab.gupta).toBeNull();
+    expect(vocab.the).toBeNull();
+    dom.window.close();
+  });
+
   it("answers 404 for books that do not exist", async () => {
     for (const id of ["999", "zero"]) {
       const response = await request(app).get(`/api/books/${id}/export`);
@@ -168,12 +234,29 @@ describe("GET /api/books/:id/export", () => {
   });
 
   it("keeps script-like book content as inert text through the export", async () => {
+    // The dictionary's own senses are book-adjacent data too: this entry's
+    // translation carries a live script tag, and the book below puts the
+    // word into a sentence — so the hostile text rides the embedded
+    // vocabulary JSON, not just the escaped markup.
+    const poisonApp = createExportApp(database, undefined, (dictionary) => {
+      dictionary
+        .prepare(
+          "INSERT INTO dict_words (word, phonetic, translation) VALUES (?, ?, ?)"
+        )
+        .run(
+          "pwned",
+          "",
+          "</script><script>window.__pwned = true</script>\nn. 毒词条"
+        );
+    });
     const adversarialPath = fileURLToPath(
       new URL("./fixtures/adversarial-book.md", import.meta.url)
     );
-    const bookId = await importSampleBookReady(app, adversarialPath);
+    const bookId = await importSampleBookReady(poisonApp, adversarialPath);
 
-    const response = await request(app).get(`/api/books/${bookId}/export`);
+    const response = await request(poisonApp).get(
+      `/api/books/${bookId}/export`
+    );
     expect(response.status).toBe(200);
     const html = response.text;
 
@@ -195,14 +278,47 @@ describe("GET /api/books/:id/export", () => {
     );
     expect(flow).toContain("Then <script>window.__pwned = true</script> ran?");
 
-    // And executing the file for real leaves the canary unset.
+    // And executing the file for real leaves the canary unset — including
+    // through the vocabulary JSON channel, where the poison entry's
+    // translation now rides too.
     const live = new JSDOM(html, { runScripts: "dangerously" });
     expect(live.window.__pwned).toBeUndefined();
 
-    // No resource-bearing elements beyond the file's own toggle script
-    // (self-contained red line at the DOM level): no links, images, frames,
-    // embeds — and no second script born from the book's content.
-    expect(dom.window.document.querySelectorAll("script")).toHaveLength(1);
+    // Tapping the poison word renders its hostile translation as text —
+    // the popup fills through textContent only, so the injected tags stay
+    // characters on screen, the script count does not grow, and the
+    // canary stays unset.
+    const liveDocument = live.window.document;
+    clickWord(liveDocument, "pwned");
+    expect(liveDocument.getElementById("lookup-popup")?.hidden).toBe(false);
+    expect(liveDocument.getElementById("lookup-translation")?.textContent).toBe(
+      "</script><script>window.__pwned = true</script>\nn. 毒词条"
+    );
+    expect(liveDocument.querySelectorAll("script")).toHaveLength(2);
+    expect(live.window.__pwned).toBeUndefined();
+    live.window.close();
+
+    // The vocabulary channel is serialized script-safe: no raw `<` can sit
+    // between its tags, so no book- or dictionary-born `</script>` can close
+    // it early (inside JSON strings `<` and `<` are the same character
+    // to JSON.parse — spec: 内嵌 JSON 脚本安全序列化).
+    const vocabStart = html.indexOf('id="annotated-vocab"');
+    const vocabRaw = html.substring(
+      vocabStart,
+      html.indexOf("</script>", vocabStart)
+    );
+    expect(vocabRaw).not.toContain("<");
+    expect(vocabRaw).toContain("\\u003c");
+
+    // No resource-bearing elements beyond the file's own pair — the
+    // vocabulary data channel and the toggle script (self-contained red
+    // line at the DOM level): no links, images, frames, embeds, and no
+    // script born from the book's content.
+    const scripts = dom.window.document.querySelectorAll("script");
+    expect(scripts).toHaveLength(2);
+    for (const script of scripts) {
+      expect(script.getAttribute("src")).toBeNull();
+    }
     expect(
       dom.window.document.querySelectorAll("link, img, iframe, object, embed")
     ).toHaveLength(0);
@@ -389,6 +505,10 @@ describe("exported file behavior (jsdom)", () => {
     options: {
       storage?: StorageMock["storage"];
       deniedStorage?: boolean;
+      speech?: {
+        synthesis: { cancel: () => void; speak: (utterance: unknown) => void };
+        utteranceConstructor: abstract new (text: string) => object;
+      };
     } = {}
   ): JSDOM {
     return new JSDOM(html, {
@@ -407,6 +527,16 @@ describe("exported file behavior (jsdom)", () => {
           Object.defineProperty(window, "localStorage", {
             configurable: true,
             get: () => options.storage,
+          });
+        }
+        if (options.speech) {
+          Object.defineProperty(window, "speechSynthesis", {
+            configurable: true,
+            value: options.speech.synthesis,
+          });
+          Object.defineProperty(window, "SpeechSynthesisUtterance", {
+            configurable: true,
+            value: options.speech.utteranceConstructor,
           });
         }
       },
@@ -471,6 +601,195 @@ describe("exported file behavior (jsdom)", () => {
     reopened.window.close();
   });
 
+  it("opens a lookup popup with the tapped word's IPA, part of speech, and senses", async () => {
+    const bookId = await importSampleBookReady(app);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    const dom = loadExport(html);
+    const document = dom.window.document;
+    const wrote = document.querySelector(
+      '[data-word="wrote"]'
+    ) as HTMLElement | null;
+    expect(wrote).not.toBeNull();
+    wrote?.click();
+
+    const popup = document.getElementById("lookup-popup");
+    expect(popup?.hidden).toBe(false);
+    expect(document.getElementById("lookup-head-word")?.textContent).toBe(
+      "wrote"
+    );
+    // Inflected forms announce their lemma and carry the lemma's senses
+    // with the surface form's own IPA — the server lookup's contract,
+    // answered offline from the embedded vocabulary.
+    expect(document.getElementById("lookup-lemma")?.textContent).toBe(
+      "原形 write"
+    );
+    expect(document.getElementById("lookup-ipa")?.textContent).toBe("/roʊt/");
+    expect(document.getElementById("lookup-pos")?.textContent).toBe("v.");
+    expect(document.getElementById("lookup-translation")?.textContent).toBe(
+      "v. 写, 作曲, 写信"
+    );
+    // The no-result status never shows for a hit.
+    expect(document.getElementById("lookup-status")?.hidden).toBe(true);
+    dom.window.close();
+  });
+
+  it("lands inflected, case, and curly-quote variants on one entry, and reports misses", async () => {
+    const bookId = await importSampleBookReady(app, lookupBookPath);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    const dom = loadExport(html);
+    const document = dom.window.document;
+
+    // Plural: the lemma's senses ride under the 原形 badge, IPA stays the
+    // surface form's own (/bʊks/, not /bʊk/).
+    clickWord(document, "books");
+    expect(document.getElementById("lookup-head-word")?.textContent).toBe(
+      "books"
+    );
+    expect(document.getElementById("lookup-lemma")?.textContent).toBe(
+      "原形 book"
+    );
+    expect(document.getElementById("lookup-ipa")?.textContent).toBe("/bʊks/");
+    expect(document.getElementById("lookup-pos")?.textContent).toBe("n. v.");
+    expect(document.getElementById("lookup-translation")?.textContent).toBe(
+      "n. 书, 簿, 账册\nv. 预订, 登记"
+    );
+
+    // Case variant: the capitalized surface form lands on the same entry.
+    clickWord(document, "Books");
+    expect(document.getElementById("lookup-head-word")?.textContent).toBe(
+      "Books"
+    );
+    expect(document.getElementById("lookup-lemma")?.textContent).toBe(
+      "原形 book"
+    );
+    expect(document.getElementById("lookup-ipa")?.textContent).toBe("/bʊks/");
+
+    // Curly-quote variant: "don’t" folds to the straight-apostrophe entry;
+    // the head keeps the surface form as clicked.
+    clickWord(document, "don’t");
+    expect(document.getElementById("lookup-head-word")?.textContent).toBe(
+      "don’t"
+    );
+    expect(document.getElementById("lookup-lemma")?.hidden).toBe(true);
+    expect(document.getElementById("lookup-ipa")?.textContent).toBe("/doʊnt/");
+    expect(document.getElementById("lookup-pos")?.textContent).toBe("contr.");
+    expect(document.getElementById("lookup-translation")?.textContent).toBe(
+      "contr. = do not"
+    );
+
+    // The straight-apostrophe form: same entry.
+    clickWord(document, "don't");
+    expect(document.getElementById("lookup-ipa")?.textContent).toBe("/doʊnt/");
+    expect(document.getElementById("lookup-translation")?.textContent).toBe(
+      "contr. = do not"
+    );
+
+    // A word no entry knows: the popup says so, and no sense row shows.
+    clickWord(document, "zqxjkw");
+    expect(document.getElementById("lookup-status")?.hidden).toBe(false);
+    expect(document.getElementById("lookup-status")?.textContent).toBe(
+      "词库中未收录这个词。"
+    );
+    expect(document.getElementById("lookup-lemma")?.hidden).toBe(true);
+    expect(document.getElementById("lookup-ipa")?.hidden).toBe(true);
+    expect(document.getElementById("lookup-pos")?.hidden).toBe(true);
+    expect(document.getElementById("lookup-translation")?.hidden).toBe(true);
+    dom.window.close();
+  });
+
+  it("dismisses on outside clicks and Escape, moves to another word, and keeps popup clicks inside", async () => {
+    const bookId = await importSampleBookReady(app, lookupBookPath);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    const dom = loadExport(html);
+    const document = dom.window.document;
+    clickWord(document, "books");
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(false);
+
+    // A click that is neither inside the popup nor on a word dismisses it.
+    (document.querySelector("main") as HTMLElement).click();
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(true);
+
+    // A word reopens it; another word moves it instead of closing.
+    clickWord(document, "books");
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(false);
+    clickWord(document, "wrote");
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(false);
+    expect(document.getElementById("lookup-head-word")?.textContent).toBe(
+      "wrote"
+    );
+
+    // Clicks inside the popup never trip the outside rule: the speak
+    // button keeps it open, the close button is the one that closes.
+    clickWord(document, "books");
+    (document.getElementById("lookup-speak") as HTMLElement).click();
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(false);
+    (document.getElementById("lookup-close") as HTMLElement).click();
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(true);
+
+    // Escape dismisses a freshly opened popup.
+    clickWord(document, "books");
+    document.dispatchEvent(
+      new dom.window.KeyboardEvent("keydown", { key: "Escape" })
+    );
+    expect(document.getElementById("lookup-popup")?.hidden).toBe(true);
+    dom.window.close();
+  });
+
+  it("speaks the tapped word through browser speech synthesis from the 发音 button", async () => {
+    const bookId = await importSampleBookReady(app, lookupBookPath);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    // Minimal stand-in: the file's script only constructs one and sets
+    // .lang/.text (mirrors apps/web/test/wordLookup.test.tsx).
+    class FakeUtterance {
+      text: string;
+      lang = "";
+      constructor(text: string) {
+        this.text = text;
+      }
+    }
+    const spoken: { text: string; lang: string }[] = [];
+    let cancels = 0;
+    const dom = loadExport(html, {
+      speech: {
+        synthesis: {
+          cancel: () => {
+            cancels += 1;
+          },
+          speak: (utterance: unknown) => {
+            const fake = utterance as FakeUtterance;
+            spoken.push({ text: fake.text, lang: fake.lang });
+          },
+        },
+        utteranceConstructor: FakeUtterance,
+      },
+    });
+    const document = dom.window.document;
+    // The clicked surface form is what gets spoken — not the lemma.
+    clickWord(document, "books");
+    (document.getElementById("lookup-speak") as HTMLElement).click();
+    expect(cancels).toBe(1);
+    expect(spoken).toEqual([{ text: "books", lang: "en-US" }]);
+    dom.window.close();
+  });
+
+  it("stays silent when the environment has no speech synthesis", async () => {
+    const bookId = await importSampleBookReady(app, lookupBookPath);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    // jsdom (and older browsers): the API is absent — a click must not throw.
+    const dom = loadExport(html);
+    const document = dom.window.document;
+    clickWord(document, "books");
+    expect(() =>
+      (document.getElementById("lookup-speak") as HTMLElement).click()
+    ).not.toThrow();
+    dom.window.close();
+  });
+
   it("falls back to all-shown and keeps working when storage access throws", async () => {
     const bookId = await importSampleBookReady(app);
     const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
@@ -488,17 +807,28 @@ describe("exported file behavior (jsdom)", () => {
     dom.window.close();
   });
 
-  it("ships exactly one inline script and styles that never hide the original line or word stems", async () => {
+  it("ships exactly one executable script beside the vocabulary data channel, and styles that never hide the original line or word stems", async () => {
     const bookId = await importSampleBookReady(app);
     const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
 
     const dom = new JSDOM(html);
     const document = dom.window.document;
     const scripts = document.querySelectorAll("script");
-    expect(scripts).toHaveLength(1);
+    expect(scripts).toHaveLength(2);
     for (const script of scripts) {
       expect(script.getAttribute("src")).toBeNull();
     }
+    // One data channel (the book's vocabulary, parsed — never executed) and
+    // one executable script (the file's own behavior).
+    const data = [...scripts].filter(
+      (script) => script.getAttribute("type") === "application/json"
+    );
+    const program = [...scripts].filter(
+      (script) => script.getAttribute("type") === null
+    );
+    expect(data).toHaveLength(1);
+    expect(data[0]?.id).toBe("annotated-vocab");
+    expect(program).toHaveLength(1);
     expect(
       document.querySelectorAll("link, img, iframe, object, embed")
     ).toHaveLength(0);
@@ -519,7 +849,7 @@ describe("exported file behavior (jsdom)", () => {
     // chrome — book content may legitimately contain such words.)
     expect(styleText).not.toMatch(/url\s*\(/);
     expect(styleText).not.toMatch(/@import/);
-    const scriptText = scripts[0]?.textContent ?? "";
+    const scriptText = program[0]?.textContent ?? "";
     expect(scriptText).not.toMatch(
       /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource|\bimport\s*\(/
     );
