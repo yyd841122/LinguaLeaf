@@ -1,0 +1,97 @@
+# Spec: 标注书文件导出（自包含单文件 HTML）
+
+Status: ready-for-agent
+
+## Problem Statement
+
+书导入 LinguaLeaf 后，标注数据（音标行、译文行）只存在于应用内的 SQLite 里。
+换台设备、断网、或者不想启动服务时，这些书就没法按 LinguaLeaf 的对照方式阅读；
+已花的导入成本（LLM 翻译费用）被锁在应用内。GLOSSARY.md 里的"导出"目前零实现
+（无下载端点、无导出 UI）。
+
+## Solution
+
+每本书可导出为一个"标注书文件"（GLOSSARY.md）：自包含单文件 HTML，内嵌全书文本、
+逐词音标、译文、本书词汇释义，以及音标/译文两个显示开关和点词查详情、发音。
+双击用浏览器打开即读，断网完整可用。为何不是 EPUB/Markdown/PDF：见 ADR-0003。
+
+## User Stories
+
+1. As a 读者, I want to 在书架对导入完成的书点"导出", so that 得到一个可随身携带的标注书文件
+2. As a 读者, I want to 双击标注书文件用浏览器打开离线阅读, so that 无网络也能读
+3. As a 读者, I want to 在标注书文件里独立开关音标行和译文行, so that 和应用内一样的对照阅读体验
+4. As a 读者, I want to 在标注书文件里点击任意词看到音标、词性和中文释义, so that 离线也能查词
+5. As a 读者, I want to 在标注书文件里点发音按钮听词读音, so that 音标之外还能听读音（能否离线取决于系统本地语音）
+6. As a 读者, I want to 随时重复导出同一本书, so that 导出零额外成本、不担心损坏丢失
+
+## Implementation Decisions
+
+- 新端点 `GET /api/books/:id/export`：返回 HTML 附件，`Content-Disposition` 用
+  `filename*`（RFC 5987）承载中文书名；书不存在 404。挂在 `apps/server/src/books-router.ts`
+- 生成器独立模块（建议 `apps/server/src/export/annotated-book.ts`）：从库内
+  chapters + blocks 渲染（章内块查询参照 `books-router.ts:261-321`）。
+  不重新解析原文件——原上传文件本就不保存，且 ADR-0001 确立只渲染库内数据
+- 文件内嵌数据：全书内容按原序渲染——章节标题 + 全部块类型（paragraph / code / raw /
+  图片占位）+ 句子块三行（原文、逐词音标 slots、译文）；code 保留空白，图片只渲染占位与
+  alt（图片字节本就不入库）
+- 本书去重词汇表 JSON：键 = 与点词查详情同一规范化规则的词面形；值 = 复用服务端 lookup
+  逻辑的结果或 null（查不到的词也内嵌为 null，弹窗显式提示无结果）；只嵌本书词汇，
+  量级预计几 MB（按 300 页书估，不写死承诺）；导出为同步生成，单次秒级可接受，实测超阈值再优化
+- 布局与样式内联：镜像应用内句子块三行结构（`.sentence-block` / `.original-line` /
+  `.ipa-line` / `.translation-line` / `.ipa-word`，词与音标逐词配对），系统字体栈；
+  桌面浏览器优先、手机浏览器可用（响应式）
+- 显示开关：文件内两个独立开关（音标行/译文行），切换根节点 CSS class；隐藏选择器同时
+  覆盖两种音标形态——逐词配对形态藏 `.ipa-word-ipa`、旧数据平铺形态藏 `.ipa-line`，
+  词干 `.ipa-word` 不受影响（隐藏音标后词仍可见可点）。默认全显；尝试 localStorage 记忆
+  （file:// 下可能抛异常，try/catch 守卫，失败回落默认全显）。原文行永不可隐藏（GLOSSARY：原文行）
+- 点词查详情：分词正则与 `apps/server/src/dict/ipa-line.ts` 保持一致（注意
+  `apps/web/src/ReadingView.tsx` 有同步副本的先例）；弹窗展示内嵌词汇表中的
+  音标/词性/释义，查不到的词提示无结果
+- 发音：Web Speech API `speechSynthesis`，失败静默不报错（沿 v1 spec 决策）。离线发音是
+  **尽力而为**：能否出声取决于设备是否有本地英文语音（部分浏览器默认语音走网络），有本地
+  语音则离线可用，无声源时静默失败；不内嵌音频
+- 自包含红线：导出 HTML 不得引用任何外部资源（无 CDN 脚本、无网络字体、无外链图片、
+  CSS 无外链 url()、内联 JS 不发起 fetch/XHR/WebSocket/sendBeacon），断网双击必须完整可用
+- 译文缺失的句子（无 key 导入/个别句翻译失败）导出时省略译文行（应用内是渲染空行——
+  这是有意的差异，导出文件更紧凑）
+- 旧数据兼容：`ipa_slots` 为空的旧块沿应用内现行兜底用 `ipa_text` 平铺显示，不强行拆词配对
+- 安全序列化：书名/章节标题/原文/译文/词义进入 HTML 前做上下文转义（文本、属性各按其所），
+  内嵌 JSON 做脚本安全序列化（防 `</script>` 提前闭合），弹窗内容用 textContent 注入——
+  书内容一律视为不可信输入
+- 仅 `ready` 状态的书可导出：其他状态 409（与现有章内块查询的拒绝行为一致），书架页对
+  非 ready 书不显示导出按钮
+- 下载走 fetch → Blob（可捕获 404/409/500 与网络错误并提示），不沿用现有 fetchJson；
+  文件名以 Content-Disposition 为准、标题中的非法文件名字符清洗
+- 书架页（`apps/web/src/BookshelfPage.tsx`）每本书加"导出"操作，点击触发下载
+- 对全部书源通用（EPUB/Markdown，未来的 PDF 无需改动导出）
+
+## Testing Decisions
+
+- 服务端缝（supertest）：种子书走 `GET /api/books/:id/export`，断言 200 与
+  Content-Disposition；输出包含全部句子块的原文/音标/译文；内嵌词汇表 JSON 含种子词；
+  无译文句子正确省略译文行；输出不含任何外部资源引用（script src / link href / img src、
+  CSS url()、JS 发起的请求）；不存在的书 404、非 ready 状态 409
+- 对抗性夹具：书名与正文含 `<script>`、`</script>`、属性引号、HTML 注释等序列——断言导出后
+  仍是纯文本、不执行、不产生任何外部请求
+- 混合内容夹具：含章节标题、多段落、code、raw、图片占位的多章书——断言按序完整导出
+- Web 缝（Testing Library + jsdom）：书架每本书（仅 ready 状态）渲染导出按钮、点击发起
+  下载请求、错误响应提示且不保存文件；另将导出 HTML 以 `runScripts: 'dangerously'` 载入
+  jsdom 执行其真实脚本（注意 innerHTML 方式不会执行脚本），断言开关行为（各自隐藏对应行、
+  词仍可见可点、原文行不受影响、状态记忆与回落）与点词弹窗内容；speechSynthesis 仅 mock
+  断言调用——真实发声、布局对齐、file:// 行为留给票 03 真机冒烟
+- 不打真实 DeepSeek：用既有可注入假翻译器的测试基建造种子书
+- 好测试只验外部行为，不测生成器内部函数（沿 v1 spec 测试决策）
+
+## Out of Scope
+
+- EPUB/Markdown/PDF 格式导出（暂缓，见 ADR-0003）
+- 标注书文件内的阅读进度记录/回传 LinguaLeaf
+- 字体内嵌（用系统字体栈覆盖 IPA；个别老系统音标缺字接受）
+- 生词本、标注编辑
+
+## Further Notes
+
+- 用语以 GLOSSARY.md 为准：标注书文件、导出、显示开关、句子块、原文行、音标行、
+  译文行、点词查详情、发音
+- 实施顺序：本 feature 先于 pdf-import（用户决策）；两者代码无依赖
+- 导出不消耗 LLM 费用（纯库内数据渲染）
