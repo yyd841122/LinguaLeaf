@@ -3,8 +3,10 @@ import { resolveIpa } from "./dictionary.js";
 
 // A word is a run of letters, possibly joined inside by apostrophes or
 // hyphens ("don't", "well-written"). Numbers and standalone punctuation are
-// not words: they get no slot on the IPA line.
-const WORD_PATTERN = /\p{L}+(?:['’-]\p{L}+)*/gu;
+// not words: they get no slot on the IPA line. Exported for the annotated-
+// book renderer, which walks the same matches to pair each word with its
+// slot (the web's ReadingView keeps its own synced copy of the pattern).
+export const WORD_PATTERN = /\p{L}+(?:['’-]\p{L}+)*/gu;
 
 export function tokenizeWords(sentence: string): string[] {
   return sentence.match(WORD_PATTERN) ?? [];

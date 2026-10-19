@@ -1,0 +1,529 @@
+import { fileURLToPath } from "node:url";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import request from "supertest";
+import { JSDOM } from "jsdom";
+import type { Express } from "express";
+import type Database from "better-sqlite3";
+import { createApp } from "../src/app.js";
+import { openDatabase } from "../src/database.js";
+import { createFixtureDictionary } from "./fixtures/dictionary.js";
+import { createFakeTranslator } from "./fixtures/translator.js";
+import { waitForShelfBook } from "./fixtures/async-import.js";
+
+const sampleBookPath = fileURLToPath(
+  new URL("./fixtures/sample-book.md", import.meta.url)
+);
+
+// Shared by every export describe: a book on the shelf through the real
+// upload seam, with the fake translator deciding which sentences get a
+// translation line at all.
+function createExportApp(
+  database: Database.Database,
+  translate?: (
+    sentences: string[]
+  ) => (string | null)[] | Promise<(string | null)[]>
+) {
+  const translator = translate ? createFakeTranslator(translate) : undefined;
+  return createApp(database, createFixtureDictionary(), translator ?? null);
+}
+
+async function importSampleBookReady(
+  app: Express,
+  path: string = sampleBookPath
+): Promise<number> {
+  const created = await request(app).post("/api/books").attach("file", path);
+  expect(created.status).toBe(202);
+  await waitForShelfBook(app, created.body.id, "ready");
+  return created.body.id as number;
+}
+
+// A reader's text flow: the exported document's body text with the IPA
+// annotation layer stripped (transcriptions ride inside the word units, so
+// raw textContent interleaves them with the words). Shared by every test
+// that asserts on prose; the caller owns closing the returned DOM.
+function textFlow(html: string): { dom: JSDOM; flow: string } {
+  const dom = new JSDOM(html);
+  dom.window.document
+    .querySelectorAll(".ipa-word-ipa")
+    .forEach((ipa) => ipa.remove());
+  return { dom, flow: dom.window.document.body.textContent ?? "" };
+}
+
+describe("GET /api/books/:id/export", () => {
+  let database: Database.Database;
+  let app: Express;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    app = createExportApp(database);
+  });
+  afterEach(() => {
+    database.close();
+  });
+
+  it("returns the annotated book as a downloadable HTML attachment", async () => {
+    const bookId = await importSampleBookReady(app);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    expect(response.headers["content-type"]).toContain("text/html");
+    expect(response.headers["content-disposition"]).toContain("attachment");
+    // An ASCII title rides in the plain quoted form.
+    expect(response.headers["content-disposition"]).toContain(
+      'filename="The Way of the Test.html"'
+    );
+    expect(response.text).toContain("The Way of the Test");
+  });
+
+  it("pairs each word with its IPA slot and omits translation lines for untranslated sentences", async () => {
+    const translated = new Map([
+      ["He wrote a failing test first.", "他先写了失败的测试。"],
+    ]);
+    const app = createExportApp(database, (sentences) =>
+      sentences.map((sentence) => translated.get(sentence) ?? null)
+    );
+    const bookId = await importSampleBookReady(app);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    const html = response.text;
+
+    // Word-paired form: the surface form rides on data-word, word and IPA
+    // stacked inside the unit (mirrors the app's .ipa-word structure).
+    expect(html).toContain('<span class="ipa-word" data-word="wrote">');
+    expect(html).toContain('<span class="ipa-word-text">wrote</span>');
+    expect(html).toContain('<span class="ipa-word-ipa">roʊt</span>');
+    // Words the dictionary does not know stay plain text inside the line.
+    expect(html).toContain(
+      '<span class="lookup-word" data-word="Gupta">Gupta</span>'
+    );
+
+    // Exactly the translated sentence carries a translation line; the
+    // rest are omitted rather than rendered empty (spec: 译文缺失省略译文行).
+    expect(html).toContain("他先写了失败的测试。");
+    expect(html.match(/class="translation-line"/g)).toHaveLength(1);
+
+    // A heading-only chapter still renders its section, with no blocks
+    // under it (the LEFT JOIN's null-block rows are skipped).
+    expect(html).toContain(
+      '<h2 class="chapter-title">Chapter Two: Green</h2><div class="blocks"></div>'
+    );
+  });
+
+  it("answers 404 for books that do not exist", async () => {
+    for (const id of ["999", "zero"]) {
+      const response = await request(app).get(`/api/books/${id}/export`);
+      expect(response.status).toBe(404);
+      expect(response.body).toEqual({ error: "book not found" });
+    }
+  });
+
+  it("answers 409 while the book is still importing, 200 once ready", async () => {
+    let release!: (value: (string | null)[]) => void;
+    const held = new Promise<(string | null)[]>((resolve) => {
+      release = resolve;
+    });
+    const app = createExportApp(database, () => held);
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(202);
+
+    const importing = await request(app).get(
+      `/api/books/${created.body.id}/export`
+    );
+    expect(importing.status).toBe(409);
+    expect(importing.body).toEqual({ error: "book is not ready for reading" });
+
+    // Resolve with []: every sentence's translation misses (null), matching
+    // what the existing held-translator tests release with. resolve() with
+    // no argument would hand the task undefined and crash the import.
+    release([]);
+    await waitForShelfBook(app, created.body.id, "ready");
+    expect(
+      (await request(app).get(`/api/books/${created.body.id}/export`)).status
+    ).toBe(200);
+  });
+
+  it("carries a Chinese title in the RFC 5987 filename* form, sanitized for filesystems", async () => {
+    const chineseBookPath = fileURLToPath(
+      new URL("./fixtures/chinese-title-book.md", import.meta.url)
+    );
+    const bookId = await importSampleBookReady(app, chineseBookPath);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    // Supertest types header values string | undefined; the assertions
+    // below treat a missing header as the empty string.
+    const disposition = response.headers["content-disposition"] ?? "";
+    expect(disposition).toContain("attachment");
+    // The colon is illegal in Windows filenames; the title keeps it as "_"
+    // and the Chinese rides percent-encoded in filename*.
+    const expected = encodeURIComponent("三体_ 黑暗森林.html");
+    expect(disposition).toContain(`filename*=UTF-8''${expected}`);
+    // The plain fallback stays printable ASCII so every agent can read it.
+    const fallback = /filename="([^"]*)"/.exec(disposition)?.[1] ?? "";
+    expect(fallback).toMatch(/^[\x20-\x7e]+$/);
+    expect(fallback).not.toContain(":");
+  });
+
+  it("keeps script-like book content as inert text through the export", async () => {
+    const adversarialPath = fileURLToPath(
+      new URL("./fixtures/adversarial-book.md", import.meta.url)
+    );
+    const bookId = await importSampleBookReady(app, adversarialPath);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    const html = response.text;
+
+    // Nothing from the book survives into a live tag: the serialized file
+    // contains no opening of the injected scripts as markup.
+    expect(html).not.toContain("<script>alert");
+    expect(html).not.toContain("<script>window.__pwned");
+
+    // Round-trip: the title and the sentences read back exactly as they
+    // went in — escaped, not altered. (The IPA transcriptions are
+    // annotations stacked under their words; they are stripped first so
+    // the comparison sees the reader's text flow.)
+    const { dom, flow } = textFlow(html);
+    expect(dom.window.document.title).toBe(
+      "She said \"<script>alert('xss')</script>\" & <!-- done -->"
+    );
+    expect(flow).toContain(
+      'She typed </script> and left a <b>bold</b> mark & a "quote" <!-- hidden -->.'
+    );
+    expect(flow).toContain("Then <script>window.__pwned = true</script> ran?");
+
+    // And executing the file for real leaves the canary unset.
+    const live = new JSDOM(html, { runScripts: "dangerously" });
+    expect(live.window.__pwned).toBeUndefined();
+
+    // No resource-bearing elements beyond the file's own toggle script
+    // (self-contained red line at the DOM level): no links, images, frames,
+    // embeds — and no second script born from the book's content.
+    expect(dom.window.document.querySelectorAll("script")).toHaveLength(1);
+    expect(
+      dom.window.document.querySelectorAll("link, img, iframe, object, embed")
+    ).toHaveLength(0);
+    dom.window.close();
+    live.window.close();
+  });
+
+  it("renders every block kind in reading order across chapters", async () => {
+    const mixedPath = fileURLToPath(
+      new URL("./fixtures/mixed-book.md", import.meta.url)
+    );
+    const bookId = await importSampleBookReady(app, mixedPath);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    const html = response.text;
+
+    // Reading order, at the markup level: chapter 1's code block, then the
+    // raw (link-bearing) run, then the image placeholder, then chapter 2.
+    const markers = [
+      '<h1 class="book-title">Mixed Content Probe</h1>',
+      '<h2 class="chapter-title">Mixed Content Probe</h2>',
+      '<pre class="code-block"><code>',
+      // Interior whitespace survives (the importer trims the pre's edges;
+      // rendering must preserve the rest verbatim).
+      "indented  line stays &amp; &lt;intact&gt;",
+      '<p class="raw-block">Reading more: the official handbook. It is free.</p>',
+      '<figure class="image-block"><span class="image-placeholder" aria-hidden="true">🖼</span><figcaption>A map of the islands</figcaption></figure>',
+      '<h2 class="chapter-title">Chapter Two: Evidence</h2>',
+    ];
+    let cursor = -1;
+    for (const marker of markers) {
+      const at = html.indexOf(marker, cursor + 1);
+      expect(at, `marker out of order: ${marker}`).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+
+    // Reading order, at the text-flow level: the sentence lines interleave
+    // with the passthrough blocks exactly as in the reading view. (IPA
+    // annotations stripped, as in the adversarial test.)
+    const { dom, flow } = textFlow(html);
+    const flowMarkers = [
+      "A first paragraph goes here.",
+      "And a second sentence follows.",
+      "indented  line stays & <intact>",
+      "Reading more: the official handbook. It is free.",
+      "A map of the islands",
+      "The second chapter body arrives after the figure.",
+    ];
+    let flowCursor = -1;
+    for (const marker of flowMarkers) {
+      const at = flow.indexOf(marker, flowCursor + 1);
+      expect(at, `text out of order: ${marker}`).toBeGreaterThan(flowCursor);
+      flowCursor = at;
+    }
+
+    // The image stays a placeholder: no bytes, no <img>.
+    expect(html).not.toContain("<img");
+    dom.window.close();
+  });
+
+  it("falls back to the flat IPA line for pre-pairing blocks with NULL slots", async () => {
+    const bookId = await importSampleBookReady(app);
+    // Simulate books imported before ticket 03: the slots column exists but
+    // those rows hold NULL, with only the flat line filled.
+    database
+      .prepare("UPDATE blocks SET ipa_slots = NULL WHERE kind = 'sentence'")
+      .run();
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    const html = response.text;
+
+    // No word pairing anywhere; every sentence carries the flat line, and
+    // the original line survives above it.
+    const dom = new JSDOM(html);
+    expect(dom.window.document.querySelectorAll(".ipa-word")).toHaveLength(0);
+    expect(
+      dom.window.document.querySelectorAll(".lookup-word").length
+    ).toBeGreaterThan(0);
+    expect(html).toContain(
+      '<p class="ipa-line">hi roʊt ə ˈfeɪlɪŋ test fɜːst</p>'
+    );
+    const flow = dom.window.document.body.textContent ?? "";
+    expect(flow).toContain("He wrote a failing test first.");
+    dom.window.close();
+
+    // Rows with no slots AND no flat line (the sparsest legacy shape):
+    // the flat line renders as an empty placeholder, mirroring the app,
+    // and the original line survives.
+    database
+      .prepare(
+        "UPDATE blocks SET ipa_text = NULL WHERE original_text LIKE 'Then he made it pass%'"
+      )
+      .run();
+    const sparse = await request(app).get(`/api/books/${bookId}/export`);
+    expect(sparse.status).toBe(200);
+    expect(sparse.text).toContain('<p class="ipa-line"></p>');
+    const sparseFlow = textFlow(sparse.text).flow;
+    expect(sparseFlow).toContain("Then he made it pass!");
+  });
+
+  it("renders edge-shape books: untitled lead-in, alt-less image, heading-only chapter, empty filename", async () => {
+    const edgePath = fileURLToPath(
+      new URL("./fixtures/edge-cases-book.md", import.meta.url)
+    );
+    const bookId = await importSampleBookReady(app, edgePath);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+
+    // The title "..." sanitizes away to nothing: the fallback name kicks in
+    // (unquoted — content-disposition only quotes names that need it).
+    expect(response.headers["content-disposition"]).toContain(
+      "filename=book.html"
+    );
+    const html = response.text;
+
+    // The lead-in chapter has no title: no empty heading is rendered, but
+    // its text survives.
+    expect(html).not.toContain('<h2 class="chapter-title"></h2>');
+    const { dom, flow } = textFlow(html);
+    expect(flow).toContain(
+      "Words before any heading form the untitled lead-in chapter."
+    );
+
+    // An image whose alt is empty renders the placeholder with no caption.
+    expect(html).toContain(
+      '<figure class="image-block"><span class="image-placeholder" aria-hidden="true">🖼</span></figure>'
+    );
+    expect(html).not.toContain("<figcaption></figcaption>");
+
+    // A chapter whose only content is the next heading still renders.
+    expect(html).toContain(
+      '<h2 class="chapter-title">Hollow</h2><div class="blocks"></div>'
+    );
+    expect(flow).toContain("A sentence after two nested headings.");
+    dom.window.close();
+  });
+});
+
+// The exported file is a program, not just markup: its toggles run in the
+// reader's browser. These tests execute the file's real script in jsdom
+// (innerHTML would not) and inject the storage seam — a shared mock for the
+// remember/across-reopen behavior, a throwing localStorage for the
+// file://-denied fallback.
+describe("exported file behavior (jsdom)", () => {
+  let database: Database.Database;
+  let app: Express;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    app = createExportApp(database);
+  });
+  afterEach(() => {
+    database.close();
+  });
+
+  // The file's script only ever getItem/setItem — the mock models exactly
+  // that surface, backed by a Map the test can inspect and reuse.
+  type StorageMock = {
+    storage: {
+      getItem: (key: string) => string | null;
+      setItem: (key: string, value: string) => void;
+    };
+    store: Map<string, string>;
+  };
+
+  function createStorageMock(): StorageMock {
+    const store = new Map<string, string>();
+    return {
+      storage: {
+        getItem: (key) => store.get(key) ?? null,
+        setItem: (key, value) => {
+          store.set(key, String(value));
+        },
+      },
+      store,
+    };
+  }
+
+  function loadExport(
+    html: string,
+    options: {
+      storage?: StorageMock["storage"];
+      deniedStorage?: boolean;
+    } = {}
+  ): JSDOM {
+    return new JSDOM(html, {
+      runScripts: "dangerously",
+      url: "https://annotated-book.local/",
+      beforeParse(window) {
+        if (options.deniedStorage) {
+          // Mirrors the file:// denial: touching localStorage itself throws.
+          Object.defineProperty(window, "localStorage", {
+            configurable: true,
+            get() {
+              throw new window.DOMException("access denied", "SecurityError");
+            },
+          });
+        } else if (options.storage) {
+          Object.defineProperty(window, "localStorage", {
+            configurable: true,
+            get: () => options.storage,
+          });
+        }
+      },
+    });
+  }
+
+  it("toggles each annotation line independently and remembers the state", async () => {
+    const bookId = await importSampleBookReady(app);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    const session = createStorageMock();
+    const dom = loadExport(html, { storage: session.storage });
+    const document = dom.window.document;
+
+    // Default: everything shown.
+    const ipaToggle = document.getElementById("toggle-ipa") as HTMLInputElement;
+    const translationToggle = document.getElementById(
+      "toggle-translation"
+    ) as HTMLInputElement;
+    expect(ipaToggle?.checked).toBe(true);
+    expect(translationToggle?.checked).toBe(true);
+    expect(document.body.classList.contains("hide-ipa")).toBe(false);
+    expect(document.body.classList.contains("hide-translation")).toBe(false);
+
+    // Hiding the IPA lines touches nothing else: the words keep their
+    // units, the original line keeps its rows.
+    const words = document.querySelectorAll(".ipa-word").length;
+    const originalLines = document.querySelectorAll(".original-line").length;
+    ipaToggle.click();
+    expect(ipaToggle.checked).toBe(false);
+    expect(document.body.classList.contains("hide-ipa")).toBe(true);
+    expect(document.body.classList.contains("hide-translation")).toBe(false);
+    expect(document.querySelectorAll(".ipa-word")).toHaveLength(words);
+    expect(document.querySelectorAll(".original-line")).toHaveLength(
+      originalLines
+    );
+    expect(translationToggle.checked).toBe(true);
+
+    translationToggle.click();
+    expect(document.body.classList.contains("hide-translation")).toBe(true);
+
+    // The choice landed in storage under each toggle's own key.
+    expect([...session.store.values()]).toEqual(["0", "0"]);
+    dom.window.close();
+
+    // Reopening the file restores the remembered state.
+    const reopened = loadExport(html, { storage: session.storage });
+    const reopenedIpa = reopened.window.document.getElementById(
+      "toggle-ipa"
+    ) as HTMLInputElement;
+    const reopenedTranslation = reopened.window.document.getElementById(
+      "toggle-translation"
+    ) as HTMLInputElement;
+    expect(reopenedIpa.checked).toBe(false);
+    expect(reopenedTranslation.checked).toBe(false);
+    expect(reopened.window.document.body.classList.contains("hide-ipa")).toBe(
+      true
+    );
+    expect(
+      reopened.window.document.body.classList.contains("hide-translation")
+    ).toBe(true);
+    reopened.window.close();
+  });
+
+  it("falls back to all-shown and keeps working when storage access throws", async () => {
+    const bookId = await importSampleBookReady(app);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    const dom = loadExport(html, { deniedStorage: true });
+    const document = dom.window.document;
+    const ipaToggle = document.getElementById("toggle-ipa") as HTMLInputElement;
+
+    expect(ipaToggle.checked).toBe(true);
+    expect(document.body.classList.contains("hide-ipa")).toBe(false);
+
+    // Toggling still works in-page; the write failure stays silent.
+    expect(() => ipaToggle.click()).not.toThrow();
+    expect(document.body.classList.contains("hide-ipa")).toBe(true);
+    dom.window.close();
+  });
+
+  it("ships exactly one inline script and styles that never hide the original line or word stems", async () => {
+    const bookId = await importSampleBookReady(app);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+
+    const dom = new JSDOM(html);
+    const document = dom.window.document;
+    const scripts = document.querySelectorAll("script");
+    expect(scripts).toHaveLength(1);
+    for (const script of scripts) {
+      expect(script.getAttribute("src")).toBeNull();
+    }
+    expect(
+      document.querySelectorAll("link, img, iframe, object, embed")
+    ).toHaveLength(0);
+
+    const styleText = document.querySelector("style")?.textContent ?? "";
+    // Both IPA shapes hide together: the paired transcription and the
+    // legacy flat line.
+    expect(styleText).toContain(".hide-ipa .ipa-line");
+    expect(styleText).toContain(".hide-ipa .ipa-word-ipa");
+    expect(styleText).toContain(".hide-translation .translation-line");
+    // The original line and the word stems are never targets of a hide
+    // selector — words must stay visible and clickable.
+    expect(styleText).not.toMatch(/\.hide-[a-z]+[^{}]*original-line/);
+    expect(styleText).not.toMatch(/\.hide-ipa\s+\.ipa-word\s*[{,]/);
+
+    // Self-contained red line, stylesheet and script halves: no remote
+    // url(), no @import, no network calls. (Scoped to the file's own
+    // chrome — book content may legitimately contain such words.)
+    expect(styleText).not.toMatch(/url\s*\(/);
+    expect(styleText).not.toMatch(/@import/);
+    const scriptText = scripts[0]?.textContent ?? "";
+    expect(scriptText).not.toMatch(
+      /\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource|\bimport\s*\(/
+    );
+    expect(html).not.toContain("http-equiv");
+    dom.window.close();
+  });
+});

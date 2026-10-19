@@ -4,6 +4,10 @@ import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
 import { EpubParseError, isEpubFilename, readEpubBook } from "./import/epub.js";
 import { isMarkdownFilename, readMarkdownBook } from "./import/markdown.js";
+import {
+  annotatedBookFilename,
+  renderAnnotatedBook,
+} from "./export/annotated-book.js";
 import type { Translator } from "./translate/translator.js";
 import type { BlockKind } from "./import/pipeline.js";
 import {
@@ -242,6 +246,23 @@ export function createBooksRouter(
       )
       .run(book.id, chapter, block, new Date().toISOString());
     response.json({ chapter, block });
+  });
+
+  // Export answers with the annotated book file (GLOSSARY.md): the same
+  // reading guard as the chapter routes — only settled books have blocks to
+  // render — then a self-contained HTML attachment whose filename carries
+  // the book title.
+  router.get("/:id/export", (request, response) => {
+    const book = bookFromParams(request);
+    if (!book) {
+      response.status(404).json({ error: "book not found" });
+      return;
+    }
+    if (respondIfNotReady(book, response)) return;
+    response
+      .type("html")
+      .attachment(annotatedBookFilename(book.title))
+      .send(renderAnnotatedBook(database, book));
   });
 
   router.get("/:id", (request, response) => {
