@@ -5,7 +5,7 @@ LinguaLeaf 是一款英文电子书阅读器：在书的内容上叠加音标与
 ## Language
 
 **书 (Book)**:
-用户导入的英文电子书文档。v1 支持 EPUB 和 Markdown 两种格式。
+用户导入的英文电子书文档。支持 EPUB、Markdown，以及文本层完好的 PDF（扫描件不支持）。
 _Avoid_: 文件、素材、教材
 
 **标注 (Annotation)**:
@@ -37,8 +37,12 @@ _Avoid_: 图层开关、模式切换
 _Avoid_: 查词、划词翻译
 
 **导出 (Export)**:
-把书连同已生成的标注输出为独立的 EPUB/Markdown/PDF 文件，离开 LinguaLeaf 也能直接使用。
+把书连同已生成的标注输出为标注书文件，离开 LinguaLeaf 也能直接使用。
 _Avoid_: 分享、备份
+
+**标注书文件 (Annotated Book File)**:
+导出生成的自包含单文件 HTML：内嵌全书文本、音标、译文与词义，以及显示开关。双击即可在浏览器离线打开，不依赖 LinguaLeaf 或网络。
+_Avoid_: 导出包、离线包、自制格式
 
 **发音 (Pronunciation)**:
 在点词查详情中播放所选词读音的功能。
