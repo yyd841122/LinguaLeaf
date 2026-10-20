@@ -78,3 +78,19 @@ skips.
 
 At review: a component test mixing waitFor with fake timers, or clicking
 submit on a required form, walks a path that already failed once.
+
+## Per-entity async UI state keys by entity
+
+Async UI state tracking work on a list of entities — in-flight markers,
+spinners, optimistic rows — keys by entity id (a Set or Map), never a
+single "current" slot: with a slot, one work item settling erases
+another's marker, re-enabling a row whose work is still running.
+
+Why: ticket 03's export button used one `exportingId`; the Standards axis
+passed it under the lifecycle rule while the Spec axis caught that
+finishing book A re-enabled book B mid-download
+(`.scratch/annotated-book-export/issues/03-export-bookshelf-button.md`).
+
+At review: for each piece of async UI state in a diff, ask "can two of
+these run at once?" A yes with single-slot state is the bug, even when
+today's UI only disables the clicked row.
