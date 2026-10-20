@@ -40,6 +40,98 @@ export const SCAN_PAGE_MEDIAN_THRESHOLD = 100;
 // extraction. The cap keeps the synchronous POST bounded.
 export const MAX_PDF_PAGES = 2000;
 
+const PAGES_PER_CHAPTER = 10;
+
+type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
+type OutlineItem = {
+  title: string;
+  dest: unknown;
+  items: OutlineItem[];
+};
+type ChapterStart = { title: string; pageIndex: number };
+
+const pageRangeTitle = (start: number, end: number): string =>
+  `第 ${start + 1}–${end} 页`;
+
+// Destinations can name an entry in the document's destination tree, point
+// directly to a page object, or use a zero-based page index. External links
+// and broken targets cannot delimit local chapters; their children can.
+async function destinationPage(
+  pdf: PdfDocument,
+  destination: unknown
+): Promise<number | null> {
+  try {
+    const resolved: unknown =
+      typeof destination === "string"
+        ? await pdf.getDestination(destination)
+        : destination;
+    if (!Array.isArray(resolved)) return null;
+    const target: unknown = resolved[0];
+    let index;
+    if (typeof target === "number") {
+      index = target;
+    } else if (
+      target !== null &&
+      typeof target === "object" &&
+      "num" in target &&
+      typeof target.num === "number" &&
+      "gen" in target &&
+      typeof target.gen === "number"
+    ) {
+      index = await pdf.getPageIndex({ num: target.num, gen: target.gen });
+    } else {
+      return null;
+    }
+    return Number.isInteger(index) && index >= 0 && index < pdf.numPages
+      ? index
+      : null;
+  } catch {
+    // A stale bookmark must not prevent importing the book's text layer.
+    return null;
+  }
+}
+
+async function chapterStarts(pdf: PdfDocument): Promise<ChapterStart[]> {
+  let outline: OutlineItem[] | null;
+  try {
+    outline = await pdf.getOutline();
+  } catch (error) {
+    throw asParseError(error);
+  }
+  const starts: ChapterStart[] = [];
+  const visit = async (items: OutlineItem[]): Promise<void> => {
+    for (const item of items) {
+      const pageIndex = await destinationPage(pdf, item.dest);
+      if (pageIndex !== null) starts.push({ title: item.title, pageIndex });
+      await visit(item.items);
+    }
+  };
+  await visit(outline ?? []);
+  // Physical page order gives disjoint ranges even when the outline lists
+  // targets out of order. Stable sorting preserves same-page bookmarks:
+  // each still opens a chapter, with the last receiving that page's text.
+  starts.sort((left, right) => left.pageIndex - right.pageIndex);
+  const first = starts[0];
+  if (first && first.pageIndex > 0) {
+    starts.unshift({
+      title: pageRangeTitle(0, first.pageIndex),
+      pageIndex: 0,
+    });
+  }
+  if (starts.length === 0) {
+    for (let index = 0; index < pdf.numPages; index += PAGES_PER_CHAPTER) {
+      starts.push({
+        title: pageRangeTitle(
+          index,
+          Math.min(index + PAGES_PER_CHAPTER, pdf.numPages)
+        ),
+        pageIndex: index,
+      });
+    }
+  }
+  return starts;
+}
+
 // Ligature code points print as single glyphs but must read as their
 // letter sequences in 原文行 (spec: ﬁ → fi).
 const LIGATURES: Record<string, string> = {
@@ -153,8 +245,8 @@ const asParseError = (error: unknown): PdfParseError =>
 // The PDF front half of the import: extract the text layer and hand the
 // shared pipeline a PreparedBook shaped like the EPUB front half's, so
 // everything past this point (sentences → IPA → translation → insert) is
-// one code path. Ticket 01 ships the whole book as one interim chapter;
-// bookmark and page-count chaptering arrive with ticket 02.
+// one code path. Bookmarks delimit chapters by physical page; books with
+// no usable local bookmarks get fixed-size page ranges.
 export async function readPdfBook(
   content: Buffer,
   filename: string
@@ -211,11 +303,19 @@ export async function readPdfBook(
     }
     if (title === "") title = filename.replace(PDF_EXTENSION, "");
 
-    const text = foldLines(pageTexts);
+    const starts = await chapterStarts(pdf);
     return {
       title,
       format: "pdf",
-      chapters: [{ title, level: null, items: [{ kind: "paragraph", text }] }],
+      chapters: starts.map((start, index) => {
+        const end = starts[index + 1]?.pageIndex ?? pdf.numPages;
+        const text = foldLines(pageTexts.slice(start.pageIndex, end));
+        return {
+          title: start.title,
+          level: null,
+          items: text === "" ? [] : [{ kind: "paragraph", text }],
+        };
+      }),
     };
   } finally {
     // The proxy's lifecycle rides on its loading task in pdf.js — destroying

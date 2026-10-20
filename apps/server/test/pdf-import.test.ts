@@ -8,6 +8,8 @@ import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 import {
+  chapterTextPages,
+  createBookmarkedPdf,
   createEncryptedPdf,
   createLigaturePdf,
   createOversizedPdf,
@@ -45,6 +47,155 @@ describe("PDF import through the HTTP API seam", () => {
     await waitForShelfBook(app, created.body.id, "ready");
     return created.body.id as number;
   }
+
+  async function expectChapterPages(
+    bookId: number,
+    position: number,
+    pages: string[]
+  ): Promise<void> {
+    const chapter = await request(app).get(
+      `/api/books/${bookId}/chapters/${position}`
+    );
+    expect(chapter.status).toBe(200);
+    expect(
+      chapter.body.blocks.map(
+        (block: {
+          kind: string;
+          originalText: string;
+          translationText: string;
+        }) => ({
+          kind: block.kind,
+          originalText: block.originalText,
+          translationText: block.translationText,
+        })
+      )
+    ).toEqual(
+      pages.flatMap((page) =>
+        page.split("\n").map((sentence) => ({
+          kind: "sentence",
+          originalText: sentence,
+          translationText: `译:${sentence}`,
+        }))
+      )
+    );
+  }
+
+  it("chapters by bookmark pages, including nested and named destinations through the final page", async () => {
+    const bookId = await importPdf(
+      await createBookmarkedPdf(),
+      "different-file-name.pdf"
+    );
+    const toc = await request(app).get(`/api/books/${bookId}`);
+    expect(toc.status).toBe(200);
+    expect(toc.body.title).toBe("Bookmarked PDF Book");
+    expect(toc.body.chapters).toEqual([
+      { position: 1, title: "Opening", level: null },
+      { position: 2, title: "A Turning Point", level: null },
+      { position: 3, title: "Finale — 最后一章", level: null },
+    ]);
+    const pages = chapterTextPages(6);
+    await expectChapterPages(bookId, 1, pages.slice(0, 2));
+    await expectChapterPages(bookId, 2, pages.slice(2, 4));
+    await expectChapterPages(bookId, 3, pages.slice(4, 6));
+    expect(translator.calls.length).toBeGreaterThan(0);
+  });
+
+  it.each([
+    {
+      pageCount: 10,
+      ranges: [{ title: "第 1–10 页", start: 0, end: 10 }],
+    },
+    {
+      pageCount: 11,
+      ranges: [
+        { title: "第 1–10 页", start: 0, end: 10 },
+        { title: "第 11–11 页", start: 10, end: 11 },
+      ],
+    },
+    {
+      pageCount: 23,
+      ranges: [
+        { title: "第 1–10 页", start: 0, end: 10 },
+        { title: "第 11–20 页", start: 10, end: 20 },
+        { title: "第 21–23 页", start: 20, end: 23 },
+      ],
+    },
+  ])(
+    "splits $pageCount unbookmarked pages into ten-page chapters",
+    async ({ pageCount, ranges }) => {
+      const pages = chapterTextPages(pageCount);
+      const bookId = await importPdf(
+        await createSamplePdf({ pages }),
+        "unbookmarked.pdf"
+      );
+      const toc = await request(app).get(`/api/books/${bookId}`);
+      expect(toc.status).toBe(200);
+      expect(toc.body.chapters).toEqual(
+        ranges.map((range, index) => ({
+          position: index + 1,
+          title: range.title,
+          level: null,
+        }))
+      );
+      for (const [index, range] of ranges.entries()) {
+        await expectChapterPages(
+          bookId,
+          index + 1,
+          pages.slice(range.start, range.end)
+        );
+      }
+    }
+  );
+
+  it("keeps pages before the first bookmark and every same-page bookmark without duplicating text", async () => {
+    const pages = chapterTextPages(6);
+    const bookId = await importPdf(
+      await createBookmarkedPdf({
+        pages,
+        bookmarks: [
+          { title: "Ending", page: 5 },
+          {
+            title: "A destinationless grouping node",
+            page: null,
+            children: [
+              { title: "Part One", page: 3 },
+              { title: "First Section", page: 3 },
+            ],
+          },
+        ],
+      }),
+      "messy-outline.pdf"
+    );
+    const toc = await request(app).get(`/api/books/${bookId}`);
+    expect(toc.body.chapters).toEqual([
+      { position: 1, title: "第 1–2 页", level: null },
+      { position: 2, title: "Part One", level: null },
+      { position: 3, title: "First Section", level: null },
+      { position: 4, title: "Ending", level: null },
+    ]);
+    await expectChapterPages(bookId, 1, pages.slice(0, 2));
+    await expectChapterPages(bookId, 2, []);
+    await expectChapterPages(bookId, 3, pages.slice(2, 4));
+    await expectChapterPages(bookId, 4, pages.slice(4, 6));
+  });
+
+  it("uses page ranges when the outline has no local page destinations", async () => {
+    const pages = chapterTextPages(11);
+    const bookId = await importPdf(
+      await createBookmarkedPdf({
+        pages,
+        bookmarks: [{ title: "No destination", page: null }],
+      }),
+      "no-local-targets.pdf"
+    );
+    const toc = await request(app).get(`/api/books/${bookId}`);
+    expect(toc.body.chapters).toEqual([
+      { position: 1, title: "第 1–10 页", level: null },
+      { position: 2, title: "第 11–11 页", level: null },
+    ]);
+    await expectChapterPages(bookId, 1, pages.slice(0, 10));
+    await expectChapterPages(bookId, 2, pages.slice(10));
+  });
 
   it("rejects bytes that are not a PDF with 400 and no book row", async () => {
     const created = await request(app)
@@ -201,16 +352,25 @@ describe("PDF import through the HTTP API seam", () => {
     ).toBe("ready");
   });
 
-  it("falls back to the file name without extension when metadata has no title", async () => {
-    const bookId = await importPdf(
-      await createSamplePdf({ title: null }),
-      "My Great Book.pdf"
-    );
-    const toc = await request(app).get(`/api/books/${bookId}`);
-    expect(toc.body.title).toBe("My Great Book");
-  });
+  it.each([
+    { label: "without bookmarks", create: createSamplePdf },
+    { label: "with bookmarks", create: createBookmarkedPdf },
+  ])(
+    "falls back to the file name without extension when metadata has no title ($label)",
+    async ({ create }) => {
+      const bookId = await importPdf(
+        await create({ title: null }),
+        "My Great Book.PDF"
+      );
+      const toc = await request(app).get(`/api/books/${bookId}`);
+      expect(toc.body.title).toBe("My Great Book");
+    }
+  );
 
   it("generates byte-identical fixture PDFs across runs", async () => {
+    expect(
+      (await createBookmarkedPdf()).equals(await createBookmarkedPdf())
+    ).toBe(true);
     expect((await createSamplePdf()).equals(await createSamplePdf())).toBe(
       true
     );
@@ -271,15 +431,15 @@ describe("PDF import through the HTTP API seam", () => {
 
     const toc = await request(app).get(`/api/books/${created.body.id}`);
     expect(toc.status).toBe(200);
-    // Metadata title names the book; ticket 01 ships the whole book as one
-    // interim chapter (bookmark / page-chunk chaptering is ticket 02).
+    // Metadata names the book; the short unbookmarked PDF uses a page range
+    // for its chapter title rather than reusing the book title.
     expect(toc.body).toMatchObject({
       id: created.body.id,
       title: "Sample PDF Book",
       format: "pdf",
     });
     expect(toc.body.chapters).toEqual([
-      { position: 1, title: "Sample PDF Book", level: null },
+      { position: 1, title: "第 1–3 页", level: null },
     ]);
 
     const chapter = await request(app).get(

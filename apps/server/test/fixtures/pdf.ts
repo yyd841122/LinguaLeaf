@@ -1,4 +1,10 @@
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import {
+  PDFDocument,
+  PDFHexString,
+  PDFName,
+  StandardFonts,
+  type PDFRef,
+} from "pdf-lib";
 
 // Deterministic fixture PDFs (spec: 杜绝时间戳类不确定因素).
 // updateMetadata: false keeps pdf-lib from stamping CreationDate/ModDate,
@@ -11,9 +17,9 @@ export type SamplePdfOptions = {
   pages?: string[];
 };
 
-export async function createSamplePdf(
-  options: SamplePdfOptions = {}
-): Promise<Buffer> {
+async function createTextDocument(
+  options: SamplePdfOptions
+): Promise<PDFDocument> {
   const { title = "Sample PDF Book", pages = defaultThreeTextPages() } =
     options;
   const document = await PDFDocument.create({ updateMetadata: false });
@@ -27,6 +33,136 @@ export async function createSamplePdf(
     if (text !== "") {
       page.drawText(text, { x: 60, y: 760, font, size: 12, lineHeight: 18 });
     }
+  }
+  return document;
+}
+
+export async function createSamplePdf(
+  options: SamplePdfOptions = {}
+): Promise<Buffer> {
+  const document = await createTextDocument(options);
+  return Buffer.from(await document.save());
+}
+
+// Distinct sentences on every page expose missing, duplicated, or wrongly
+// assigned pages through the reading API. No repeated margin lines can be
+// mistaken for running heads by the cleanup pass.
+export function chapterTextPages(count: number): string[] {
+  return Array.from({ length: count }, (_, index) =>
+    [
+      `Page ${index + 1} opens with a quiet walk beside the river.`,
+      `The reader on page ${index + 1} watches the light cross the water.`,
+      `Page ${index + 1} ends with a clear sentence about the journey.`,
+    ].join("\n")
+  );
+}
+
+export type PdfBookmark = {
+  title: string;
+  // One-based physical page; null models a destinationless grouping node.
+  page: number | null;
+  children?: PdfBookmark[];
+  namedDestination?: string;
+  usePageIndex?: boolean;
+};
+
+// pdf-lib has no outline API. Build the linked outline tree and destination
+// name tree through its low-level context, retaining the same timestamp-free
+// document creation as the other fixtures. The default has both nested and
+// named destinations, as real PDF outlines commonly do.
+export async function createBookmarkedPdf(
+  options: SamplePdfOptions & { bookmarks?: PdfBookmark[] } = {}
+): Promise<Buffer> {
+  const {
+    bookmarks = [
+      {
+        title: "Opening",
+        page: 1,
+        children: [
+          {
+            title: "A Turning Point",
+            page: 3,
+            namedDestination: "turning-point",
+          },
+        ],
+      },
+      { title: "Finale — 最后一章", page: 5, usePageIndex: true },
+    ],
+    title = "Bookmarked PDF Book",
+    pages = chapterTextPages(6),
+  } = options;
+  const document = await createTextDocument({ title, pages });
+  const { context } = document;
+  const root = context.obj({ Type: "Outlines" });
+  const rootRef = context.register(root);
+  const names: { name: string; destination: PDFRef }[] = [];
+
+  function addBookmarks(entries: PdfBookmark[], parent: PDFRef) {
+    const nodes = entries.map(() => context.obj({}));
+    const refs = nodes.map((node) => context.register(node));
+    let count = entries.length;
+    entries.forEach((bookmark, index) => {
+      const node = nodes[index];
+      const ref = refs[index];
+      if (!node || !ref) throw new Error("missing outline fixture node");
+      node.set(PDFName.of("Title"), PDFHexString.fromText(bookmark.title));
+      node.set(PDFName.of("Parent"), parent);
+      const previous = refs[index - 1];
+      const next = refs[index + 1];
+      if (previous) node.set(PDFName.of("Prev"), previous);
+      if (next) node.set(PDFName.of("Next"), next);
+      if (bookmark.page !== null) {
+        const pageIndex = bookmark.page - 1;
+        const page = document.getPages()[pageIndex];
+        if (!page) throw new Error("outline fixture page is out of range");
+        const destination = context.obj([
+          bookmark.usePageIndex ? pageIndex : page.ref,
+          "Fit",
+        ]);
+        if (bookmark.namedDestination) {
+          names.push({
+            name: bookmark.namedDestination,
+            destination: context.register(destination),
+          });
+          node.set(
+            PDFName.of("Dest"),
+            PDFHexString.fromText(bookmark.namedDestination)
+          );
+        } else {
+          node.set(PDFName.of("Dest"), destination);
+        }
+      }
+      const children = addBookmarks(bookmark.children ?? [], ref);
+      if (children.first && children.last) {
+        node.set(PDFName.of("First"), children.first);
+        node.set(PDFName.of("Last"), children.last);
+        node.set(PDFName.of("Count"), context.obj(children.count));
+      }
+      count += children.count;
+    });
+    return { first: refs[0], last: refs.at(-1), count };
+  }
+
+  const children = addBookmarks(bookmarks, rootRef);
+  if (children.first && children.last) {
+    root.set(PDFName.of("First"), children.first);
+    root.set(PDFName.of("Last"), children.last);
+    root.set(PDFName.of("Count"), context.obj(children.count));
+  }
+  document.catalog.set(PDFName.of("Outlines"), rootRef);
+  if (names.length > 0) {
+    const destinations = context.obj({
+      Names: names
+        .sort((left, right) => left.name.localeCompare(right.name))
+        .flatMap(({ name, destination }) => [
+          PDFHexString.fromText(name),
+          destination,
+        ]),
+    });
+    document.catalog.set(
+      PDFName.of("Names"),
+      context.obj({ Dests: context.register(destinations) })
+    );
   }
   return Buffer.from(await document.save());
 }
