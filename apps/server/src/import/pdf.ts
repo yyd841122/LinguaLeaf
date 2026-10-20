@@ -142,6 +142,14 @@ const dropRunningHeads = (pages: string[][]): string[][] => {
   );
 };
 
+// One mapping for every unpdf failure: password-protected documents get
+// the 加密 文案, everything else (broken bytes, corrupt page tree) is a
+// broken upload in the 400 family — never a server fault.
+const asParseError = (error: unknown): PdfParseError =>
+  (error as { name?: string } | null)?.name === "PasswordException"
+    ? new EncryptedPdfError("加密 PDF 暂不支持")
+    : new PdfParseError("not a valid PDF file");
+
 // The PDF front half of the import: extract the text layer and hand the
 // shared pipeline a PreparedBook shaped like the EPUB front half's, so
 // everything past this point (sentences → IPA → translation → insert) is
@@ -155,17 +163,21 @@ export async function readPdfBook(
   try {
     pdf = await getDocumentProxy(new Uint8Array(content));
   } catch (error) {
-    if ((error as { name?: string } | null)?.name === "PasswordException") {
-      throw new EncryptedPdfError("加密 PDF 暂不支持");
-    }
-    throw new PdfParseError("not a valid PDF file");
+    throw asParseError(error);
   }
   try {
     if (pdf.numPages > MAX_PDF_PAGES) {
       throw new PdfParseError(`PDF has more than ${MAX_PDF_PAGES} pages`);
     }
 
-    const { items } = await extractTextItems(pdf);
+    let items;
+    try {
+      ({ items } = await extractTextItems(pdf));
+    } catch (error) {
+      // A document that opens but fails mid-extraction (corrupt page tree,
+      // unreadable xref) is still a broken upload, not a server fault.
+      throw asParseError(error);
+    }
     const pageTexts = dropRunningHeads(
       items.map((pageItems) => linesFromItems(pageItems))
     ).map((lines) => foldLines(lines));

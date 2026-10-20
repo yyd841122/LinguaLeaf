@@ -259,6 +259,26 @@ describe("BookshelfPage import states (ticket 08)", () => {
       screen.getByText("导入失败：扫描件/图片型 PDF 暂不支持。")
     ).toBeTruthy();
   });
+
+  it("shows the encrypted-PDF copy when the server's 400 body carries it", async () => {
+    renderShelf();
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/api/books") && method === "POST") {
+          return jsonResponse(400, { error: "加密 PDF 暂不支持" });
+        }
+        if (url.endsWith("/api/books")) {
+          return jsonResponse(200, shelfState);
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }
+    );
+    await uploadFile("encrypted.pdf");
+
+    expect(screen.getByText("导入失败：加密 PDF 暂不支持。")).toBeTruthy();
+  });
 });
 
 describe("BookshelfPage export (ticket 03)", () => {

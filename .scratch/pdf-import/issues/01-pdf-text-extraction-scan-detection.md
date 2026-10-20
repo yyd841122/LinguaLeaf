@@ -103,3 +103,10 @@ Spec: `.scratch/pdf-import/spec.md`
 - **验收对照**：文本 fixture 正常导入成书（句子块 + 假翻译器译文）✅；扫描件 422 + 文案 +
   不建书 + 翻译器零调用 ✅；跨行连字符合并（缝上断言，含跨页句）✅；不打真实 DeepSeek ✅
 - 下一张票：02（书签分章与书名）依赖本票，ready-for-agent
+
+### 2026-10-20 收官后 audit（/cc-suite:audit commit -4）与修复
+
+- mini 审计（gpt-6.1-sol/high，jobId `audit-mvg5s1gw-rozklo`，threadId `01a1577a-cc3e-7e80-b24f-f7df441c86b0`）：
+  2 条 Medium，均修复 —— ① 抽取期失败（坏页树等）经共享 `asParseError` 映射进 400 族，不再 500 逃逸；
+  ② `ApiError` 携带错误体，加密 400 的「加密 PDF 暂不支持」文案送达读者（web jsdom 测试断言）。
+  findings 存档 `.cc-suite/audits/audit-20261020-120534-findings.md`；门禁复跑 typecheck/lint/test/build 全 0，vitest 155/155

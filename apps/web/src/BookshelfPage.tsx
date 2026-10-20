@@ -127,7 +127,11 @@ export function BookshelfPage() {
           : error instanceof ApiError && error.status === 415
             ? "导入失败：只接受 .epub、.md、.markdown 或 .pdf 文件（≤20MB）。"
             : error instanceof ApiError && error.status === 400
-              ? "导入失败：文件无法解析，可能已损坏。"
+              ? // The server's 400 body is the contract for this branch:
+                // encrypted PDFs carry their own reader-facing 文案.
+                error.body?.error === "加密 PDF 暂不支持"
+                ? "导入失败：加密 PDF 暂不支持。"
+                : "导入失败：文件无法解析，可能已损坏。"
               : "导入失败，请重试。"
       );
     } finally {
