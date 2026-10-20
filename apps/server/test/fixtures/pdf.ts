@@ -152,8 +152,12 @@ export async function createBookmarkedPdf(
   document.catalog.set(PDFName.of("Outlines"), rootRef);
   if (names.length > 0) {
     const destinations = context.obj({
+      // Code-unit order keeps byte-identical output across environments
+      // (localeCompare varies with ICU) and matches PDF name-tree ordering.
       Names: names
-        .sort((left, right) => left.name.localeCompare(right.name))
+        .sort((left, right) =>
+          left.name < right.name ? -1 : left.name > right.name ? 1 : 0
+        )
         .flatMap(({ name, destination }) => [
           PDFHexString.fromText(name),
           destination,

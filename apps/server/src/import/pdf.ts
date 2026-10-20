@@ -42,6 +42,9 @@ export const MAX_PDF_PAGES = 2000;
 
 const PAGES_PER_CHAPTER = 10;
 
+// Outlines are hand-authored; a corrupt file must not recurse without end.
+const MAX_OUTLINE_DEPTH = 64;
+
 type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
 type OutlineItem = {
   title: string;
@@ -50,8 +53,10 @@ type OutlineItem = {
 };
 type ChapterStart = { title: string; pageIndex: number };
 
-const pageRangeTitle = (start: number, end: number): string =>
-  `第 ${start + 1}–${end} 页`;
+// Both arguments are zero-based inclusive page indices; the title prints
+// the one-based range readers see in a PDF viewer.
+const pageRangeTitle = (firstPage: number, lastPage: number): string =>
+  `第 ${firstPage + 1}–${lastPage + 1} 页`;
 
 // Destinations can name an entry in the document's destination tree, point
 // directly to a page object, or use a zero-based page index. External links
@@ -92,21 +97,25 @@ async function destinationPage(
 }
 
 async function chapterStarts(pdf: PdfDocument): Promise<ChapterStart[]> {
-  let outline: OutlineItem[] | null;
+  // An unreadable outline degrades to page-range chapters — the same
+  // tolerance as a single stale bookmark below; the text layer is what
+  // must import.
+  let outline: OutlineItem[] | null = null;
   try {
     outline = await pdf.getOutline();
-  } catch (error) {
-    throw asParseError(error);
+  } catch {
+    outline = null;
   }
   const starts: ChapterStart[] = [];
-  const visit = async (items: OutlineItem[]): Promise<void> => {
+  const visit = async (items: OutlineItem[], depth: number): Promise<void> => {
+    if (depth > MAX_OUTLINE_DEPTH) return;
     for (const item of items) {
       const pageIndex = await destinationPage(pdf, item.dest);
       if (pageIndex !== null) starts.push({ title: item.title, pageIndex });
-      await visit(item.items);
+      await visit(item.items, depth + 1);
     }
   };
-  await visit(outline ?? []);
+  await visit(outline ?? [], 1);
   // Physical page order gives disjoint ranges even when the outline lists
   // targets out of order. Stable sorting preserves same-page bookmarks:
   // each still opens a chapter, with the last receiving that page's text.
@@ -114,7 +123,7 @@ async function chapterStarts(pdf: PdfDocument): Promise<ChapterStart[]> {
   const first = starts[0];
   if (first && first.pageIndex > 0) {
     starts.unshift({
-      title: pageRangeTitle(0, first.pageIndex),
+      title: pageRangeTitle(0, first.pageIndex - 1),
       pageIndex: 0,
     });
   }
@@ -123,7 +132,7 @@ async function chapterStarts(pdf: PdfDocument): Promise<ChapterStart[]> {
       starts.push({
         title: pageRangeTitle(
           index,
-          Math.min(index + PAGES_PER_CHAPTER, pdf.numPages)
+          Math.min(index + PAGES_PER_CHAPTER, pdf.numPages) - 1
         ),
         pageIndex: index,
       });
