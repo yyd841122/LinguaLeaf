@@ -61,6 +61,26 @@ export function defaultThreeTextPages(): string[] {
 // use, and the only one that actually yields the ﬁ codepoint from pdf.js
 // (standard-font glyph names resolve "fi" to the plain letter pair). Fixed
 // template, computed xref offsets: no clock, no randomness.
+// Serializes hand-built PDF object bodies into a valid single-file PDF:
+// fixed template, computed xref offsets, no clock, no randomness. The
+// trailer extras carry entries like /Encrypt that only some fixtures need.
+function writeRawPdf(objects: string[], trailerExtras: string): Buffer {
+  let pdf = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((body, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const startxref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const offset of offsets) {
+    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R ${trailerExtras}>>\n`;
+  pdf += `startxref\n${startxref}\n%%EOF\n`;
+  return Buffer.from(pdf, "latin1");
+}
+
 export async function createLigaturePdf(): Promise<Buffer> {
   const line =
     "\uFB01ne tuning of the ligatures keeps every original glyph reading " +
@@ -129,20 +149,7 @@ export async function createLigaturePdf(): Promise<Buffer> {
       "/FontBBox [0 0 1000 1000] /ItalicAngle 0 /Ascent 1000 /Descent -200 " +
       "/CapHeight 1000 /StemV 80 >>",
   ];
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [];
-  objects.forEach((body, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
-  });
-  const startxref = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets) {
-    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\n`;
-  pdf += `startxref\n${startxref}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
+  return writeRawPdf(objects, "");
 }
 
 // One fixed 1x1 PNG (red pixel), embedded on every page: an image-only,
@@ -203,18 +210,5 @@ export async function createEncryptedPdf(): Promise<Buffer> {
       "1112131415161718191a1b1c1d1e1f20> /U <2122232425262728292a2b2c2d2e2f30" +
       "3132333435363738393a3b3c3d3e3f40> /P -1 >>",
   ];
-  let pdf = "%PDF-1.4\n";
-  const offsets: number[] = [];
-  objects.forEach((body, index) => {
-    offsets.push(pdf.length);
-    pdf += `${index + 1} 0 obj\n${body}\nendobj\n`;
-  });
-  const startxref = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const offset of offsets) {
-    pdf += `${String(offset).padStart(10, "0")} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Encrypt 4 0 R >>\n`;
-  pdf += `startxref\n${startxref}\n%%EOF\n`;
-  return Buffer.from(pdf, "latin1");
+  return writeRawPdf(objects, "/Encrypt 4 0 R ");
 }

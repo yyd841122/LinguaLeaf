@@ -4,6 +4,7 @@ import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
 import { EpubParseError, isEpubFilename, readEpubBook } from "./import/epub.js";
 import {
+  EncryptedPdfError,
   isPdfFilename,
   PdfParseError,
   readPdfBook,
@@ -123,6 +124,10 @@ export function createBooksRouter(
         }
         if (error instanceof ScannedPdfError) {
           response.status(422).json({ error: error.message });
+          return;
+        }
+        if (error instanceof EncryptedPdfError) {
+          response.status(400).json({ error: error.message });
           return;
         }
         if (error instanceof PdfParseError) {

@@ -70,3 +70,14 @@ Spec: `.scratch/pdf-import/spec.md`
   readPdfBook 实测可用（tsx 与 node 双路径验证）
 - 门禁：typecheck 0、lint 0、build 0、vitest 153/153（14 文件）；注意点：
   `set -o pipefail` 下看真实退出码（tail 曾吞过一次构建失败的退出码）
+
+### 2026-10-20 /code-review 结果（双轴）与修复
+
+- Standards 轴：0 硬违规；judgement calls —— fixture 手写 PDF 序列化重复（已提取 `writeRawPdf`）、
+  `dropRunningHeads` 边界判定重复（已提取 `isMarginLine`/`isFolio`）、router 错误级联增长
+  （两族规模，按审查者意见保留）。补上"正好阈值=100 放行"边界测试
+- Spec 轴：无 scope creep；两条偏差已修——加密 400 body 现为 verbatim"加密 PDF 暂不支持"
+  （新增 `EncryptedPdfError extends PdfParseError`，router 单独映射）；
+  页眉重复判定改为归一化（大小写折叠）键，标点漂移存活记为 v1 已知边界；
+  字节相等断言补齐全部 5 个 fixture builder
+- 门禁复跑：typecheck 0 / lint 0 / vitest 154/154 / build 0

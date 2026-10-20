@@ -159,6 +159,35 @@ describe("PDF import through the HTTP API seam", () => {
     expect(translator.calls).toEqual([]);
   });
 
+  it("treats a median page of exactly the threshold as text and one below as scanned", async () => {
+    // Two lines fold to exactly 100 characters (50 + joiner + 49); the
+    // documented boundary is inclusive (exactly-at-threshold passes).
+    const atThreshold = await request(app)
+      .post("/api/books")
+      .attach(
+        "file",
+        await createSamplePdf({
+          title: "Boundary Book",
+          pages: [["x".repeat(49) + ".", "y".repeat(48) + "."].join("\n")],
+        }),
+        { filename: "boundary-100.pdf", contentType: "application/pdf" }
+      );
+    expect(atThreshold.status).toBe(202);
+    await waitForShelfBook(app, atThreshold.body.id, "ready");
+
+    const belowThreshold = await request(app)
+      .post("/api/books")
+      .attach(
+        "file",
+        await createSamplePdf({
+          title: "Boundary Book",
+          pages: [["x".repeat(49) + ".", "y".repeat(47) + "."].join("\n")],
+        }),
+        { filename: "boundary-99.pdf", contentType: "application/pdf" }
+      );
+    expect(belowThreshold.status).toBe(422);
+  });
+
   it("imports a text PDF that carries blank cover pages without false rejection", async () => {
     // Median page length rides on the text pages, so a blank cover and a
     // blank plate must not tip the book into the scan gate.
@@ -182,13 +211,23 @@ describe("PDF import through the HTTP API seam", () => {
   });
 
   it("generates byte-identical fixture PDFs across runs", async () => {
-    const first = await createSamplePdf();
-    const second = await createSamplePdf();
-    expect(first.equals(second)).toBe(true);
-
-    const scannedFirst = await createScannedPdf({ pages: 4 });
-    const scannedSecond = await createScannedPdf({ pages: 4 });
-    expect(scannedFirst.equals(scannedSecond)).toBe(true);
+    expect((await createSamplePdf()).equals(await createSamplePdf())).toBe(
+      true
+    );
+    expect(
+      (await createScannedPdf({ pages: 4 })).equals(
+        await createScannedPdf({ pages: 4 })
+      )
+    ).toBe(true);
+    expect((await createLigaturePdf()).equals(await createLigaturePdf())).toBe(
+      true
+    );
+    expect(
+      (await createEncryptedPdf()).equals(await createEncryptedPdf())
+    ).toBe(true);
+    expect(
+      (await createOversizedPdf(2001)).equals(await createOversizedPdf(2001))
+    ).toBe(true);
   });
 
   it("rejects a password-protected PDF with 400 and the 加密 文案", async () => {
@@ -199,7 +238,8 @@ describe("PDF import through the HTTP API seam", () => {
         contentType: "application/pdf",
       });
     expect(created.status).toBe(400);
-    expect(created.body.error).toMatch(/encrypted/i);
+    // The spec's 文案, verbatim in the body (spec.md Revisions: 加密文案).
+    expect(created.body.error).toBe("加密 PDF 暂不支持");
 
     const shelf = await request(app).get("/api/books");
     expect(shelf.body.books).toEqual([]);

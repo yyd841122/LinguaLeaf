@@ -13,10 +13,16 @@ export function isPdfFilename(filename: string): boolean {
   return PDF_EXTENSION.test(filename);
 }
 
-// A structurally broken or unsupported PDF — unparseable bytes, encryption.
-// The router reports this class as 400, mirroring EpubParseError; the scan
-// gate has its own class (ScannedPdfError) with its own status downstream.
+// A structurally broken or unsupported PDF — unparseable bytes. The router
+// reports this class as 400, mirroring EpubParseError; the scan gate has its
+// own class (ScannedPdfError) with its own status, and encryption its own
+// subclass so the body can carry the 加密 文案 verbatim.
 export class PdfParseError extends Error {}
+
+// A password-protected PDF (spec: 加密 PDF 暂不支持). Still a 400 — the
+// upload itself is fine but can never import — but its body is the promised
+// 文案, not the generic invalid-PDF prefix.
+export class EncryptedPdfError extends PdfParseError {}
 
 // A PDF whose text layer is too sparse to read (scan detection). The router
 // reports this class as 422 with the reader-facing 文案, and no book is
@@ -94,23 +100,30 @@ const linesFromItems = (items: StructuredTextItem[]): string[] => {
 // Running-head removal (spec: 重复页眉/页脚/页码行剔除). Only the first and
 // last two lines of each page are candidates — real headers and footers sit
 // at the margins, and a short line repeated mid-page is content (a refrain)
-// that must survive. A candidate drops when its exact text repeats across ≥3
-// pages; pure-number candidates (page folios, which differ per page) drop
-// when they appear on ≥3 pages. Books under three pages prove nothing.
+// that must survive. A candidate drops when its 归一化文本 (case-folded,
+// whitespace-collapsed) repeats across ≥3 pages — headers that drift in
+// punctuation across pages survive, a known v1 edge. Pure-number candidates
+// (page folios, which differ per page) drop when they appear on ≥3 pages.
+// Books under three pages prove nothing.
+const isMarginLine = (lines: string[], index: number): boolean =>
+  index <= 1 || index >= lines.length - 2;
+
+const isFolio = (line: string): boolean => /^\d{1,4}$/.test(line);
+
 const dropRunningHeads = (pages: string[][]): string[][] => {
   const repeatedTexts = new Map<string, Set<number>>();
   const folioPages = new Set<number>();
   pages.forEach((lines, pageIndex) => {
     lines.forEach((line, index) => {
-      const candidate = index <= 1 || index >= lines.length - 2;
-      if (!candidate) return;
-      if (/^\d{1,4}$/.test(line)) {
+      if (!isMarginLine(lines, index)) return;
+      if (isFolio(line)) {
         folioPages.add(pageIndex);
         return;
       }
-      const seen = repeatedTexts.get(line) ?? new Set<number>();
+      const key = line.toLowerCase();
+      const seen = repeatedTexts.get(key) ?? new Set<number>();
       seen.add(pageIndex);
-      repeatedTexts.set(line, seen);
+      repeatedTexts.set(key, seen);
     });
   });
   const dropFolios = folioPages.size >= 3;
@@ -121,12 +134,11 @@ const dropRunningHeads = (pages: string[][]): string[][] => {
   );
   if (!dropFolios && repeated.size === 0) return pages;
   return pages.map((lines) =>
-    lines.filter((line, index) => {
-      const candidate = index <= 1 || index >= lines.length - 2;
-      if (!candidate) return true;
-      if (/^\d{1,4}$/.test(line)) return !dropFolios;
-      return !repeated.has(line);
-    })
+    lines.filter(
+      (line, index) =>
+        !isMarginLine(lines, index) ||
+        (isFolio(line) ? !dropFolios : !repeated.has(line.toLowerCase()))
+    )
   );
 };
 
@@ -144,7 +156,7 @@ export async function readPdfBook(
     pdf = await getDocumentProxy(new Uint8Array(content));
   } catch (error) {
     if ((error as { name?: string } | null)?.name === "PasswordException") {
-      throw new PdfParseError("encrypted PDFs are not supported");
+      throw new EncryptedPdfError("加密 PDF 暂不支持");
     }
     throw new PdfParseError("not a valid PDF file");
   }
