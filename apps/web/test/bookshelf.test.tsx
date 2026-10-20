@@ -12,6 +12,7 @@ type ShelfBook = {
   importStage: string | null;
   importPercent: number | null;
   importError: string | null;
+  pageCount: number | null;
   progress: { chapter: number; block: number } | null;
 };
 
@@ -24,6 +25,7 @@ const readyBook: ShelfBook = {
   importStage: null,
   importPercent: null,
   importError: null,
+  pageCount: null,
   progress: null,
 };
 
@@ -36,6 +38,7 @@ const importingBook: ShelfBook = {
   importStage: "translating",
   importPercent: 40,
   importError: null,
+  pageCount: null,
   progress: null,
 };
 
@@ -48,6 +51,7 @@ const failedBook: ShelfBook = {
   importStage: null,
   importPercent: null,
   importError: "服务重启，导入中断",
+  pageCount: null,
   progress: null,
 };
 
@@ -173,6 +177,47 @@ describe("BookshelfPage import states (ticket 08)", () => {
     ];
     await actAdvance(2000);
     expect(screen.getByText(/导入中 · 处理中/)).toBeTruthy();
+  });
+
+  it("hints 预计耗时较长 on an importing PDF with more than 300 pages", async () => {
+    shelfState.books = [
+      {
+        ...importingBook,
+        id: 4,
+        title: "A Long PDF Book",
+        format: "pdf",
+        pageCount: 320,
+      },
+    ];
+    renderShelf();
+    await actAdvance(0);
+    expect(
+      screen.getByText(/导入中 · 翻译译文 40% · 预计耗时较长/)
+    ).toBeTruthy();
+  });
+
+  it("does not hint at exactly 300 pages, or for books without a page count", async () => {
+    shelfState.books = [
+      {
+        ...importingBook,
+        id: 4,
+        title: "A 300 Page PDF",
+        format: "pdf",
+        pageCount: 300,
+      },
+    ];
+    renderShelf();
+    await actAdvance(0);
+    expect(screen.getByText(/导入中 · 翻译译文 40%/)).toBeTruthy();
+    expect(screen.queryByText(/预计耗时较长/)).toBeNull();
+
+    // A settled long PDF is no longer waiting on anything, and a book
+    // without a page count (EPUB, Markdown) never had pages to count.
+    shelfState.books = [
+      { ...importingBook, format: "pdf", pageCount: 320, status: "ready" },
+    ];
+    await actAdvance(2000);
+    expect(screen.queryByText(/预计耗时较长/)).toBeNull();
   });
 
   it("disables the import button while any book is translating", async () => {

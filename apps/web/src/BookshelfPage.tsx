@@ -18,6 +18,9 @@ type BookSummary = {
   importStage: string | null;
   importPercent: number | null;
   importError: string | null;
+  // PDF only (null for the other formats): drives the long-book hint on
+  // the importing row.
+  pageCount: number | null;
   progress: ReadingProgress | null;
 };
 
@@ -35,6 +38,19 @@ const IMPORT_STAGE_LABELS: Record<string, string> = {
   translating: "翻译译文",
   saving: "保存书籍",
 };
+
+// A PDF longer than this gets the 「预计耗时较长」 hint on its importing
+// row (spec: 页数多的书导入时看到预计耗时较长的提示). Strictly more — a
+// 300-page book sits just under the threshold.
+const LONG_PDF_PAGES = 300;
+
+function longBookHint(book: BookSummary): string {
+  return book.format === "pdf" &&
+    book.pageCount !== null &&
+    book.pageCount > LONG_PDF_PAGES
+    ? " · 预计耗时较长"
+    : "";
+}
 
 function importStageLabel(book: BookSummary): string {
   const label = book.importStage
@@ -243,7 +259,7 @@ export function BookshelfPage() {
                 )}
                 <span className="meta">
                   {book.status === "importing"
-                    ? `导入中 · ${importStageLabel(book)}`
+                    ? `导入中 · ${importStageLabel(book)}${longBookHint(book)}`
                     : book.status === "failed"
                       ? `导入失败：${book.importError ?? "未知错误"}`
                       : `${book.format} · 导入于 ${formatImportedAt(book.createdAt)}${

@@ -25,7 +25,8 @@ const booksTable = `
         CHECK (status IN ('importing', 'ready', 'failed')),
       import_stage TEXT,
       import_percent INTEGER,
-      import_error TEXT
+      import_error TEXT,
+      page_count INTEGER
     );
 `;
 
@@ -91,6 +92,11 @@ export function migrateSchema(database: Database.Database): void {
        ALTER TABLE books ADD COLUMN import_percent INTEGER;
        ALTER TABLE books ADD COLUMN import_error TEXT;`
     );
+  }
+  // Databases created before the PDF import predate page_count (the shelf's
+  // long-book hint reads it); altered in place like the ticket 08 columns.
+  if (!bookColumns.some((column) => column.name === "page_count")) {
+    database.exec("ALTER TABLE books ADD COLUMN page_count INTEGER");
   }
   // Databases created before ticket 07 carry a kind CHECK without 'image'.
   // SQLite cannot alter a CHECK constraint; the table is rebuilt in place

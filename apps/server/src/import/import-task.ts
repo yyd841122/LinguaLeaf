@@ -31,17 +31,20 @@ export const INTERRUPTED_MESSAGE = "服务重启，导入中断";
 
 // Creates the book row the moment parsing has succeeded: the POST answers
 // with this id while the annotation task keeps running in the background.
+// pageCount (PDF only, null otherwise) lands with the row so the shelf can
+// show the long-book hint for the whole import.
 export function createImportingBook(
   database: Database.Database,
   title: string,
-  format: BookFormat
+  format: BookFormat,
+  pageCount: number | null
 ): number {
   return Number(
     database
       .prepare(
-        "INSERT INTO books (title, format, created_at, status, import_stage) VALUES (?, ?, ?, 'importing', 'annotating')"
+        "INSERT INTO books (title, format, created_at, status, import_stage, page_count) VALUES (?, ?, ?, 'importing', 'annotating', ?)"
       )
-      .run(title, format, new Date().toISOString()).lastInsertRowid
+      .run(title, format, new Date().toISOString(), pageCount).lastInsertRowid
   );
 }
 

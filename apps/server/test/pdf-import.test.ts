@@ -147,6 +147,27 @@ describe("PDF import through the HTTP API seam", () => {
     }
   );
 
+  it("carries the PDF page count on the upload and shelf seams for the long-book hint", async () => {
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", await createBookmarkedPdf(), {
+        filename: "paged.pdf",
+        contentType: "application/pdf",
+      });
+    expect(created.status).toBe(202);
+    // The progress panel reads this off the shelf to decide the
+    // 预计耗时较长 hint, so the count must be there while importing.
+    expect(created.body).toMatchObject({ pageCount: 6 });
+
+    const shelf = await request(app).get("/api/books");
+    expect(shelf.body.books[0]).toMatchObject({ pageCount: 6 });
+
+    // A fact about the file: it survives the import settling.
+    await waitForShelfBook(app, created.body.id, "ready");
+    const settled = await request(app).get("/api/books");
+    expect(settled.body.books[0]).toMatchObject({ pageCount: 6 });
+  });
+
   it("keeps pages before the first bookmark and every same-page bookmark without duplicating text", async () => {
     const pages = chapterTextPages(6);
     const bookId = await importPdf(

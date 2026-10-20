@@ -11,13 +11,16 @@ export type BookFormat = "markdown" | "epub" | "pdf";
 // a kind means touching this union and the schema CHECK together.
 export type BlockKind = "sentence" | "code" | "raw" | "image";
 
-// What the format-specific front halves (markdown.ts, epub.ts) hand to the
-// shared import: extracted chapters plus the book title. Everything past
-// this type — sentence splitting, IPA, translation, insert — is one path.
+// What the format-specific front halves (markdown.ts, epub.ts, pdf.ts) hand
+// to the shared import: extracted chapters plus the book title. Everything
+// past this type — sentence splitting, IPA, translation, insert — is one
+// path. pageCount is a PDF fact (the shelf's long-book hint rides on it);
+// the other front halves leave it unset.
 export type PreparedBook = {
   title: string;
   format: BookFormat;
   chapters: ExtractedChapter[];
+  pageCount?: number;
 };
 
 // One prepared block row: everything the insert needs, derived in a single

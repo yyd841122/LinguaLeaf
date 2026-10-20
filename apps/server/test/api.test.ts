@@ -53,6 +53,8 @@ describe("Markdown import through the HTTP API seam", () => {
     expect(created.body).toMatchObject({
       title: "The Way of the Test",
       format: "markdown",
+      // Page counts are a PDF fact; other formats stay null.
+      pageCount: null,
     });
     expect(Number.isInteger(created.body.id)).toBe(true);
     expect(typeof created.body.createdAt).toBe("string");
@@ -69,6 +71,7 @@ describe("Markdown import through the HTTP API seam", () => {
       importStage: null,
       importPercent: null,
       importError: null,
+      pageCount: null,
     });
   });
 
@@ -762,6 +765,75 @@ describe("translation at the HTTP API seam", () => {
       importPercent: null,
       importError: null,
     });
+  });
+
+  it("moves the shelf percent forward batch by batch, never backwards, and settles ready", async () => {
+    // 45 sentences make three 20-sentence batches; every batch parks until
+    // the test releases it, so each percent step is observed through the
+    // same shelf endpoint the bookshelf polls. Spec (修订语义): 单调不降,
+    // an honest ceiling below 100 until the loop itself returns, and the
+    // final state ready — the 99→saving→ready tail is synchronous, so the
+    // ceiling itself never shows on the shelf.
+    const paragraphs = Array.from(
+      { length: 45 },
+      (_, index) =>
+        `Sentence ${index + 1} opens with a quiet walk beside the river.`
+    );
+    // Each parked batch resolves with its own translations when released,
+    // so every batch succeeds on the first round and the retry machinery
+    // stays out of the way of the percent steps under test.
+    const releases: (() => void)[] = [];
+    const translator = createFakeTranslator(
+      (sentences) =>
+        new Promise((resolve) => {
+          releases.push(() =>
+            resolve(sentences.map((sentence) => `译:${sentence}`))
+          );
+        })
+    );
+    const app = createApp(database, dictionary, translator);
+
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", Buffer.from(paragraphs.join("\n\n")), {
+        filename: "forty-five-sentences.md",
+        contentType: "text/markdown",
+      });
+    expect(created.status).toBe(202);
+    // The task's synchronous prefix ran before the POST answered: the
+    // first batch is parked and the percent sits at its floor.
+    expect(created.body).toMatchObject({
+      status: "importing",
+      importStage: "translating",
+      importPercent: 0,
+    });
+    expect(releases).toHaveLength(1);
+
+    const observed: number[] = [created.body.importPercent as number];
+    for (;;) {
+      // Release the parked batch: the task updates the percent and parks
+      // on the next batch (or settles ready) in microtasks, before the
+      // request below can reach the server.
+      releases.shift()!();
+      const shelf = await request(app).get("/api/books");
+      const book = shelf.body.books[0] as {
+        status: string;
+        importPercent: number | null;
+      };
+      if (book.status !== "importing") {
+        expect(book).toMatchObject({ importPercent: null });
+        break;
+      }
+      observed.push(book.importPercent as number);
+    }
+
+    // One step per released batch plus the floor: worked example, 20 of 45
+    // sentences done rounds to 44%, 40 of 45 to 89%. The sorted-equal
+    // check is the spec's 单调不降 stated on the observed sequence.
+    expect(observed).toEqual([0, 44, 89]);
+    expect([...observed].sort((a, b) => a - b)).toEqual(observed);
+    expect(Math.max(...observed)).toBeLessThan(100);
+    await waitForShelfBook(app, created.body.id, "ready");
   });
 
   it("imports with empty translation lines when no translator is configured", async () => {

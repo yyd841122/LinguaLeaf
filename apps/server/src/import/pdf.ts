@@ -316,6 +316,7 @@ export async function readPdfBook(
     return {
       title,
       format: "pdf",
+      pageCount: pdf.numPages,
       chapters: starts.map((start, index) => {
         const end = starts[index + 1]?.pageIndex ?? pdf.numPages;
         const text = foldLines(pageTexts.slice(start.pageIndex, end));

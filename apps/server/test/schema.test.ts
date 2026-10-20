@@ -192,6 +192,74 @@ describe("book import status migration (ticket 08)", () => {
   });
 });
 
+// Databases from before the PDF import carry no page_count column. It is
+// altered in place like the ticket 08 columns: existing rows are readable
+// books whose (absent) page count is simply null.
+describe("book page count migration (pdf-import ticket 03)", () => {
+  let directory: string;
+  let databasePath: string;
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "lingualeaf-schema-"));
+    databasePath = join(directory, "pre-page-count.sqlite");
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function createPrePageCountDatabase(): void {
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        format TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'ready',
+        import_stage TEXT,
+        import_percent INTEGER,
+        import_error TEXT
+      );
+    `);
+    database
+      .prepare("INSERT INTO books (title, format, created_at) VALUES (?, ?, ?)")
+      .run("An old book", "markdown", "2026-10-17T00:00:00.000Z");
+    database.close();
+  }
+
+  it("adds page_count in place, leaving existing rows readable with a null count", () => {
+    createPrePageCountDatabase();
+
+    const database = openDatabase(databasePath);
+    const book = database
+      .prepare("SELECT status, page_count FROM books")
+      .get() as { status: string; page_count: number | null };
+    expect(book).toEqual({ status: "ready", page_count: null });
+
+    // The new column carries a real page count for the shelf's hint.
+    database.prepare("UPDATE books SET page_count = ? WHERE id = 1").run(320);
+    expect(
+      (
+        database.prepare("SELECT page_count FROM books").get() as {
+          page_count: number;
+        }
+      ).page_count
+    ).toBe(320);
+    database.close();
+
+    // The migration is one-time work: reopening the migrated file is stable.
+    const reopened = openDatabase(databasePath);
+    expect(
+      (
+        reopened.prepare("SELECT COUNT(*) AS n FROM books").get() as {
+          n: number;
+        }
+      ).n
+    ).toBe(1);
+    reopened.close();
+  });
+});
+
 // A server restart orphans its in-flight imports: the task is gone and can
 // never resume. The startup sweep fails those rows so the shelf never shows
 // a book stuck importing; settled books are untouched (ticket 08).

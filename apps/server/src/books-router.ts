@@ -40,6 +40,7 @@ type BookRow = {
   import_stage: string | null;
   import_percent: number | null;
   import_error: string | null;
+  page_count: number | null;
 };
 
 // Shelf row: the book plus where it was last read, null before the first
@@ -58,6 +59,7 @@ const toBookJson = (row: BookRow) => ({
   importStage: row.import_stage,
   importPercent: row.import_percent,
   importError: row.import_error,
+  pageCount: row.page_count,
 });
 
 const toShelfJson = (row: ShelfRow) => ({
@@ -145,7 +147,8 @@ export function createBooksRouter(
       const bookId = createImportingBook(
         database,
         prepared.title,
-        prepared.format
+        prepared.format,
+        prepared.pageCount ?? null
       );
       void runImportTask(
         { database, dictionary, translator: translator ?? null },
@@ -168,6 +171,7 @@ export function createBooksRouter(
       .prepare(
         `SELECT b.id, b.title, b.format, b.created_at,
                 b.status, b.import_stage, b.import_percent, b.import_error,
+                b.page_count,
                 p.chapter_position AS progress_chapter,
                 p.block_position AS progress_block
          FROM books b
@@ -181,7 +185,7 @@ export function createBooksRouter(
   const findBook = (id: number) =>
     database
       .prepare(
-        "SELECT id, title, format, created_at, status, import_stage, import_percent, import_error FROM books WHERE id = ?"
+        "SELECT id, title, format, created_at, status, import_stage, import_percent, import_error, page_count FROM books WHERE id = ?"
       )
       .get(id) as BookRow | undefined;
 
