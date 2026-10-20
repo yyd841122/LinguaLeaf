@@ -53,3 +53,20 @@ Spec: `.scratch/pdf-import/spec.md`
   行尾连字符合并、页眉页脚候选=每页首末各 2 行且 ≥3 页重复才删、纯数字页码行 ≥3 页才删）；
   扫描判定=逐页清理后字符数中位数 <100 → 422；fixture 用 pdf-lib `updateMetadata:false` + 固定 PNG，
   双次生成字节相等断言；进度 99→saving→ready 语义归 ticket 03
+
+### 2026-10-20 实施记录（TDD，12 个缝上切片）
+
+- 新模块 `apps/server/src/import/pdf.ts`：unpdf 抽取 → hasEOL 行重建 → 连字规范化 →
+  页眉/页脚/页码剔除（每页首末各 2 行候选，≥3 页重复才删）→ 软连字符折叠 →
+  中位数 <100 扫描门（ScannedPdfError→422）；PdfParseError→400（坏字节/加密/超 2000 页）；
+  单一 loadingTask，finally destroy；ticket 01 过渡为全书单章，书名 metadata ?? 文件名
+- `pipeline.ts` BookFormat + "pdf"（唯一的前半程契约改动）；`books-router.ts` 加 isPdfFilename
+  分派与 422/400 映射；web `BookshelfPage.tsx` accept 加 .pdf、422 分支文案、415 文案更新
+- fixture：`test/fixtures/pdf.ts` — pdf-lib（updateMetadata:false）文本页、固定 PNG 扫描页、
+  手写 Type0+ToUnicode 连字页（标准字体字形名到不了 U+FB01，pdf.js 的 NFKC 也会折叠 ﬁ，
+  本测试钉住端到端结果）、/Encrypt 加密页、copyPages 超页页；全部无时间戳
+- 实施中的发现：pdf.js getTextContent 在文本行超出 MediaBox 右缘时按页宽截断
+  （fixture 初版单行长句在 ~45 字形处被剪，已按真实排版折行）；编译产物 `.output` 下
+  readPdfBook 实测可用（tsx 与 node 双路径验证）
+- 门禁：typecheck 0、lint 0、build 0、vitest 153/153（14 文件）；注意点：
+  `set -o pipefail` 下看真实退出码（tail 曾吞过一次构建失败的退出码）

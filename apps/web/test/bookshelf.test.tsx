@@ -81,7 +81,7 @@ async function actAdvance(ms: number) {
 
 async function uploadFile(name: string) {
   const input = screen.getByLabelText(
-    "导入 EPUB / Markdown 书籍"
+    "导入 EPUB / Markdown / PDF 书籍"
   ) as HTMLInputElement;
   // jsdom has no constructible FileList and its required-file validation
   // blocks button-click submits, so the files array is planted and the
@@ -230,6 +230,33 @@ describe("BookshelfPage import states (ticket 08)", () => {
     expect(screen.queryByRole("link", { name: "A Broken Book" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "删除《A Broken Book》" })
+    ).toBeTruthy();
+  });
+
+  it("accepts .pdf files and shows the scan rejection copy on 422", async () => {
+    renderShelf();
+    const input = screen.getByLabelText(
+      "导入 EPUB / Markdown / PDF 书籍"
+    ) as HTMLInputElement;
+    expect(input.accept.split(",")).toContain(".pdf");
+
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/api/books") && method === "POST") {
+          return jsonResponse(422, { error: "扫描件/图片型 PDF 暂不支持" });
+        }
+        if (url.endsWith("/api/books")) {
+          return jsonResponse(200, shelfState);
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }
+    );
+    await uploadFile("scan.pdf");
+
+    expect(
+      screen.getByText("导入失败：扫描件/图片型 PDF 暂不支持。")
     ).toBeTruthy();
   });
 });

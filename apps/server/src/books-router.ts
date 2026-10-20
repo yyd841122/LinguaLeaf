@@ -3,6 +3,12 @@ import multer from "multer";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
 import { EpubParseError, isEpubFilename, readEpubBook } from "./import/epub.js";
+import {
+  isPdfFilename,
+  PdfParseError,
+  readPdfBook,
+  ScannedPdfError,
+} from "./import/pdf.js";
 import { isMarkdownFilename, readMarkdownBook } from "./import/markdown.js";
 import {
   annotatedBookFilename,
@@ -20,7 +26,7 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 // Shared body of both 415 branches of the upload handler.
 const UNSUPPORTED_FORMAT = {
-  error: "only .epub, .md or .markdown files are accepted",
+  error: "only .epub, .md, .markdown or .pdf files are accepted",
 };
 
 type BookRow = {
@@ -102,6 +108,8 @@ export function createBooksRouter(
             file.originalname,
             file.buffer.toString("utf8")
           );
+        } else if (isPdfFilename(file.originalname)) {
+          prepared = await readPdfBook(file.buffer, file.originalname);
         } else {
           response.status(415).json(UNSUPPORTED_FORMAT);
           return;
@@ -111,6 +119,14 @@ export function createBooksRouter(
           response
             .status(400)
             .json({ error: `invalid EPUB: ${error.message}` });
+          return;
+        }
+        if (error instanceof ScannedPdfError) {
+          response.status(422).json({ error: error.message });
+          return;
+        }
+        if (error instanceof PdfParseError) {
+          response.status(400).json({ error: `invalid PDF: ${error.message}` });
           return;
         }
         throw error;

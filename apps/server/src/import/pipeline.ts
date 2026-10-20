@@ -4,7 +4,7 @@ import { buildIpaSlots } from "../dict/ipa-line.js";
 import type { ExtractedChapter } from "./extract-html.js";
 import { splitSentences } from "./sentences.js";
 
-export type BookFormat = "markdown" | "epub";
+export type BookFormat = "markdown" | "epub" | "pdf";
 
 // The block kinds the data model stores — mirrors the blocks.kind CHECK in
 // schema.ts (SQL cannot import it) and the cast in books-router.ts; adding
