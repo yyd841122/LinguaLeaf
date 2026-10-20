@@ -19,6 +19,9 @@ export async function downloadAttachment(url: string): Promise<void> {
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
+  // Chrome/Firefox fine revoking in the same tick as the click; some
+  // WebKit/Safari versions abort the download — observed as a caution
+  // during the ticket 03 smoke, not worked around.
   URL.revokeObjectURL(objectUrl);
 }
 
