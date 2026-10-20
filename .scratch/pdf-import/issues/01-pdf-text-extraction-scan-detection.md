@@ -81,3 +81,25 @@ Spec: `.scratch/pdf-import/spec.md`
   页眉重复判定改为归一化（大小写折叠）键，标点漂移存活记为 v1 已知边界；
   字节相等断言补齐全部 5 个 fixture builder
 - 门禁复跑：typecheck 0 / lint 0 / vitest 154/154 / build 0
+
+### 2026-10-20 收尾报告（ticket 01 完成）
+
+- **实现**：3 个提交 —— `1de6987`（实现）、`b68a880`（双轴 review 修复）；docs 提交 `5288ac2`
+  先行（spec 修订 + 票 01-03 入库，含开工前置 gate 产物）
+- **门禁**：typecheck 0 / lint 0（--max-warnings 0）/ build 0 / vitest 154/154；
+  编译产物 `.output` 下 readPdfBook 双路径（tsx + node）实测可用
+- **开工前置 gate**：/cc-suite:review-plan 完成（NEEDS REVISION，15 条发现逐条验证，
+  修订经用户确认后写回 spec.md；threadId `01a15719-3ab5-7863-a9d5-d10f2bc7c758`）
+- **/code-review**：Standards 轴 0 硬违规 + 4 judgement calls（writeRawPdf 提取、
+  isMarginLine/isFolio 提取已做；错误级联按审查者意见保留）；Spec 轴无 scope creep，
+  两条偏差已修（加密 400 body verbatim 文案 EncryptedPdfError；页眉归一化键大小写折叠）。
+  详细结论见上一条 Comment
+- **/cc-suite:qwen-review**：**未执行** —— preflight `status: error, error_code: qwen_not_found`
+  （qwen 不在 PATH）。按本票 Review Gate 约定记录 errorCode、不阻塞完成。
+  若日后安装 Qwen Code，可用 `--target` 重审上述 7 个改动文件
+- **已知 v1 边界（记录在代码注释与 spec Revisions）**：`well-\nknown`→`wellknown`；
+  页眉跨页标点漂移存活；混合扫描书误放（中位数判定固有）；pdf.js 对超 MediaBox 右缘的
+  文本行会按页宽截断（fixture 已按真实排版折行规避）
+- **验收对照**：文本 fixture 正常导入成书（句子块 + 假翻译器译文）✅；扫描件 422 + 文案 +
+  不建书 + 翻译器零调用 ✅；跨行连字符合并（缝上断言，含跨页句）✅；不打真实 DeepSeek ✅
+- 下一张票：02（书签分章与书名）依赖本票，ready-for-agent
