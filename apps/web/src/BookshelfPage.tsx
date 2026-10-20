@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ApiError, fetchJson } from "./api";
+import { downloadAttachment } from "./download";
 import type { ReadingProgress } from "./readingProgress";
 
 type BookStatus = "importing" | "ready" | "failed";
@@ -59,6 +60,13 @@ export function BookshelfPage() {
   // the polls — the shelf's 「导入中」 rows would otherwise sit there
   // silently after a crash or a failed restart.
   const [serverUnreachable, setServerUnreachable] = useState(false);
+  // The books whose export download is in flight — each clicked button
+  // shows 导出中… until its own request settles, so a slow multi-megabyte
+  // blob cannot be double-clicked into two downloads, and one book
+  // settling never un-marks another still in flight.
+  const [exportingIds, setExportingIds] = useState<ReadonlySet<number>>(
+    () => new Set()
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +129,31 @@ export function BookshelfPage() {
       );
     } finally {
       setImporting(false);
+    }
+  };
+
+  const exportBook = async (book: BookSummary) => {
+    setError(null);
+    setExportingIds((current) => new Set(current).add(book.id));
+    try {
+      await downloadAttachment(`/api/books/${book.id}/export`);
+    } catch (error) {
+      // The endpoint's status families: 404 the shelf row is stale (the
+      // book was deleted elsewhere), 409 it never finished importing,
+      // everything else a retryable server or network failure.
+      setError(
+        error instanceof ApiError && error.status === 404
+          ? "导出失败：这本书不存在或已被删除。"
+          : error instanceof ApiError && error.status === 409
+            ? "导出失败：这本书还没完成导入。"
+            : "导出失败，请重试。"
+      );
+    } finally {
+      setExportingIds((current) => {
+        const next = new Set(current);
+        next.delete(book.id);
+        return next;
+      });
     }
   };
 
@@ -213,6 +246,17 @@ export function BookshelfPage() {
                         }`}
                 </span>
               </div>
+              {book.status === "ready" && (
+                <button
+                  type="button"
+                  className="export-book"
+                  aria-label={`导出《${book.title}》`}
+                  disabled={exportingIds.has(book.id)}
+                  onClick={() => void exportBook(book)}
+                >
+                  {exportingIds.has(book.id) ? "导出中…" : "导出"}
+                </button>
+              )}
               <button
                 type="button"
                 className="delete-book"

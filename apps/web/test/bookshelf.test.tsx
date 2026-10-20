@@ -233,3 +233,262 @@ describe("BookshelfPage import states (ticket 08)", () => {
     ).toBeTruthy();
   });
 });
+
+describe("BookshelfPage export (ticket 03)", () => {
+  // jsdom has no object URL store and anchor clicks would try to navigate;
+  // the stubs record what the download helper handed the browser.
+  let createObjectURL: ReturnType<typeof vi.fn>;
+  let revokeObjectURL: ReturnType<typeof vi.fn>;
+  let downloaded: { download: string; href: string }[];
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  // Mirrors the two-form header Express emits: the ASCII fallback quoted,
+  // the real title riding RFC 5987 filename* (server test/export.test.ts
+  // pins the same shape).
+  function dispositionFor(filename: string): string {
+    return `attachment; filename="ascii-fallback.html"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  }
+
+  function htmlResponse(
+    status: number,
+    body: string,
+    disposition?: string
+  ): Response {
+    return {
+      ok: status >= 200 && status < 300,
+      status,
+      headers: new Headers(
+        disposition ? { "content-disposition": disposition } : {}
+      ),
+      blob: async () => new Blob([body], { type: "text/html" }),
+    } as Response;
+  }
+
+  // The named injectable mock (CODING_STANDARDS.md, component-test
+  // boundaries): the shelf list always answers, an export URL delegates to
+  // the test's responder, anything else fails loudly.
+  function serveShelf(
+    exportResponder: (url: string) => Response | Promise<Response>
+  ): void {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (/\/api\/books\/\d+\/export$/.test(url)) {
+        return exportResponder(url);
+      }
+      if (url.endsWith("/api/books")) {
+        return jsonResponse(200, shelfState);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    shelfState = { books: [readyBook, importingBook, failedBook] };
+    createObjectURL = vi.fn(() => "blob:annotated-book");
+    revokeObjectURL = vi.fn();
+    URL.createObjectURL =
+      createObjectURL as unknown as typeof URL.createObjectURL;
+    URL.revokeObjectURL =
+      revokeObjectURL as unknown as typeof URL.revokeObjectURL;
+    downloaded = [];
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement
+    ) {
+      downloaded.push({ download: this.download, href: this.href });
+    });
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (url.endsWith("/api/books")) {
+        return jsonResponse(200, shelfState);
+      }
+      throw new Error(`unexpected fetch: ${method} ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(URL, "createObjectURL");
+    Reflect.deleteProperty(URL, "revokeObjectURL");
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("renders the export action only for ready books", async () => {
+    renderShelf();
+    await actAdvance(0);
+
+    expect(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "导出《A Held Book》" })
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "导出《A Broken Book》" })
+    ).toBeNull();
+  });
+
+  it("downloads the export named by Content-Disposition", async () => {
+    serveShelf(() =>
+      htmlResponse(
+        200,
+        "<html>annotated</html>",
+        dispositionFor("三体_ 黑暗森林.html")
+      )
+    );
+
+    renderShelf();
+    await actAdvance(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/books/1/export");
+    // The RFC 5987 form carries the real title; the ASCII fallback loses it.
+    expect(downloaded).toEqual([
+      { download: "三体_ 黑暗森林.html", href: "blob:annotated-book" },
+    ]);
+    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:annotated-book");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("survives header oddities: malformed extended form, missing header", async () => {
+    renderShelf();
+    await actAdvance(0);
+
+    // A proxy could truncate the percent-encoding; the quoted plain form
+    // still names the file.
+    serveShelf(() =>
+      htmlResponse(
+        200,
+        "<html>annotated</html>",
+        "attachment; filename=\"Dark Forest.html\"; filename*=UTF-8''%E4%B9"
+      )
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+    expect(downloaded.map((entry) => entry.download)).toEqual([
+      "Dark Forest.html",
+    ]);
+
+    // No usable header at all: a neutral, legal name instead of a broken one.
+    serveShelf(() => htmlResponse(200, "<html>annotated</html>"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+    expect(downloaded.map((entry) => entry.download)).toEqual([
+      "Dark Forest.html",
+      "book.html",
+    ]);
+  });
+
+  it("reports a not-ready book on 409 and saves no file", async () => {
+    serveShelf(() => htmlResponse(409, '{"error":"book not ready"}'));
+
+    renderShelf();
+    await actAdvance(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "导出失败：这本书还没完成导入。"
+    );
+    // Nothing was handed to the browser: no blob URL, no download click.
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(downloaded).toEqual([]);
+  });
+
+  it("reports a stale shelf on 404 and retries otherwise", async () => {
+    renderShelf();
+    await actAdvance(0);
+
+    // 404: the row survived on screen but the book is gone.
+    serveShelf(() => htmlResponse(404, '{"error":"book not found"}'));
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "导出失败：这本书不存在或已被删除。"
+    );
+
+    // 500 and network failures share the retryable copy.
+    serveShelf(() => htmlResponse(500, "server exploded"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+    expect(screen.getByRole("alert")).toHaveTextContent("导出失败，请重试。");
+
+    serveShelf(() => {
+      throw new TypeError("Failed to fetch");
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "导出《A Finished Book》" })
+    );
+    await actAdvance(0);
+    expect(screen.getByRole("alert")).toHaveTextContent("导出失败，请重试。");
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(downloaded).toEqual([]);
+  });
+
+  it("marks each clicked button in-flight; one settling leaves the other", async () => {
+    shelfState.books = [
+      readyBook,
+      { ...readyBook, id: 4, title: "Second Ready" },
+    ];
+    const resolvers = new Map<number, (value: Response) => void>();
+    serveShelf((url) => {
+      const match = /\/api\/books\/(\d+)\/export$/.exec(url);
+      const id = match?.[1] ? Number(match[1]) : 0;
+      return new Promise<Response>((resolve) => {
+        resolvers.set(id, resolve);
+      });
+    });
+
+    renderShelf();
+    await actAdvance(0);
+    const first = screen.getByRole("button", {
+      name: "导出《A Finished Book》",
+    }) as HTMLButtonElement;
+    const second = screen.getByRole("button", {
+      name: "导出《Second Ready》",
+    }) as HTMLButtonElement;
+    fireEvent.click(first);
+    fireEvent.click(second);
+    await actAdvance(0);
+
+    // Two flights, two markers: each button reads 导出中… and is disabled.
+    expect(first.textContent).toBe("导出中…");
+    expect(second.textContent).toBe("导出中…");
+    expect(first).toBeDisabled();
+    expect(second).toBeDisabled();
+    // Unrelated actions stay live during exports.
+    expect(
+      screen.getByRole("button", { name: "删除《A Finished Book》" })
+    ).not.toBeDisabled();
+
+    // The first settling recovers its own button only — a shared in-flight
+    // marker would re-enable the second mid-download.
+    resolvers.get(1)?.(htmlResponse(200, "<html>a</html>"));
+    await actAdvance(0);
+    expect(first).not.toBeDisabled();
+    expect(first.textContent).toBe("导出");
+    expect(second).toBeDisabled();
+
+    resolvers.get(4)?.(htmlResponse(200, "<html>b</html>"));
+    await actAdvance(0);
+    expect(second).not.toBeDisabled();
+    expect(second.textContent).toBe("导出");
+  });
+});
