@@ -50,6 +50,23 @@ type ShelfRow = BookRow & {
   progress_block: number | null;
 };
 
+// The books columns both reader queries fetch, kept in one place so the
+// BookRow cast cannot drift from what the SELECTs deliver (a missed column
+// would typecheck through the cast and fail only at runtime).
+const BOOK_COLUMNS = [
+  "id",
+  "title",
+  "format",
+  "created_at",
+  "status",
+  "import_stage",
+  "import_percent",
+  "import_error",
+  "page_count",
+] as const;
+const bookColumnSql = (prefix: string) =>
+  BOOK_COLUMNS.map((column) => `${prefix}${column}`).join(", ");
+
 const toBookJson = (row: BookRow) => ({
   id: row.id,
   title: row.title,
@@ -169,9 +186,7 @@ export function createBooksRouter(
   router.get("/", (_request, response) => {
     const rows = database
       .prepare(
-        `SELECT b.id, b.title, b.format, b.created_at,
-                b.status, b.import_stage, b.import_percent, b.import_error,
-                b.page_count,
+        `SELECT ${bookColumnSql("b.")},
                 p.chapter_position AS progress_chapter,
                 p.block_position AS progress_block
          FROM books b
@@ -184,9 +199,7 @@ export function createBooksRouter(
 
   const findBook = (id: number) =>
     database
-      .prepare(
-        "SELECT id, title, format, created_at, status, import_stage, import_percent, import_error, page_count FROM books WHERE id = ?"
-      )
+      .prepare(`SELECT ${bookColumnSql("")} FROM books WHERE id = ?`)
       .get(id) as BookRow | undefined;
 
   // One parse-and-lookup for every /:id handler: a non-integer id is just a

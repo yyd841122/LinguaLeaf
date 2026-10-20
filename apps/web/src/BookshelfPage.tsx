@@ -44,12 +44,12 @@ const IMPORT_STAGE_LABELS: Record<string, string> = {
 // 300-page book sits just under the threshold.
 const LONG_PDF_PAGES = 300;
 
-function longBookHint(book: BookSummary): string {
-  return book.format === "pdf" &&
+function isLongPdf(book: BookSummary): boolean {
+  return (
+    book.format === "pdf" &&
     book.pageCount !== null &&
     book.pageCount > LONG_PDF_PAGES
-    ? " · 预计耗时较长"
-    : "";
+  );
 }
 
 function importStageLabel(book: BookSummary): string {
@@ -259,7 +259,9 @@ export function BookshelfPage() {
                 )}
                 <span className="meta">
                   {book.status === "importing"
-                    ? `导入中 · ${importStageLabel(book)}${longBookHint(book)}`
+                    ? `导入中 · ${importStageLabel(book)}${
+                        isLongPdf(book) ? " · 预计耗时较长" : ""
+                      }`
                     : book.status === "failed"
                       ? `导入失败：${book.importError ?? "未知错误"}`
                       : `${book.format} · 导入于 ${formatImportedAt(book.createdAt)}${

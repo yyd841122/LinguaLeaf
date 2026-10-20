@@ -65,6 +65,18 @@ const readingProgressTable = `
 `;
 
 export function migrateSchema(database: Database.Database): void {
+  // One guard for the "old database lacks this column" shape: check the
+  // PRAGMA snapshot, add the column in place (SQLite cannot add a column
+  // conditionally).
+  const addColumnIfMissing = (
+    columns: { name: string }[],
+    name: string,
+    ddl: string
+  ): void => {
+    if (!columns.some((column) => column.name === name)) {
+      database.exec(ddl);
+    }
+  };
   database.exec(
     `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}`
   );
@@ -74,9 +86,11 @@ export function migrateSchema(database: Database.Database): void {
   const blockColumns = database.prepare("PRAGMA table_info(blocks)").all() as {
     name: string;
   }[];
-  if (!blockColumns.some((column) => column.name === "ipa_slots")) {
-    database.exec("ALTER TABLE blocks ADD COLUMN ipa_slots TEXT");
-  }
+  addColumnIfMissing(
+    blockColumns,
+    "ipa_slots",
+    "ALTER TABLE blocks ADD COLUMN ipa_slots TEXT"
+  );
   // Databases created before ticket 08 predate the asynchronous import; the
   // status columns are added in place and every existing row — inserted
   // fully or not at all by the old synchronous import — is readable.
@@ -95,9 +109,11 @@ export function migrateSchema(database: Database.Database): void {
   }
   // Databases created before the PDF import predate page_count (the shelf's
   // long-book hint reads it); altered in place like the ticket 08 columns.
-  if (!bookColumns.some((column) => column.name === "page_count")) {
-    database.exec("ALTER TABLE books ADD COLUMN page_count INTEGER");
-  }
+  addColumnIfMissing(
+    bookColumns,
+    "page_count",
+    "ALTER TABLE books ADD COLUMN page_count INTEGER"
+  );
   // Databases created before ticket 07 carry a kind CHECK without 'image'.
   // SQLite cannot alter a CHECK constraint; the table is rebuilt in place
   // (sqlite.org/lang_altertable.html) with every row carried over.

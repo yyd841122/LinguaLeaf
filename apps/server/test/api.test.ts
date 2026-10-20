@@ -821,6 +821,10 @@ describe("translation at the HTTP API seam", () => {
         importPercent: number | null;
       };
       if (book.status !== "importing") {
+        // Only the settled success may end the loop; a failed import would
+        // otherwise slip through here and die later as a confusing
+        // waitForShelfBook timeout.
+        expect(book.status).toBe("ready");
         expect(book).toMatchObject({ importPercent: null });
         break;
       }

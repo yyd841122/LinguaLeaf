@@ -211,11 +211,16 @@ describe("BookshelfPage import states (ticket 08)", () => {
     expect(screen.getByText(/导入中 · 翻译译文 40%/)).toBeTruthy();
     expect(screen.queryByText(/预计耗时较长/)).toBeNull();
 
-    // A settled long PDF is no longer waiting on anything, and a book
-    // without a page count (EPUB, Markdown) never had pages to count.
+    // A settled long PDF is no longer waiting on anything.
     shelfState.books = [
       { ...importingBook, format: "pdf", pageCount: 320, status: "ready" },
     ];
+    await actAdvance(2000);
+    expect(screen.queryByText(/预计耗时较长/)).toBeNull();
+
+    // And a book without a page count (EPUB, Markdown) never had pages
+    // to count, however long it is.
+    shelfState.books = [importingBook];
     await actAdvance(2000);
     expect(screen.queryByText(/预计耗时较长/)).toBeNull();
   });
