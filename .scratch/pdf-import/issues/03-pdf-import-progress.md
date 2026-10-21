@@ -85,3 +85,8 @@ Depends on: 01
      百分比持续上行、「预计耗时较长」提示在行内（页数 320>300）
   2. **本票为整场 build（annotated-book-export + pdf-import）末票 —— /clear 之前跑 /retro，
      勿忘勿跳**
+
+### 2026-10-21 人工冒烟回执（浏览器侧）
+
+- 用户在真实浏览器导入 `/tmp/lingualeaf-smoke/long-book.pdf`（320 页），确认测试正常——
+  百分比持续上行、无无反馈等待。票 03 最后一个验收项闭环，全票验收齐备。
