@@ -1,6 +1,6 @@
 # PDF 导入百分比进度与大文件提示
 
-Status: ready-for-agent
+Status: done
 
 Spec: `.scratch/pdf-import/spec.md`
 

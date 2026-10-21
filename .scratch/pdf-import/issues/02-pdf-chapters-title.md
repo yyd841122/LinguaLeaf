@@ -1,6 +1,6 @@
 # PDF 分章与书名
 
-Status: ready-for-agent
+Status: done
 
 Spec: `.scratch/pdf-import/spec.md`
 

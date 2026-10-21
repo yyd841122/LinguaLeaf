@@ -5,11 +5,35 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import request from "supertest";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { openDatabase } from "../src/database.js";
 import { attachFrontend } from "../src/frontend.js";
+import type { InlineConfig, Logger } from "vite";
+
+// Vite's dependency scanner races this file's teardown: closing the dev
+// server mid-scan kills the scanner, and the default logger prints the full
+// benign esbuild stack on stderr for every run of this file. The test asserts
+// HTTP behavior, not Vite logs, so the server created here runs silent; the
+// real dev server (main.ts) keeps its logger.
+vi.mock("vite", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("vite")>();
+  const silentLogger: Logger = {
+    info: () => {},
+    warn: () => {},
+    warnOnce: () => {},
+    error: () => {},
+    clearScreen: () => {},
+    hasWarned: false,
+    hasErrorLogged: () => false,
+  };
+  return {
+    ...actual,
+    createServer: (config?: InlineConfig) =>
+      actual.createServer({ ...config, customLogger: silentLogger }),
+  };
+});
 
 describe("frontend hosting through the HTTP API seam", () => {
   let projectRoot: string;

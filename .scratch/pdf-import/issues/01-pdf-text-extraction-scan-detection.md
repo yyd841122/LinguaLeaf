@@ -1,6 +1,6 @@
 # PDF 文本层抽取与扫描件判定
 
-Status: ready-for-agent
+Status: done
 
 Spec: `.scratch/pdf-import/spec.md`
 

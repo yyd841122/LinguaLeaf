@@ -1,6 +1,6 @@
 # 书架导出入口
 
-Status: ready-for-agent
+Status: done
 
 Spec: `.scratch/annotated-book-export/spec.md`
 

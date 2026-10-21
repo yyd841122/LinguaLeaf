@@ -1,6 +1,6 @@
 # 导出端点与标注书文件生成器（基础版）
 
-Status: ready-for-agent
+Status: done
 
 Spec: `.scratch/annotated-book-export/spec.md`
 

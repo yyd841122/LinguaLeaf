@@ -9,6 +9,8 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 - Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`, never a single combined tickets file
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
+- Closure flips the line: when an implementation ticket finishes, its `Status:` becomes `done` — the wrap-up report stays under `## Comments`. `ready-for-agent` means nobody has picked it up yet; frontier and triage scans read it as open work.
+- Gate text states relationships, never values: pin a review baseline as "the HEAD before this ticket's first implementation commit", not a SHA — a value written before the work starts is stale by the time the gate runs.
 
 ## When a skill says "publish to the issue tracker"
 

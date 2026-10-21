@@ -1,6 +1,6 @@
 # 标注书文件：内嵌词义、点词查详情与发音
 
-Status: ready-for-agent
+Status: done
 
 Spec: `.scratch/annotated-book-export/spec.md`
 

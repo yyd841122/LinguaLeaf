@@ -94,3 +94,18 @@ finishing book A re-enabled book B mid-download
 At review: for each piece of async UI state in a diff, ask "can two of
 these run at once?" A yes with single-slot state is the bug, even when
 today's UI only disables the clicked row.
+
+## One table, one column list
+
+Reader queries of the same table share one column list (one constant both
+SELECTs interpolate), never hand-maintained copies: a column added to one copy
+but not the other typechecks through the row's `as` cast and fails only when
+the code reads the missing field at runtime.
+
+Why: ticket 03 (pdf-import) added `books.page_count` and had to edit the shelf
+SELECT and `findBook` in lockstep; the Standards review flagged the pair as a
+drift trap the `as BookRow` cast hides from both tsc and the tests. The fix
+extracted one `BOOK_COLUMNS` constant (apps/server/src/books-router.ts).
+
+At review: when a diff adds a column to a table, check every SELECT and INSERT
+of that table, and ask whether a row-level `as` cast could hide a missed copy.
