@@ -44,20 +44,6 @@ const raw = (text: string): BlockRow => ({
   translation: null,
 });
 
-// persistBook takes chapter heads and blocks as parallel arrays; this
-// helper keeps each test's data in one shape.
-const persistChapters = (
-  database: Database.Database,
-  bookId: number,
-  chapters: { title: string; level: number | null; blocks: BlockRow[] }[]
-): boolean =>
-  persistBook(
-    database,
-    bookId,
-    chapters.map(({ title, level }) => ({ title, level })),
-    chapters.map(({ blocks }) => blocks)
-  );
-
 describe("book-store", () => {
   let database: Database.Database;
 
@@ -87,7 +73,7 @@ describe("book-store", () => {
   it("persistBook writes chapters and blocks; the readers decode them back", () => {
     const id = createImportingBook(database, "A Title", "markdown", null);
     expect(
-      persistChapters(database, id, [
+      persistBook(database, id, [
         {
           title: "One",
           level: 1,
@@ -137,10 +123,18 @@ describe("book-store", () => {
     });
     expect(loadChapter(database, id, 3)).toBeUndefined();
 
-    expect(loadWholeBook(database, id).map((c) => c.title)).toEqual([
-      "One",
-      "Two",
-    ]);
+    const whole = loadWholeBook(database, id);
+    expect(whole.map((c) => c.title)).toEqual(["One", "Two"]);
+    // The LEFT JOIN's null side: a heading-only chapter survives the joined
+    // read with an empty blocks array, not as a dropped row — a different
+    // code path from loadChapter's two SELECTs asserted above.
+    expect(whole[1]).toEqual({
+      position: 2,
+      title: "Two",
+      level: null,
+      blocks: [],
+    });
+
     expect(listChapters(database, id)).toEqual([
       { position: 1, title: "One", level: 1 },
       { position: 2, title: "Two", level: null },
@@ -159,7 +153,7 @@ describe("book-store", () => {
       )
       .run(id);
     expect(() =>
-      persistChapters(database, id, [
+      persistBook(database, id, [
         { title: "One", level: null, blocks: [sentence("A word.")] },
         { title: "Two", level: null, blocks: [] },
       ])
@@ -176,7 +170,7 @@ describe("book-store", () => {
     // Every import write no-ops against a deleted book: persist false, the
     // progress and settle updates quiet.
     expect(
-      persistChapters(database, id, [{ title: "One", level: null, blocks: [] }])
+      persistBook(database, id, [{ title: "One", level: null, blocks: [] }])
     ).toBe(false);
     expect(() =>
       setImportProgress(database, id, "translating", 40)
@@ -188,15 +182,27 @@ describe("book-store", () => {
     // A settled book is past progress writes: a late task tick must not
     // overwrite the shelf's settled state.
     const ready = createImportingBook(database, "Settled", "markdown", null);
-    persistChapters(database, ready, [
-      { title: "One", level: null, blocks: [] },
-    ]);
+    persistBook(database, ready, [{ title: "One", level: null, blocks: [] }]);
     settleImport(database, ready, "ready", null);
     setImportProgress(database, ready, "translating", 40);
     const row = findBookRow(database, ready);
     expect(row?.status).toBe("ready");
     expect(row?.import_stage).toBeNull();
     expect(row?.import_percent).toBeNull();
+  });
+
+  it("persistBook's guard is existence-only: content lands under a settled book too", () => {
+    // Deliberately pinned, not endorsed: the import task persists between
+    // creating and settling a book, so the settled path is unreachable
+    // today. If the guard ever tightens to `AND status = 'importing'` (the
+    // other import writes' invariant), this is the test that flips — a
+    // conscious act, not a drift.
+    const id = createImportingBook(database, "A Title", "markdown", null);
+    settleImport(database, id, "failed", "boom");
+    expect(
+      persistBook(database, id, [{ title: "One", level: null, blocks: [] }])
+    ).toBe(true);
+    expect(loadChapter(database, id, 1)?.title).toBe("One");
   });
 
   it("settleImport clears the live progress columns and records the failure", () => {
@@ -246,11 +252,15 @@ describe("book-store", () => {
 
   it("a corrupt ipa_slots row fails loudly at the read", () => {
     const id = createImportingBook(database, "A Title", "markdown", null);
-    persistChapters(database, id, [
+    persistBook(database, id, [
       { title: "One", level: null, blocks: [sentence("A word.", ["/wɜːd/"])] },
     ]);
     database.prepare("UPDATE blocks SET ipa_slots = 'not json'").run();
     expect(() => loadChapter(database, id, 1)).toThrow();
+    expect(() => loadWholeBook(database, id)).toThrow();
+    // Valid JSON that is not an array is corrupt too: the codec promises
+    // an array of transcriptions, not anything JSON.parse accepts.
+    database.prepare("UPDATE blocks SET ipa_slots = '5'").run();
     expect(() => loadWholeBook(database, id)).toThrow();
   });
 

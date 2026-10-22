@@ -38,11 +38,13 @@ export type BlockRow = {
   translation: string | null;
 };
 
-// A chapter's head fields, handed to persistBook alongside its blocks (the
-// two arrays zip by position).
+// One chapter as the import hands it over: the head fields and its block
+// rows together, so no caller has to split a natural grouping into
+// parallel arrays.
 export type PersistChapter = {
   title: string;
   level: number | null;
+  blocks: BlockRow[];
 };
 
 // A book row as the books table holds it.
@@ -186,8 +188,7 @@ export function createImportingBook(
 export function persistBook(
   database: Database.Database,
   bookId: number,
-  chapters: PersistChapter[],
-  chapterBlocks: BlockRow[][]
+  chapters: PersistChapter[]
 ): boolean {
   const persist = database.transaction((): boolean => {
     const existing = database
@@ -210,7 +211,7 @@ export function persistBook(
         ).lastInsertRowid
       );
       let position = 0;
-      for (const block of chapterBlocks[chapterIndex] ?? []) {
+      for (const block of chapter.blocks) {
         position += 1;
         insertBlock.run(
           chapterId,

@@ -70,8 +70,11 @@ export async function runImportTask(
     const persisted = persistBook(
       database,
       bookId,
-      book.chapters.map(({ title, level }) => ({ title, level })),
-      chapterBlocks
+      book.chapters.map((chapter, index) => ({
+        title: chapter.title,
+        level: chapter.level,
+        blocks: chapterBlocks[index] ?? [],
+      }))
     );
     if (persisted) {
       settleImport(database, bookId, "ready", null);

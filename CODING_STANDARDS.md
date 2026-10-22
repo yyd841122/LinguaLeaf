@@ -117,6 +117,9 @@ blocks, reading_progress) lives in apps/server/src/book-store.ts, so a column
 list has exactly one possible home.
 
 At review: when a diff adds SQL over those four tables, it belongs in
-book-store — SQL appearing anywhere else is the finding. When a diff adds a
-column to one of those tables, check the store's single column list; a
-hand-written SELECT beside it is the drift trap again.
+book-store — SQL appearing anywhere else is the finding. The deliberate
+exceptions: schema.ts's DDL and in-place migrations (they run before the
+store's shapes exist) and test fixture or fault-injection SQL (it builds or
+breaks what the store reads). When a diff adds a column to one of those
+tables, check the store's single column list; a hand-written SELECT beside
+it is the drift trap again.
