@@ -46,3 +46,7 @@ node_modules/
 .env.*
 !.env.example
 *.tsbuildinfo
+
+# Architecture-review reports (/improve-codebase-architecture) — dated
+# per-run artifacts written to .scratch so they survive machine restarts.
+.scratch/architecture-review-*.html

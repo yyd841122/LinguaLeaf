@@ -116,10 +116,34 @@ structural: every SQL statement over the four book tables (books, chapters,
 blocks, reading_progress) lives in apps/server/src/book-store.ts, so a column
 list has exactly one possible home.
 
-At review: when a diff adds SQL over those four tables, it belongs in
-book-store — SQL appearing anywhere else is the finding. The deliberate
-exceptions: schema.ts's DDL and in-place migrations (they run before the
-store's shapes exist) and test fixture or fault-injection SQL (it builds or
-breaks what the store reads). When a diff adds a column to one of those
-tables, check the store's single column list; a hand-written SELECT beside
-it is the drift trap again.
+The gate enforces the locality: apps/server/scripts/check-sql-locality.mjs
+(wired into `verify` and the pre-commit hook) fails the build on four-table
+SQL outside the store; schema.ts's DDL and in-place migrations and test
+fixture or fault-injection SQL are the deliberate exceptions.
+
+At review: for the four book tables the gate owns locality, so the
+reviewer's job here is the column-list discipline for every other table.
+When a diff adds a column to a table, check every SELECT and INSERT of that
+table, and ask whether a row-level `as` cast could hide a missed copy.
+
+## Reviews pin unreachable behavior instead of changing it
+
+When a review flags behavior nothing can reach — a guard wider than any
+caller requires, a path no flow exercises — the refactor pins it with a
+characterization test instead of tightening it in the same change. The test
+states the behavior is pinned, not endorsed, and names itself as the one
+that flips when the behavior is deliberately changed. A refactor that also
+changes behavior is two changes in one: the unchanged test envelope is what
+proves the refactor safe, and a guard change inside it destroys that proof.
+
+Why: the book-store review (Standards + Spec axes, 2026-10-22) found
+persistBook's guard was existence-only — a settled book could still take
+content, unreachable in the single-task import flow. The fix pinned it
+(apps/server/test/book-store.test.ts, "persistBook's guard is
+existence-only") instead of adding `AND status = 'importing'` mid-refactor;
+the guard can still tighten later, as its own deliberate commit.
+
+At review: when a diff both refactors and changes a guard or edge behavior,
+ask for the split. When a diff pins behavior, check the test says "pinned,
+not endorsed" and names its own flip condition — an unlabeled pin is just a
+test blessing whatever happens to exist.

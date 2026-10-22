@@ -17,9 +17,10 @@
     "start": "node --env-file-if-exists=.env .output/server/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspaces",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run lint && npm run build",
+    "verify": "npm run typecheck && npm test && npm run lint && npm run check:sql-locality && npm run build",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
+    "check:sql-locality": "npm run check:sql-locality --workspace @lingualeaf/server",
     "prepare": "husky"
   },
   "devDependencies": {

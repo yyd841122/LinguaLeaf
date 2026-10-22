@@ -23,7 +23,7 @@ export default tseslint.config(
     // Node. Flat config merges blocks, so scoping this block is what keeps
     // process/Buffer invalid inside web app source.
     files: [
-      "apps/server/**/*.{js,ts,tsx}",
+      "apps/server/**/*.{js,mjs,ts,tsx}",
       "**/vite.config.ts",
       "**/vitest.config.ts",
       "*.config.js",
