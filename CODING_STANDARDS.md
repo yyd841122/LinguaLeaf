@@ -111,7 +111,12 @@ the code reads the missing field at runtime.
 Why: ticket 03 (pdf-import) added `books.page_count` and had to edit the shelf
 SELECT and `findBook` in lockstep; the Standards review flagged the pair as a
 drift trap the `as BookRow` cast hides from both tsc and the tests. The fix
-extracted one `BOOK_COLUMNS` constant (apps/server/src/books-router.ts).
+extracted one `BOOK_COLUMNS` constant, and the book-store refactor made it
+structural: every SQL statement over the four book tables (books, chapters,
+blocks, reading_progress) lives in apps/server/src/book-store.ts, so a column
+list has exactly one possible home.
 
-At review: when a diff adds a column to a table, check every SELECT and INSERT
-of that table, and ask whether a row-level `as` cast could hide a missed copy.
+At review: when a diff adds SQL over those four tables, it belongs in
+book-store — SQL appearing anywhere else is the finding. When a diff adds a
+column to one of those tables, check the store's single column list; a
+hand-written SELECT beside it is the drift trap again.

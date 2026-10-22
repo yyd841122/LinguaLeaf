@@ -1,8 +1,11 @@
-import type Database from "better-sqlite3";
-import type { BlockKind } from "../import/pipeline.js";
 import type { Dictionary, WordLookup } from "../dict/dictionary.js";
 import { lookupWord, normalizeLookupToken } from "../dict/dictionary.js";
 import { WORD_PATTERN } from "../dict/ipa-line.js";
+import type {
+  BlockData,
+  ChapterData,
+  SentenceBlockData,
+} from "../book-store.js";
 
 // The annotated book file (GLOSSARY.md): a self-contained single-file HTML
 // rendering of everything the library holds for one book — chapter titles,
@@ -37,65 +40,6 @@ export function annotatedBookFilename(title: string): string {
   return `${cleaned.length > 0 ? cleaned : "book"}.html`;
 }
 
-type BlockRow = {
-  kind: BlockKind;
-  original_text: string;
-  ipa_slots: string | null;
-  ipa_text: string | null;
-  translation_text: string | null;
-};
-
-type ChapterRow = {
-  id: number;
-  title: string;
-  blocks: BlockRow[];
-};
-
-// One joined query in book order: chapters LEFT JOIN blocks so a
-// heading-only chapter still renders (its section just has no blocks).
-// Mirrors the shape of books-router.ts's per-chapter queries, but reads the
-// whole book in one pass — the export is the only consumer that needs every
-// chapter at once.
-function loadBook(database: Database.Database, bookId: number): ChapterRow[] {
-  const rows = database
-    .prepare(
-      `SELECT c.id AS chapter_id, c.title AS chapter_title, b.kind, b.original_text,
-              b.ipa_slots, b.ipa_text, b.translation_text
-       FROM chapters c
-       LEFT JOIN blocks b ON b.chapter_id = c.id
-       WHERE c.book_id = ?
-       ORDER BY c.position, b.position`
-    )
-    .all(bookId) as {
-    chapter_id: number;
-    chapter_title: string;
-    kind: BlockKind | null;
-    original_text: string | null;
-    ipa_slots: string | null;
-    ipa_text: string | null;
-    translation_text: string | null;
-  }[];
-
-  const chapters: ChapterRow[] = [];
-  for (const row of rows) {
-    let chapter = chapters.at(-1);
-    if (!chapter || chapter.id !== row.chapter_id) {
-      chapter = { id: row.chapter_id, title: row.chapter_title, blocks: [] };
-      chapters.push(chapter);
-    }
-    if (row.kind !== null) {
-      chapter.blocks.push({
-        kind: row.kind,
-        original_text: row.original_text ?? "",
-        ipa_slots: row.ipa_slots,
-        ipa_text: row.ipa_text,
-        translation_text: row.translation_text,
-      });
-    }
-  }
-  return chapters;
-}
-
 // One sentence block's three lines (GLOSSARY: 句子块). The original line
 // walks the same word matches the import used to fill the slots, pairing
 // each word with its transcription in a stacked unit (mirror of the app's
@@ -104,19 +48,18 @@ function loadBook(database: Database.Database, bookId: number): ChapterRow[] {
 // fall back to the flat IPA line, exactly like the reading view. The
 // translation line is omitted when missing (an intentional difference from
 // the app, which renders an empty placeholder line: the file stays compact).
-const renderSentenceBlock = (block: BlockRow): string => {
-  // The slots column is written by the import pipeline as a JSON array; the
-  // parse mirrors the chapter route's (a corrupt row fails loudly there too).
-  const slots =
-    block.ipa_slots !== null ? (JSON.parse(block.ipa_slots) as string[]) : null;
-  const matches = [...block.original_text.matchAll(WORD_PATTERN)];
+const renderSentenceBlock = (block: SentenceBlockData): string => {
+  // The slots arrive decoded from the book store (its codec already failed
+  // loudly on a corrupt row); null keeps the flat IPA line as the fallback.
+  const slots = block.ipaSlots;
+  const matches = [...block.originalText.matchAll(WORD_PATTERN)];
   const slotPaired = slots !== null && slots.length === matches.length;
   let original = "";
   let cursor = 0;
   matches.forEach((match, index) => {
     const start = match.index ?? cursor;
     if (start > cursor) {
-      original += escapeHtml(block.original_text.slice(cursor, start));
+      original += escapeHtml(block.originalText.slice(cursor, start));
     }
     const word = escapeHtml(match[0]);
     const ipa = slotPaired ? slots[index] : undefined;
@@ -127,12 +70,12 @@ const renderSentenceBlock = (block: BlockRow): string => {
       : `<span class="lookup-word" data-word="${word}">${word}</span>`;
     cursor = start + match[0].length;
   });
-  original += escapeHtml(block.original_text.slice(cursor));
+  original += escapeHtml(block.originalText.slice(cursor));
 
   const ipaLine = slotPaired
     ? ""
-    : `<p class="ipa-line">${escapeHtml(block.ipa_text ?? "")}</p>`;
-  const translation = block.translation_text?.trim();
+    : `<p class="ipa-line">${escapeHtml(block.ipaText ?? "")}</p>`;
+  const translation = block.translationText?.trim();
   const translationLine =
     translation === undefined || translation.length === 0
       ? ""
@@ -140,24 +83,24 @@ const renderSentenceBlock = (block: BlockRow): string => {
   return `<div class="sentence-block"><p class="original-line">${original}</p>${ipaLine}${translationLine}</div>`;
 };
 
-const renderBlock = (block: BlockRow): string => {
+const renderBlock = (block: BlockData): string => {
   if (block.kind === "sentence") {
     return renderSentenceBlock(block);
   }
   if (block.kind === "code") {
-    return `<pre class="code-block"><code>${escapeHtml(block.original_text)}</code></pre>`;
+    return `<pre class="code-block"><code>${escapeHtml(block.originalText)}</code></pre>`;
   }
   if (block.kind === "image") {
     const caption =
-      block.original_text.length > 0
-        ? `<figcaption>${escapeHtml(block.original_text)}</figcaption>`
+      block.originalText.length > 0
+        ? `<figcaption>${escapeHtml(block.originalText)}</figcaption>`
         : "";
     return `<figure class="image-block"><span class="image-placeholder" aria-hidden="true">🖼</span>${caption}</figure>`;
   }
-  return `<p class="raw-block">${escapeHtml(block.original_text)}</p>`;
+  return `<p class="raw-block">${escapeHtml(block.originalText)}</p>`;
 };
 
-const renderChapter = (chapter: ChapterRow): string => {
+const renderChapter = (chapter: ChapterData): string => {
   const heading =
     chapter.title.length > 0
       ? `<h2 class="chapter-title">${escapeHtml(chapter.title)}</h2>`
@@ -167,7 +110,7 @@ const renderChapter = (chapter: ChapterRow): string => {
     .join("")}</div></section>`;
 };
 
-const renderBody = (title: string, chapters: ChapterRow[]): string => `
+const renderBody = (title: string, chapters: ChapterData[]): string => `
 <header class="export-toolbar">
   <div class="export-toolbar-inner">
     <h1 class="book-title">${escapeHtml(title)}</h1>
@@ -203,14 +146,14 @@ ${chapters.map(renderChapter).join("\n")}
 // blocks, code, and chapter titles stay out; so does the rest of the
 // dictionary.
 function collectVocabulary(
-  chapters: ChapterRow[],
+  chapters: ChapterData[],
   dictionary: Dictionary
 ): Record<string, WordLookup | null> {
   const vocabulary = new Map<string, WordLookup | null>();
   for (const chapter of chapters) {
     for (const block of chapter.blocks) {
       if (block.kind !== "sentence") continue;
-      for (const match of block.original_text.matchAll(WORD_PATTERN)) {
+      for (const match of block.originalText.matchAll(WORD_PATTERN)) {
         const key = normalizeLookupToken(match[0]);
         if (key.length > 0 && !vocabulary.has(key)) {
           vocabulary.set(key, lookupWord(dictionary, match[0]));
@@ -429,15 +372,15 @@ const FILE_SCRIPT = `
 
 // Renders the whole file. Synchronous on purpose: an export is pure reads
 // over local SQLite, and the spec accepts second-scale generation without
-// progress reporting. The book rides as the narrow { id, title } shape the
-// renderer needs — the router's full row stays the router's business. The
-// dictionary feeds the embedded vocabulary (GLOSSARY: 点词查详情).
+// progress reporting. The chapters ride in decoded from the book store
+// (loadWholeBook) — this module holds no SQL — and the title comes from the
+// caller's book row. The dictionary feeds the embedded vocabulary
+// (GLOSSARY: 点词查详情).
 export function renderAnnotatedBook(
-  database: Database.Database,
-  dictionary: Dictionary,
-  book: { id: number; title: string }
+  title: string,
+  chapters: ChapterData[],
+  dictionary: Dictionary
 ): string {
-  const chapters = loadBook(database, book.id);
   const vocabulary = collectVocabulary(chapters, dictionary);
   // The vocabulary rides as data, not code: a JSON script element the
   // file's script parses at startup. `<` never reaches the raw text — in a
@@ -450,7 +393,7 @@ export function renderAnnotatedBook(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(book.title)}</title>
+<title>${escapeHtml(title)}</title>
 <style>
 :root {
   color-scheme: light;
@@ -661,7 +604,7 @@ body.hide-translation .translation-line {
 </style>
 </head>
 <body>
-${renderBody(book.title, chapters)}
+${renderBody(title, chapters)}
 <script id="annotated-vocab" type="application/json">${vocabularyJson}</script>
 <script>${FILE_SCRIPT}</script>
 </body>

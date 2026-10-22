@@ -16,12 +16,20 @@ import {
   renderAnnotatedBook,
 } from "./export/annotated-book.js";
 import type { Translator } from "./translate/translator.js";
-import type { BlockKind } from "./import/pipeline.js";
+import { runImportTask } from "./import/import-task.js";
 import {
   createImportingBook,
-  runImportTask,
-  type BookStatus,
-} from "./import/import-task.js";
+  deleteBook,
+  findBookRow,
+  getProgress,
+  listChapters,
+  listShelf,
+  loadChapter,
+  loadWholeBook,
+  saveProgress,
+  type BookRow,
+  type ShelfEntry,
+} from "./book-store.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -29,43 +37,6 @@ const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 const UNSUPPORTED_FORMAT = {
   error: "only .epub, .md, .markdown or .pdf files are accepted",
 };
-
-type BookRow = {
-  id: number;
-  title: string;
-  format: string;
-  created_at: string;
-  // Asserted from the DB row; the write sites all use the task's own union.
-  status: BookStatus;
-  import_stage: string | null;
-  import_percent: number | null;
-  import_error: string | null;
-  page_count: number | null;
-};
-
-// Shelf row: the book plus where it was last read, null before the first
-// reading session (LEFT JOIN from reading_progress).
-type ShelfRow = BookRow & {
-  progress_chapter: number | null;
-  progress_block: number | null;
-};
-
-// The books columns both reader queries fetch, kept in one place so the
-// BookRow cast cannot drift from what the SELECTs deliver (a missed column
-// would typecheck through the cast and fail only at runtime).
-const BOOK_COLUMNS = [
-  "id",
-  "title",
-  "format",
-  "created_at",
-  "status",
-  "import_stage",
-  "import_percent",
-  "import_error",
-  "page_count",
-] as const;
-const bookColumnSql = (prefix: string) =>
-  BOOK_COLUMNS.map((column) => `${prefix}${column}`).join(", ");
 
 const toBookJson = (row: BookRow) => ({
   id: row.id,
@@ -79,7 +50,7 @@ const toBookJson = (row: BookRow) => ({
   pageCount: row.page_count,
 });
 
-const toShelfJson = (row: ShelfRow) => ({
+const toShelfJson = (row: ShelfEntry) => ({
   ...toBookJson(row),
   progress:
     row.progress_chapter === null || row.progress_block === null
@@ -172,7 +143,7 @@ export function createBooksRouter(
         bookId,
         prepared
       );
-      const row = findBook(bookId);
+      const row = findBookRow(database, bookId);
       if (!row) {
         // Unreachable in practice — the row was just inserted — but keeps
         // the handler total without asserting.
@@ -184,29 +155,14 @@ export function createBooksRouter(
   );
 
   router.get("/", (_request, response) => {
-    const rows = database
-      .prepare(
-        `SELECT ${bookColumnSql("b.")},
-                p.chapter_position AS progress_chapter,
-                p.block_position AS progress_block
-         FROM books b
-         LEFT JOIN reading_progress p ON p.book_id = b.id
-         ORDER BY b.id`
-      )
-      .all() as ShelfRow[];
-    response.json({ books: rows.map(toShelfJson) });
+    response.json({ books: listShelf(database).map(toShelfJson) });
   });
-
-  const findBook = (id: number) =>
-    database
-      .prepare(`SELECT ${bookColumnSql("")} FROM books WHERE id = ?`)
-      .get(id) as BookRow | undefined;
 
   // One parse-and-lookup for every /:id handler: a non-integer id is just a
   // book that is not there.
   const bookFromParams = (request: Request): BookRow | undefined => {
     const id = Number(request.params.id);
-    return Number.isInteger(id) ? findBook(id) : undefined;
+    return Number.isInteger(id) ? findBookRow(database, id) : undefined;
   };
 
   // Reading routes answer only settled books: an importing book has no
@@ -227,17 +183,12 @@ export function createBooksRouter(
       return;
     }
     if (respondIfNotReady(book, response)) return;
-    const row = database
-      .prepare(
-        "SELECT chapter_position, block_position FROM reading_progress WHERE book_id = ?"
-      )
-      .get(book.id) as
-      { chapter_position: number; block_position: number } | undefined;
-    if (!row) {
+    const progress = getProgress(database, book.id);
+    if (!progress) {
       response.status(404).json({ error: "no reading progress" });
       return;
     }
-    response.json({ chapter: row.chapter_position, block: row.block_position });
+    response.json(progress);
   });
 
   router.delete("/:id", (request, response) => {
@@ -246,9 +197,7 @@ export function createBooksRouter(
       response.status(404).json({ error: "book not found" });
       return;
     }
-    // Chapters, blocks, and reading_progress go with the book through their
-    // ON DELETE CASCADE foreign keys (foreign_keys pragma is on).
-    database.prepare("DELETE FROM books WHERE id = ?").run(book.id);
+    deleteBook(database, book.id);
     response.status(204).end();
   });
 
@@ -273,16 +222,7 @@ export function createBooksRouter(
       return;
     }
     if (respondIfNotReady(book, response)) return;
-    database
-      .prepare(
-        `INSERT INTO reading_progress (book_id, chapter_position, block_position, updated_at)
-         VALUES (?, ?, ?, ?)
-         ON CONFLICT(book_id) DO UPDATE SET
-           chapter_position = excluded.chapter_position,
-           block_position = excluded.block_position,
-           updated_at = excluded.updated_at`
-      )
-      .run(book.id, chapter, block, new Date().toISOString());
+    saveProgress(database, book.id, chapter, block);
     response.json({ chapter, block });
   });
 
@@ -300,7 +240,13 @@ export function createBooksRouter(
     response
       .type("html")
       .attachment(annotatedBookFilename(book.title))
-      .send(renderAnnotatedBook(database, dictionary, book));
+      .send(
+        renderAnnotatedBook(
+          book.title,
+          loadWholeBook(database, book.id),
+          dictionary
+        )
+      );
   });
 
   router.get("/:id", (request, response) => {
@@ -309,11 +255,7 @@ export function createBooksRouter(
       response.status(404).json({ error: "book not found" });
       return;
     }
-    const chapters = database
-      .prepare(
-        "SELECT position, title, level FROM chapters WHERE book_id = ? ORDER BY position"
-      )
-      .all(book.id);
+    const chapters = listChapters(database, book.id);
     response.json({ ...toBookJson(book), chapters });
   });
 
@@ -330,53 +272,12 @@ export function createBooksRouter(
       return;
     }
     if (respondIfNotReady(book, response)) return;
-    const chapter = database
-      .prepare(
-        "SELECT id, position, title, level FROM chapters WHERE book_id = ? AND position = ?"
-      )
-      .get(bookId, chapterPosition) as
-      | { id: number; position: number; title: string; level: number | null }
-      | undefined;
+    const chapter = loadChapter(database, bookId, chapterPosition);
     if (!chapter) {
       response.status(404).json({ error: "chapter not found" });
       return;
     }
-    const blockRows = database
-      .prepare(
-        "SELECT position, kind, original_text, ipa_slots, ipa_text, translation_text FROM blocks WHERE chapter_id = ? ORDER BY position"
-      )
-      .all(chapter.id) as {
-      position: number;
-      kind: string;
-      original_text: string;
-      ipa_slots: string | null;
-      ipa_text: string | null;
-      translation_text: string | null;
-    }[];
-    const blocks = blockRows.map((row) =>
-      row.kind === "sentence"
-        ? {
-            position: row.position,
-            kind: "sentence" as const,
-            originalText: row.original_text,
-            ipaSlots: row.ipa_slots
-              ? (JSON.parse(row.ipa_slots) as string[])
-              : null,
-            ipaText: row.ipa_text,
-            translationText: row.translation_text,
-          }
-        : {
-            position: row.position,
-            kind: row.kind as Exclude<BlockKind, "sentence">,
-            originalText: row.original_text,
-          }
-    );
-    response.json({
-      position: chapter.position,
-      title: chapter.title,
-      level: chapter.level,
-      blocks,
-    });
+    response.json(chapter);
   });
 
   return router;

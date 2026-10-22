@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import Database from "better-sqlite3";
 import { openDatabase } from "../src/database.js";
-import { failInterruptedImports } from "../src/import/import-task.js";
+import { failInterruptedImports } from "../src/book-store.js";
 
 // Databases created before ticket 07 carry a kind CHECK without 'image'.
 // openDatabase must rebuild the blocks table in place — SQLite cannot alter
