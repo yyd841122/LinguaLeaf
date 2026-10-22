@@ -5,5 +5,9 @@
     "moduleResolution": "NodeNext",
     "types": ["node"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "vitest.config.ts"],
+  // contract.test.ts imports apps/web sources, which use Bundler-style
+  // extensionless imports NodeNext cannot follow. Vitest resolves them, so
+  // the runtime gate owns that file; tsc stays out.
+  "exclude": ["test/contract.test.ts"]
 }

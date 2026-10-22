@@ -30,6 +30,12 @@ never runs the front-end fetch layer, so only human acceptance caught it
 diff adds a caller of a shared fetch helper, check the helper's parsing
 contract against that endpoint's real status/body shape.
 
+The shared fetch layer is contract-tested against the real server: the web
+client modules run real requests through `apps/server/test/contract.test.ts`
+(real Express app, real sockets, real multipart, real error families). When a
+diff adds a caller of a shared fetch helper or a new endpoint shape, extend
+that suite in the same change instead of trusting a hand-built mock.
+
 ## Retry loops escalate persistent failure
 
 A client loop that retries through failure — polling, refresh, reconnect —
