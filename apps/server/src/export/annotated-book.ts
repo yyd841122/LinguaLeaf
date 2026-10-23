@@ -11,6 +11,17 @@ import type {
   ChapterData,
   SentenceBlockData,
 } from "../book-store.js";
+import {
+  POPUP_MARGIN_PX,
+  POPUP_MAX_HEIGHT_PX,
+  POPUP_WIDTH_PX,
+} from "@lingualeaf/reading-model";
+
+// The file's only script — the annotated book file's application half. It
+// is real TypeScript in packages/reading-model/src/export-front.ts; the
+// committed generated file carries the compiled IIFE the template inlines
+// (regenerate via npm run build:file-script, gate: file-script-fresh).
+import { FILE_SCRIPT } from "./file-script.generated.js";
 
 // The attachment filename rule lives in the reading model; re-exported so
 // the router keeps one import site for the export's naming.
@@ -154,214 +165,6 @@ function collectVocabulary(
   return Object.fromEntries(vocabulary);
 }
 
-// The file's only script: the two display toggles (GLOSSARY: 显示开关)
-// and the tap-word lookup (GLOSSARY: 点词查详情). Root classes on <body>
-// drive the visibility CSS; the choice is remembered per toggle in
-// localStorage. Every storage touch is guarded — file:// contexts (and
-// hardened browsers) may throw on access, and the file must fall back to
-// all-shown and keep working in-page regardless. No network, no fetches:
-// the self-contained red line covers the script too.
-const FILE_SCRIPT = `
-(function () {
-  "use strict";
-  var KEY_BY_TOGGLE = {
-    "toggle-ipa": "lingualeaf-export.show-ipa",
-    "toggle-translation": "lingualeaf-export.show-translation"
-  };
-  function readFlag(key) {
-    try {
-      return window.localStorage.getItem(key);
-    } catch (error) {
-      return null;
-    }
-  }
-  function writeFlag(key, value) {
-    try {
-      window.localStorage.setItem(key, value);
-    } catch (error) {
-      // In-page toggling keeps working; only the memory is lost.
-    }
-  }
-  Object.keys(KEY_BY_TOGGLE).forEach(function (id) {
-    var toggle = document.getElementById(id);
-    if (!toggle) return;
-    if (readFlag(KEY_BY_TOGGLE[id]) === "0") toggle.checked = false;
-    var apply = function () {
-      document.body.classList.toggle(
-        "hide-" + toggle.getAttribute("data-annotation"),
-        !toggle.checked
-      );
-    };
-    apply();
-    toggle.addEventListener("change", function () {
-      apply();
-      writeFlag(KEY_BY_TOGGLE[id], toggle.checked ? "1" : "0");
-    });
-  });
-
-  // -- 点词查详情 --
-  // Words arrive pre-tokenized: every clickable word in the file was
-  // wrapped at export time by the reading model's shared pattern
-  // (WORD_PATTERN); this file needs no runtime copy because the wrapping
-  // is baked into the markup. What the file does own is the lookup-key
-  // fold below: a faithful copy of the reading model's
-  // normalizeLookupToken (packages/reading-model, lookup-fold). Keep the
-  // two identical — a divergent fold makes case and curly-quote variants
-  // silently miss the vocabulary. (The whole script becomes a compiled TS
-  // entry in the reading-model ticket 02.)
-  var VOCAB = {};
-  try {
-    VOCAB = JSON.parse(
-      document.getElementById("annotated-vocab").textContent
-    );
-  } catch (error) {
-    // A missing or corrupt vocabulary makes every popup report a miss;
-    // reading and the toggles keep working.
-  }
-  function lookupKey(token) {
-    return token
-      .trim()
-      .toLowerCase()
-      // The curly apostrophe, as its escape: the fold must survive any
-      // transcoding of this file.
-      .replace(/\\u2019/g, "'")
-      .replace(/^[^a-z']+|[^a-z']+$/g, "");
-  }
-  function lookupEntry(key) {
-    if (key.length === 0) return null;
-    // Own properties only: a miss on a word like "constructor" must read
-    // as a miss, not inherit from Object.prototype.
-    return Object.prototype.hasOwnProperty.call(VOCAB, key)
-      ? VOCAB[key]
-      : null;
-  }
-
-  var popup = document.getElementById("lookup-popup");
-  // The word the popup currently shows — what the 发音 button speaks (the
-  // clicked surface form, not the lemma, like the app).
-  var spokenWord = "";
-  // The popup's rows are filled through textContent only — book-derived
-  // values (senses, transcriptions, the words themselves) can never become
-  // markup here.
-  function fillRow(id, value) {
-    var row = document.getElementById(id);
-    row.textContent = value;
-    row.hidden = false;
-  }
-  function hideRow(id) {
-    var row = document.getElementById(id);
-    row.hidden = true;
-  }
-  // Anchor clamp mirroring the app's WordLookupPopup (plain arithmetic on
-  // the click point, no layout reads). The values are copies of the
-  // reading model's POPUP_* constants (packages/reading-model,
-  // popup-anchor) — keep them identical with those and with the .lookup-*
-  // stylesheet below until the clamp itself moves into the entry.
-  var POPUP_WIDTH_PX = 288;
-  var POPUP_MAX_HEIGHT_PX = 256;
-  var POPUP_MARGIN_PX = 8;
-  var POPUP_VERTICAL_OFFSET_PX = 14;
-  var POPUP_HORIZONTAL_OFFSET_PX = 20;
-  function anchorPopup(point) {
-    var width = Math.min(
-      POPUP_WIDTH_PX,
-      window.innerWidth - 2 * POPUP_MARGIN_PX
-    );
-    var maxLeft = Math.max(
-      POPUP_MARGIN_PX,
-      window.innerWidth - width - POPUP_MARGIN_PX
-    );
-    var maxTop = Math.max(
-      POPUP_MARGIN_PX,
-      window.innerHeight - POPUP_MAX_HEIGHT_PX - POPUP_MARGIN_PX
-    );
-    popup.style.left =
-      Math.min(
-        Math.max(point.x - POPUP_HORIZONTAL_OFFSET_PX, POPUP_MARGIN_PX),
-        maxLeft
-      ) + "px";
-    popup.style.top =
-      Math.min(
-        Math.max(point.y + POPUP_VERTICAL_OFFSET_PX, POPUP_MARGIN_PX),
-        maxTop
-      ) + "px";
-  }
-  function openPopup(word, point) {
-    spokenWord = word;
-    var entry = lookupEntry(lookupKey(word));
-    fillRow("lookup-head-word", word);
-    if (entry) {
-      hideRow("lookup-status");
-      if (entry.lemma && entry.lemma !== entry.word) {
-        fillRow("lookup-lemma", "原形 " + entry.lemma);
-      } else {
-        hideRow("lookup-lemma");
-      }
-      if (entry.ipa) fillRow("lookup-ipa", "/" + entry.ipa + "/");
-      else hideRow("lookup-ipa");
-      if (entry.pos) fillRow("lookup-pos", entry.pos);
-      else hideRow("lookup-pos");
-      if (entry.translation) fillRow("lookup-translation", entry.translation);
-      else hideRow("lookup-translation");
-    } else {
-      // No entry knows the word (spec: 查不到的词提示无结果): say so, and
-      // keep every sense row from the previous lookup hidden.
-      hideRow("lookup-lemma");
-      hideRow("lookup-ipa");
-      hideRow("lookup-pos");
-      hideRow("lookup-translation");
-      fillRow("lookup-status", "词库中未收录这个词。");
-    }
-    anchorPopup(point);
-    popup.hidden = false;
-  }
-  // Dismissal mirrors the app's WordLookupPopup: a click that is neither
-  // inside the popup nor on a word closes it (clicking another word moves
-  // it instead), Escape closes it, and the ✕ button is the explicit close.
-  function closePopup() {
-    popup.hidden = true;
-  }
-  document.addEventListener("click", function (event) {
-    var target = event.target;
-    if (!(target instanceof Element)) return;
-    if (popup.contains(target)) return;
-    var word = target.closest("[data-word]");
-    if (!word) {
-      closePopup();
-      return;
-    }
-    openPopup(word.getAttribute("data-word"), {
-      x: event.clientX,
-      y: event.clientY,
-    });
-  });
-  document
-    .getElementById("lookup-close")
-    .addEventListener("click", closePopup);
-  document.addEventListener("keydown", function (event) {
-    if (event.key === "Escape") closePopup();
-  });
-
-  // -- 发音 --
-  // Browser speech synthesis for the popup's word: a faithful copy of the
-  // reading model's speakWord (packages/reading-model, speak — shared by
-  // the app's wordLookup). Silent no-op where the API is missing or
-  // partial — an unsupported environment must never turn a click into an
-  // error. Repeated clicks restart from silence. Whether any sound comes
-  // out offline depends on the device's local voices.
-  document
-    .getElementById("lookup-speak")
-    .addEventListener("click", function () {
-      var synthesis = window.speechSynthesis;
-      var Utterance = window.SpeechSynthesisUtterance;
-      if (!synthesis || !Utterance) return;
-      synthesis.cancel();
-      var utterance = new Utterance(spokenWord);
-      utterance.lang = "en-US";
-      synthesis.speak(utterance);
-    });
-})();`;
-
 // Renders the whole file. Synchronous on purpose: an export is pure reads
 // over local SQLite, and the spec accepts second-scale generation without
 // progress reporting. The chapters ride in decoded from the book store
@@ -481,15 +284,15 @@ body {
 }
 /* The word-lookup popup (GLOSSARY: 点词查详情) mirrors the app's .lookup-*
    classes (apps/web/src/style.css): a floating card anchored at the click,
-   rows filled through textContent only. Keep identical with that
-   stylesheet and with the clamp constants in the file's script — three
-   sites move together. */
+   rows filled through textContent only. The box values interpolate from
+   the reading model's popup constants (packages/reading-model,
+   popup-anchor) — the app's stylesheet is the hand-mirrored side. */
 .lookup-popup {
   position: fixed;
   z-index: 20;
-  width: 18rem;
-  max-width: calc(100vw - 1rem);
-  max-height: 16rem;
+  width: ${POPUP_WIDTH_PX / 16}rem;
+  max-width: calc(100vw - ${(POPUP_MARGIN_PX * 2) / 16}rem);
+  max-height: ${POPUP_MAX_HEIGHT_PX / 16}rem;
   overflow-y: auto;
   background: #ffffff;
   border: 1px solid #dde3d8;

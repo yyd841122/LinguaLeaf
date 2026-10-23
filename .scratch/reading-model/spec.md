@@ -50,10 +50,12 @@ IIFE 字符串,生成物 file-script.generated.ts 提交入库,annotated-book
    --check(内存编译与提交产物逐字节比对,漂移即红并指路重新生成),
    镜像 check-sql-locality 的工效;生成物进 .prettierignore 与 eslint
    ignores。不用 pretest 静默重生成——提交产物的新鲜度是门禁,不是魔法。
-3. **es5 target,entry 禁 async**:延续手写 FILE_SCRIPT 的 ES5 保守
-   (双击 file:// 的最广可达);entry 不用 async/generator、不走 for-of
-   (\p{} 正则不进 entry——词边界 pattern 只活在 markup 烘焙侧与两个
-   真前端,FILE_SCRIPT 无运行时副本,与现状一致)。
+3. **es2017 target,entry 禁 async**:导出文件的 CSS 本就要求 flexbox
+   时代的浏览器,es5 保守名存实亡;esbuild 的 es5 又不降 const/箭头/
+   解构(包内共享模块是现代风格)。es2017 全兼容这些语法,?. 与 ??
+   由 esbuild 自行下调;entry 不用 async/generator。\p{} 正则不进
+   entry——词边界 pattern 只活在 markup 烘焙侧与两个真前端,FILE_SCRIPT
+   无运行时副本,与现状一致。
 4. **行为信封逐字节不动**:export.test.ts 的 JSDOM 行为测试断言零改动
    (弹层、开关、发音、miss、自包含红线);DOM id/class、localStorage
    键、导出 CSS 产出值(18rem / 16rem / calc(100vw - 1rem))全不变。

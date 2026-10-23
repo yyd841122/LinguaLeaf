@@ -1,2 +1,4 @@
 # 本地票据跟踪器:中文散文被 rewrap 只会污染 diff
 .scratch/
+# 生成物按字节参与 --check 新鲜度比对,rewrap 会制造假漂移
+apps/server/src/export/file-script.generated.ts

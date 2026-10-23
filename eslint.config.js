@@ -7,6 +7,7 @@ export default tseslint.config(
     ignores: [
       ".output/**",
       "**/dist/**",
+      "apps/server/src/export/file-script.generated.ts",
       ".data/**",
       "**/node_modules/**",
       ".claude/**",

@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "check:sql-locality": "node scripts/check-sql-locality.mjs",
     "dict:import-ecdict": "node --import tsx src/dict/import-ecdict.ts",
-    "dict:import-ipa-dict": "node --import tsx src/dict/import-ipa-dict.ts"
+    "dict:import-ipa-dict": "node --import tsx src/dict/import-ipa-dict.ts",
+    "build:file-script": "node scripts/build-file-script.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",
@@ -28,6 +29,7 @@
     "@types/multer": "^2.3.0",
     "@types/sbd": "^1.0.5",
     "@types/supertest": "^6.0.3",
+    "esbuild": "^0.28.2",
     "jsdom": "^27.4.0",
     "pdf-lib": "^1.17.1",
     "supertest": "^7.1.4",
