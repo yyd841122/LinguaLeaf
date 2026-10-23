@@ -1,6 +1,6 @@
 # 02 · runImportTask 直测:混排章节的 join 落点
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -23,3 +23,15 @@ Status: ready-for-agent
 
 ## Comments
 
+Done in 016ed46. apps/server/test/import-task.test.ts: hand-built mixed
+PreparedBook (paragraph 2 sentences / image / code / paragraph 1 sentence,
+plus a single-sentence chapter), createImportingBook then a direct await of
+runImportTask — no polling. Pins the join landing (sentence-order, not raw
+block index; non-sentence blocks stay null) and the sentence-text shape the
+translator receives. api.test.ts and contract.test.ts untouched.
+
+Review pass (Standards+Spec axes) trimmed in f00cac0: the duplicated
+seed-and-run collapsed into one runJoinProbe helper (shared run, two
+facets observed), and the ready-status assertion left — outside this
+ticket's scope bullets, persistence already implied by loadChapter
+returning data. npm run verify exit 0 after the fix.

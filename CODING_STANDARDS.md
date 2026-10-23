@@ -194,3 +194,26 @@ the generator's check mode is wired into a test, the artifact is in the
 ignore lists, and any source edit that changes the artifact ran the
 generator in the same change — a stale artifact still passing typecheck
 is exactly the silent failure this rule exists for.
+
+## Pairings between two collections are held by references, not recounted
+
+When one collection must line up with another — sentences to translations,
+rows to results — hold one collection of references (or key both by the
+same id) and write through it; never filter and count the same sequence in
+two places. A second traversal that re-derives the pairing drifts silently
+the day either side's filter changes, and the type system cannot see the
+pairing at all — the misalignment ships as wrong data next to right code.
+
+Why: the import task collected sentence texts with one filter over the
+blocks, then re-filtered and hand-counted a sentenceIndex to write
+translations back — two independent traversals whose lockstep nothing
+enforced, testable only through HTTP (.scratch/translation-join/). The fix
+holds the sentence-block references once and mutates them in place, so the
+join is object identity, and a direct runImportTask test pins translations
+landing on the sentence blocks of an interleaved chapter.
+
+At review: when a diff pairs two sequences by index, find where each
+side's shape is derived. If the shapes come from two independent
+traversals, the pairing is a latent misalignment — collapse to one held
+reference set (or a shared key) and pin the pairing with a test that
+would catch the drift.

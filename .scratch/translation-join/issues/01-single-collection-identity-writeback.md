@@ -1,6 +1,6 @@
 # 01 · 收集一次句子块引用,回填走对象同一性
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -21,3 +21,9 @@ Status: ready-for-agent
 
 ## Comments
 
+Done in dce8756. The two filtered traversals collapsed into one collected
+reference set (sentenceBlocksByChapter); the translator input is mapped from
+it at the call site, and the write-back mutates those objects, so the join
+into chapterBlocks / persistBook is object identity. Progress callback,
+persist call, pipeline.ts, and translate/ untouched. Envelope held: the full
+suite ran green with zero test edits (231 tests, exit 0).
