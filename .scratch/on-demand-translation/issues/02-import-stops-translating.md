@@ -4,10 +4,38 @@
 
 **Blocked by:** 01（先让"无译文的章"拥有自己的翻译按钮，避免出现"书译不了"的空窗；两票都动装配与共享词汇，串行免冲突）
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 新导入的书：每章译文为空、音标照常；书架进度不再出现翻译阶段文案
-- [ ] 真实流程可演示：导入 → 打开一章 → 按钮显示「翻译本章」→ 点下 → 译出
-- [ ] 导入失败路径与既有失败清扫行为不变
-- [ ] 导入形状的既有值级断言按新现实改写（译文为 NULL）；「留空」语义只迁移不删除
-- [ ] 门禁同 01（typecheck/test/lint 绿、verify 全绿、基线 HEAD 表述）
+- [x] 新导入的书：每章译文为空、音标照常；书架进度不再出现翻译阶段文案
+- [x] 真实流程可演示：导入 → 打开一章 → 按钮显示「翻译本章」→ 点下 → 译出
+- [x] 导入失败路径与既有失败清扫行为不变
+- [x] 导入形状的既有值级断言按新现实改写（译文为 NULL）；「留空」语义只迁移不删除
+- [x] 门禁同 01（typecheck/test/lint 绿、verify 全绿、基线 HEAD 表述）
+
+## Comments
+
+Done in 9d6a2e2（基线 90800cb）。管线层：import-task 删 translator 依赖与
+translating 阶段（标注 → 保存直达，函数体已无 await 但仍走 task-tracker，
+shutdown drain 与永不 throw 契约原样保留）；books-router 装配处不再把翻译器
+喂给导入任务，翻译器保留装配给章级触发路由；main.ts 启动警告保留、文案改
+按需语义。状态层：persistBook 初值恒 untranslated（「含句子块即已译」推导
+只留在迁移 backfill 的一次性规则，存量书零回填零重跑，schema.test 原样绿）。
+词汇层：wire 的 ImportStage 收窄为 annotating|saving，importCopy 删「翻译
+译文」与百分比拼接（书架只剩阶段文案），契约套件 stage 循环钉窄化后的并集。
+测试改写：api/epub/pdf 的导入译文值级断言改 NULL 并加「不拨装配好的翻译
+器」钉（calls 为空）；held-import 守卫（409 家族、TOC、删除、导出 409）改
+按崩溃遗留形状落行植入——管线已无可观察的 in-flight 窗口（决策 6 明知），
+delete-vs-task 竞态守卫由 store 层原钉承载；「留空」语义由 01 的章级路径
+承载（batch 重试语义原样），导入侧原测试删除即迁移。export 信封断言零改
+动，译文夹具改走 saveSentenceTranslations 写路径（章任务同款）。README
+译文节改按需语义（「按钮置灰」留待 03，现文案如实写 409）。
+
+真实流程演示（构建产物 + 真 .env DeepSeek 键 + 独立临时库、3000 端口上
+旧实例不受扰）：导入 → 书架 ready 且 importStage null → 章 2 载荷
+untranslated、音标照常（ˈmɪstɝ ˈɡʊptə ˈwoʊk ˈɝɫi）、译文 NULL → POST
+translate 202 translating percent 0 → 轮询 3 拍 translated → 四句真实
+译文落行。双轴 review：Standards 零硬违规（三处重复落行字面量提取为
+plantLeftoverChapter，见 35d77ec；import_percent 生产线消亡、async+tracker
+包装为注释在案的有意保留）；Spec 轴五项验收全覆盖、契约信封零删除零改写
+（导入形状值级断言按票面授权改写）、门禁 typecheck/test/lint/verify 全绿
+（271 tests，exit 0）。
