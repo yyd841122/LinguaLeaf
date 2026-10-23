@@ -242,7 +242,10 @@ main {
 }
 
 /* The popup floats over the reading flow — no backdrop, no scroll lock —
-   anchored to the clicked word (left/top set inline, clamped to viewport). */
+   anchored to the clicked word (left/top set inline, clamped to viewport).
+   The box values hand-mirror the reading model's popup constants
+   (packages/reading-model, popup-anchor): 18rem/16rem/calc margin side —
+   the export stylesheet interpolates the same constants. */
 .lookup-popup {
   position: fixed;
   z-index: 20;

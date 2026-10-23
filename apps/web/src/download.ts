@@ -1,7 +1,7 @@
 import { ApiError } from "./api";
 import {
-  annotatedBookFilename,
   cleanFilenameBase,
+  FALLBACK_ATTACHMENT_NAME,
 } from "@lingualeaf/reading-model";
 
 // Download a file attachment via fetch → Blob rather than a plain link: a
@@ -20,11 +20,11 @@ export async function downloadAttachment(url: string): Promise<void> {
   // Header names arrive suffixed and normally already clean (the server
   // named them with annotatedBookFilename); the re-clean keeps a weird
   // header from planting a name no filesystem accepts. A header that
-  // cleans to nothing falls back to the server's own empty-title name.
+  // cleans to nothing falls back to the shared attachment fallback.
   const cleaned = cleanFilenameBase(
     filenameFromDisposition(response.headers.get("content-disposition"))
   );
-  anchor.download = cleaned.length > 0 ? cleaned : annotatedBookFilename(null);
+  anchor.download = cleaned.length > 0 ? cleaned : FALLBACK_ATTACHMENT_NAME;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

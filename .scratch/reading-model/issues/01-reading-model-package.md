@@ -63,3 +63,16 @@ no-undef), and `pretypecheck`/`pretest` build the package so server
 typecheck/tests always see a fresh dist. Editing package src means the
 next `npm run typecheck`/`npm test`/`npm run build` rebuilds it; bare
 `npm run dev` reads the last-built dist (acceptable — noted for retro).
+
+Dual-axis review outcome (2026-10-23): Standards clean except one pin
+missing its flip condition (fixed in the review-fixes commit); the
+re-export shims judged acceptable per the wire.ts precedent. Spec axis
+found the phantom dependency — server/web never declared
+@lingualeaf/reading-model — now declared in both package.json files;
+style.css's hand-mirror comment now points at the package constants
+(spec decision 5, missed in the original pass). The offset constants
+left the package's public surface (speculative generality); the
+filename fallback became the named FALLBACK_ATTACHMENT_NAME. The
+lookupRows row-decision extraction (seventh shared rule, judgement
+call) is deferred — rendering stays per-frontend by spec decision 5;
+revisit if a third frontend ever appears.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   annotatedBookFilename,
   cleanFilenameBase,
+  FALLBACK_ATTACHMENT_NAME,
 } from "../src/book-filename.js";
 
 describe("cleanFilenameBase (the one cleaning pass)", () => {
@@ -34,7 +35,8 @@ describe("annotatedBookFilename (the server's attachment name)", () => {
     // only dot/space-only titles actually fall back.
     expect(annotatedBookFilename("///")).toBe("___.html");
     expect(annotatedBookFilename("...")).toBe("book.html");
-    expect(annotatedBookFilename("")).toBe("book.html");
-    expect(annotatedBookFilename(null)).toBe("book.html");
+    // The named fallback is the empty-title name, not a second rule.
+    expect(FALLBACK_ATTACHMENT_NAME).toBe("book.html");
+    expect(FALLBACK_ATTACHMENT_NAME).toBe(annotatedBookFilename(""));
   });
 });

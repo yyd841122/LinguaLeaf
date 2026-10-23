@@ -12,6 +12,7 @@
     "build:file-script": "node scripts/build-file-script.mjs"
   },
   "dependencies": {
+    "@lingualeaf/reading-model": "0.1.0",
     "better-sqlite3": "^12.11.1",
     "cheerio": "^1.2.0",
     "express": "^5.2.1",

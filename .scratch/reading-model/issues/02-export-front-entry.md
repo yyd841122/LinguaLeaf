@@ -62,3 +62,15 @@ popup: HTMLElement = popupNode`) — narrowing does not flow into hoisted
 function declarations. The popup box CSS now interpolates from the
 reading model's constants; a render confirms byte-identical output
 (18rem / calc(100vw - 1rem) / 16rem).
+
+Dual-axis review outcome (2026-10-22/23): the generated-file mechanism
+judged sound on both axes (pinned absWorkingDir, guard, --check gate,
+ignores, negative verification). Fixes in the review-fixes commit: the
+root build chain regenerates the file before typecheck (the ticket text
+said so; the code now matches — typechecked bytes are the shipped
+bytes). Accepted deviations, recorded: export-front's defensive guards
+exceed the old script's throw-on-degenerate-path behavior (unreachable
+in real markup; TS-shaped null handling, kept); the spec's decision 3
+was amended by the implementing commits (es5→es2017, reason recorded
+above); comment-only edits to export-front correctly do not trip the
+freshness gate (the contract is over compiled output).

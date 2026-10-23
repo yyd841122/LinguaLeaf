@@ -6,18 +6,22 @@
 export { WORD_PATTERN } from "./word-pattern.js";
 export { normalizeToken, normalizeLookupToken } from "./lookup-fold.js";
 export type { WordLookup } from "./word-lookup.js";
+// The clamp's offset constants stay module-internal (anchorPopup consumes
+// them; no frontend needs them once it holds the function).
 export {
   POPUP_WIDTH_PX,
   POPUP_MAX_HEIGHT_PX,
   POPUP_MARGIN_PX,
-  POPUP_VERTICAL_OFFSET_PX,
-  POPUP_HORIZONTAL_OFFSET_PX,
   anchorPopup,
   type ClickPoint,
   type Viewport,
 } from "./popup-anchor.js";
 export { speakWord } from "./speak.js";
-export { annotatedBookFilename, cleanFilenameBase } from "./book-filename.js";
+export {
+  annotatedBookFilename,
+  cleanFilenameBase,
+  FALLBACK_ATTACHMENT_NAME,
+} from "./book-filename.js";
 export {
   segmentOriginal,
   type Segment,

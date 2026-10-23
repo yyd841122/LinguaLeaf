@@ -20,7 +20,9 @@ describe("normalizeLookupToken (the lookup fold)", () => {
     expect(normalizeLookupToken("don’t")).toBe("don't");
     // A leading apostrophe survives the edge strip (it rides inside the
     // allowed class) — the vocabulary never carries such keys (WORD_PATTERN
-    // matches have none), so the shape only ever reads as a miss. Pinned.
+    // matches have none), so the shape only ever reads as a miss. Pinned,
+    // not endorsed: this is the test that flips when the fold is
+    // deliberately taught to strip leading apostrophes.
     expect(normalizeLookupToken("'book',")).toBe("'book'");
     expect(normalizeLookupToken("“well-known”")).toBe("well-known");
   });

@@ -23,7 +23,11 @@ export function cleanFilenameBase(name: string | null): string {
 
 // The server's attachment name from a book title: the cleaned base, the
 // .html suffix always appended, "book" when nothing survives the cleaning.
-export function annotatedBookFilename(title: string | null): string {
+export function annotatedBookFilename(title: string): string {
   const base = cleanFilenameBase(title);
   return `${base.length > 0 ? base : "book"}.html`;
 }
+
+// The attachment name for a book whose name cleans to nothing — the
+// fallback both ends land on, named so callers never re-derive it.
+export const FALLBACK_ATTACHMENT_NAME = annotatedBookFilename("");

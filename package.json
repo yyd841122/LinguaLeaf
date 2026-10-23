@@ -14,7 +14,7 @@
     "dev": "node --env-file-if-exists=.env --import tsx --watch apps/server/src/main.ts --dev",
     "dict:import-ecdict": "npm run dict:import-ecdict --workspace @lingualeaf/server --",
     "dict:import-ipa-dict": "npm run dict:import-ipa-dict --workspace @lingualeaf/server --",
-    "build": "npm run typecheck && npm run build --workspace @lingualeaf/reading-model && npm run build:file-script --workspace @lingualeaf/server && npm run build --workspace @lingualeaf/web && npm run build --workspace @lingualeaf/server",
+    "build": "npm run build:file-script --workspace @lingualeaf/server && npm run typecheck && npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/web && npm run build --workspace @lingualeaf/server",
     "start": "node --env-file-if-exists=.env .output/server/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @lingualeaf/reading-model && npm run typecheck --workspace @lingualeaf/server && npm run typecheck --workspace @lingualeaf/web",
     "test": "vitest run",
