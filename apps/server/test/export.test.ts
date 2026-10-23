@@ -34,6 +34,11 @@ function clickWord(document: Document, word: string): void {
 // Shared by every export describe: a book on the shelf through the real
 // upload seam, with the fake translator deciding which sentences get a
 // translation line at all.
+// Every dictionary createExportApp opens, closed in each describe's
+// afterEach — discarded handles leaked WAL files past the test run (audit
+// 2026-10-23).
+const openDictionaries: ReturnType<typeof createFixtureDictionary>[] = [];
+
 function createExportApp(
   database: Database.Database,
   translate?: (
@@ -45,6 +50,7 @@ function createExportApp(
 ) {
   const translator = translate ? createFakeTranslator(translate) : undefined;
   const dictionary = createFixtureDictionary();
+  openDictionaries.push(dictionary);
   prepareDictionary?.(dictionary);
   return createApp(database, dictionary, translator ?? null);
 }
@@ -81,6 +87,7 @@ describe("GET /api/books/:id/export", () => {
   });
   afterEach(() => {
     database.close();
+    for (const dictionary of openDictionaries.splice(0)) dictionary.close();
   });
 
   it("returns the annotated book as a downloadable HTML attachment", async () => {
@@ -475,6 +482,7 @@ describe("exported file behavior (jsdom)", () => {
   });
   afterEach(() => {
     database.close();
+    for (const dictionary of openDictionaries.splice(0)) dictionary.close();
   });
 
   // The file's script only ever getItem/setItem — the mock models exactly
@@ -544,8 +552,27 @@ describe("exported file behavior (jsdom)", () => {
   }
 
   it("toggles each annotation line independently and remembers the state", async () => {
-    const bookId = await importSampleBookReady(app);
-    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
+    // A translated import: the translation toggle needs real lines, and the
+    // visibility assertions below need all three line kinds present (audit
+    // 2026-10-23 — the old run imported no translations and checked body
+    // classes, so swapping a display rule would have passed unnoticed).
+    const translatedApp = createExportApp(database, (sentences) =>
+      sentences.map((sentence) => `译:${sentence}`)
+    );
+    const bookId = await importSampleBookReady(translatedApp);
+    const html = (
+      await request(translatedApp).get(`/api/books/${bookId}/export`)
+    ).text;
+
+    // Computed visibility, not class names: the toggle's contract is what
+    // the reader sees.
+    const lineVisibility = (selector: string) =>
+      [...document.querySelectorAll(selector)].map(
+        (element) => dom.window.getComputedStyle(element).display !== "none"
+      );
+    const everyLineVisible = (selector: string) =>
+      lineVisibility(selector).length > 0 &&
+      lineVisibility(selector).every(Boolean);
 
     const session = createStorageMock();
     const dom = loadExport(html, { storage: session.storage });
@@ -560,6 +587,9 @@ describe("exported file behavior (jsdom)", () => {
     expect(translationToggle?.checked).toBe(true);
     expect(document.body.classList.contains("hide-ipa")).toBe(false);
     expect(document.body.classList.contains("hide-translation")).toBe(false);
+    expect(everyLineVisible(".ipa-word-ipa")).toBe(true);
+    expect(everyLineVisible(".translation-line")).toBe(true);
+    expect(everyLineVisible(".original-line")).toBe(true);
 
     // Hiding the IPA lines touches nothing else: the words keep their
     // units, the original line keeps its rows.
@@ -574,9 +604,18 @@ describe("exported file behavior (jsdom)", () => {
       originalLines
     );
     expect(translationToggle.checked).toBe(true);
+    expect(lineVisibility(".ipa-word-ipa").every((visible) => !visible)).toBe(
+      true
+    );
+    expect(everyLineVisible(".translation-line")).toBe(true);
+    expect(everyLineVisible(".original-line")).toBe(true);
 
     translationToggle.click();
     expect(document.body.classList.contains("hide-translation")).toBe(true);
+    expect(
+      lineVisibility(".translation-line").every((visible) => !visible)
+    ).toBe(true);
+    expect(everyLineVisible(".original-line")).toBe(true);
 
     // The choice landed in storage under each toggle's own key.
     expect([...session.store.values()]).toEqual(["0", "0"]);
@@ -780,13 +819,18 @@ describe("exported file behavior (jsdom)", () => {
     const bookId = await importSampleBookReady(app, lookupBookPath);
     const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
 
-    // jsdom (and older browsers): the API is absent — a click must not throw.
+    // jsdom (and older browsers): the API is absent — a click must not
+    // throw. Captured as window errors: not.toThrow cannot see an exception
+    // inside a jsdom event handler (audit 2026-10-23).
     const dom = loadExport(html);
     const document = dom.window.document;
+    const windowErrors: string[] = [];
+    dom.window.addEventListener("error", (event) => {
+      windowErrors.push(event.message ?? "unknown error");
+    });
     clickWord(document, "books");
-    expect(() =>
-      (document.getElementById("lookup-speak") as HTMLElement).click()
-    ).not.toThrow();
+    (document.getElementById("lookup-speak") as HTMLElement).click();
+    expect(windowErrors).toEqual([]);
     dom.window.close();
   });
 

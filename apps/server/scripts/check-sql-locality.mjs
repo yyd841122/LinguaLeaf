@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 const srcDir = fileURLToPath(new URL("../src", import.meta.url));
 const ALLOWED = new Set(["book-store.ts", "schema.ts"]);
 const BOOK_TABLE_SQL =
-  /\b(?:FROM|INTO|UPDATE)\s+(?:books|chapters|blocks|reading_progress)\b/;
+  /\b(?:from|into|update|join)\s+(?:books|chapters|blocks|reading_progress)\b/i;
 
 const offenders = [];
 const walk = (dir) => {
@@ -22,12 +22,13 @@ const walk = (dir) => {
     if (entry.isDirectory()) {
       walk(path);
     } else if (entry.name.endsWith(".ts") && !ALLOWED.has(entry.name)) {
-      const lines = readFileSync(path, "utf8").split("\n");
-      lines.forEach((line, index) => {
-        if (BOOK_TABLE_SQL.test(line)) {
-          offenders.push(`${path}:${index + 1}: ${line.trim()}`);
-        }
-      });
+      // Whitespace-collapsed whole-file scan: a table name after a newline
+      // (FROM\n  books) or inside a JOIN is the same drift as a plain FROM.
+      const collapsed = readFileSync(path, "utf8").replace(/\s+/g, " ");
+      const hit = collapsed.match(BOOK_TABLE_SQL);
+      if (hit) {
+        offenders.push(`${path}: ${hit[0]}`);
+      }
     }
   }
 };

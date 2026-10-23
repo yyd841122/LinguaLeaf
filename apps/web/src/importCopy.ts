@@ -23,7 +23,7 @@ export function importStageLabel(
   const label =
     stage === null
       ? ""
-      : stage in IMPORT_STAGE_LABELS
+      : Object.hasOwn(IMPORT_STAGE_LABELS, stage)
         ? IMPORT_STAGE_LABELS[stage]
         : // Unreachable per the shared union; the books.import_stage TEXT
           // column cannot rule it out. Pinned, not endorsed — the
@@ -49,7 +49,9 @@ export const IMPORT_ERROR_COPY: Record<ImportErrorCode, string> = {
 // The shelf copy for one upload rejection code; null for a code the shared
 // vocabulary does not know — the caller falls back to the retry copy.
 export function importErrorCopy(code: string): string | null {
-  return code in IMPORT_ERROR_COPY
+  // Object.hasOwn, not `in`: an inherited name like __proto__ would find a
+  // match and hand back an object, not null (audit 2026-10-23).
+  return Object.hasOwn(IMPORT_ERROR_COPY, code)
     ? IMPORT_ERROR_COPY[code as ImportErrorCode]
     : null;
 }

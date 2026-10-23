@@ -72,6 +72,95 @@ describe("EPUB import through the HTTP API seam", () => {
     });
   });
 
+  it("follows the spine when manifest and zip entry order differ", async () => {
+    // Manifest, zip entries, and spine carry three different orders here;
+    // chapters must come out in spine order (audit 2026-10-23 — the shared
+    // fixture had all three identical, so reading either of the others
+    // passed).
+    const created = await request(app)
+      .post("/api/books")
+      .attach(
+        "file",
+        await buildEpub({
+          title: "Shuffled EPUB",
+          docs: [
+            {
+              href: "text/a.xhtml",
+              body: "<h2>Alpha</h2><p>First written.</p>",
+            },
+            {
+              href: "text/b.xhtml",
+              body: "<h2>Bravo</h2><p>Second written.</p>",
+            },
+            {
+              href: "text/c.xhtml",
+              body: "<h2>Charlie</h2><p>Third written.</p>",
+            },
+          ],
+          spineOrder: [2, 0, 1],
+        }),
+        { filename: "shuffled.epub", contentType: "application/epub+zip" }
+      );
+    expect(created.status).toBe(202);
+    await waitForShelfBook(app, created.body.id, "ready");
+
+    const toc = await request(app).get(`/api/books/${created.body.id}`);
+    expect(
+      toc.body.chapters.map((chapter: { title: string }) => chapter.title)
+    ).toEqual(["Charlie", "Alpha", "Bravo"]);
+  });
+
+  it("rejects a corrupted zip member as invalid-epub, not a 500", async () => {
+    // Corrupt the bytes of an entry's compressed data (inside the second
+    // local header's payload): inflate fails the CRC check, and the read
+    // must surface as the client's 400, not a native decode error (audit
+    // 2026-10-23).
+    const buffer = await createSampleEpub();
+    let header = -1;
+    for (let occurrence = 0; occurrence < 2; occurrence += 1) {
+      header = buffer.indexOf("PK\x03\x04", header + 1);
+    }
+    buffer.subarray(header + 40, header + 56).fill(0xff);
+
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", buffer, {
+        filename: "corrupted.epub",
+        contentType: "application/epub+zip",
+      });
+    expect(created.status).toBe(400);
+    expect(created.body.code).toBe("invalid-epub");
+  });
+
+  it("reads a namespace-prefixed package document", async () => {
+    // opf:package / opf:itemref / ... is a valid EPUB; literal tag-name
+    // selectors read it as an empty book (audit 2026-10-23).
+    const created = await request(app)
+      .post("/api/books")
+      .attach(
+        "file",
+        await buildEpub({
+          title: "Prefixed EPUB",
+          docs: [
+            {
+              href: "text/one.xhtml",
+              body: "<h2>Only Head</h2><p>Body text.</p>",
+            },
+          ],
+          prefixOpf: true,
+        }),
+        { filename: "prefixed.epub", contentType: "application/epub+zip" }
+      );
+    expect(created.status).toBe(202);
+    await waitForShelfBook(app, created.body.id, "ready");
+
+    const toc = await request(app).get(`/api/books/${created.body.id}`);
+    expect(toc.body).toMatchObject({
+      title: "Prefixed EPUB",
+      chapters: [{ position: 1, title: "Only Head", level: 2 }],
+    });
+  });
+
   it("returns sentence and image blocks split from the spine documents", async () => {
     const bookId = await importSampleEpub();
 

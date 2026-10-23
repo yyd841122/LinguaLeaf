@@ -46,11 +46,33 @@ describe("findDeepSeekEnvDrift", () => {
     expect(drift.shadowed).toEqual(["DEEPSEEK_API_KEY"]);
   });
 
-  it("treats an empty shell value as unset rather than shadowing", () => {
+  it("strips unquoted inline comments like Node's own parser", () => {
+    // The file value parses to "sk-file" — same as the shell value — so
+    // nothing is shadowed (audit 2026-10-23: the hand-rolled splitter kept
+    // the comment in the value and reported a false shadow).
+    const drift = findDeepSeekEnvDrift(
+      { DEEPSEEK_API_KEY: "sk-file" },
+      "DEEPSEEK_API_KEY=sk-file # inline comment\n"
+    );
+    expect(drift.shadowed).toEqual([]);
+  });
+
+  it("reads export-prefixed lines like Node's own parser", () => {
+    const drift = findDeepSeekEnvDrift(
+      { DEEPSEEK_API_KEY: "sk-shell" },
+      "export DEEPSEEK_API_KEY=sk-file\n"
+    );
+    expect(drift.shadowed).toEqual(["DEEPSEEK_API_KEY"]);
+  });
+
+  it("reports an empty shell value as shadowing the file value", () => {
+    // Presence, not truthiness: --env-file never overrides an existing
+    // variable, so an empty shell value wins and the file key is inert
+    // (audit 2026-10-23 — the old expectation endorsed the blind spot).
     const drift = findDeepSeekEnvDrift(
       { DEEPSEEK_API_KEY: "  " },
       "DEEPSEEK_API_KEY=sk-file\n"
     );
-    expect(drift.shadowed).toEqual([]);
+    expect(drift.shadowed).toEqual(["DEEPSEEK_API_KEY"]);
   });
 });

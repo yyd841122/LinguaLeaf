@@ -93,18 +93,48 @@ export function posFromTranslation(translation: string): string | null {
 
 type EntryRow = { phonetic: string; translation: string };
 
+// One prepared statement per (handle, SQL): resolveIpa otherwise recompiles
+// the same queries for every token of every block — 100k lookups spent ~3x
+// the CPU re-preparing (audit 2026-10-23).
+const preparedStatements = new WeakMap<Dictionary, Map<string, unknown>>();
+function cachedGet<T>(
+  dictionary: Dictionary,
+  sql: string,
+  ...params: unknown[]
+): T | undefined {
+  let bySql = preparedStatements.get(dictionary);
+  if (!bySql) {
+    bySql = new Map();
+    preparedStatements.set(dictionary, bySql);
+  }
+  if (!bySql.has(sql)) {
+    bySql.set(sql, dictionary.prepare(sql));
+  }
+  return (bySql.get(sql) as { get(...params: unknown[]): unknown }).get(
+    ...params
+  ) as T | undefined;
+}
+
 function findEntry(dictionary: Dictionary, word: string): EntryRow | undefined {
-  return dictionary
-    .prepare("SELECT phonetic, translation FROM dict_words WHERE word = ?")
-    .get(word) as EntryRow | undefined;
+  return cachedGet<EntryRow>(
+    dictionary,
+    "SELECT phonetic, translation FROM dict_words WHERE word = ?",
+    word
+  );
 }
 
 function lemmaOf(dictionary: Dictionary, word: string): string | null {
-  const inflection = dictionary
-    .prepare("SELECT lemma FROM dict_inflections WHERE form = ?")
-    .get(word) as { lemma: string } | undefined;
+  const inflection = cachedGet<{ lemma: string }>(
+    dictionary,
+    "SELECT lemma FROM dict_inflections WHERE form = ?",
+    word
+  );
   return inflection ? inflection.lemma : null;
 }
+
+// One column list for the ipa_us read, interpolated by both call sites
+// (CODING_STANDARDS: one table, one column list).
+const IPA_US_BY_WORD_SQL = "SELECT ipa FROM dict_ipa_us WHERE word = ?";
 
 // American IPA first (the IPA line's primary source), ECDICT's phonetic as
 // the fallback, resolved through the inflection index when the exact form
@@ -115,15 +145,19 @@ export function resolveIpa(
   token: string
 ): string | null {
   const word = normalizeLookupToken(token);
-  const fromIpaUs = dictionary
-    .prepare("SELECT ipa FROM dict_ipa_us WHERE word = ?")
-    .get(word) as { ipa: string } | undefined;
+  const fromIpaUs = cachedGet<{ ipa: string }>(
+    dictionary,
+    IPA_US_BY_WORD_SQL,
+    word
+  );
   if (fromIpaUs) return fromIpaUs.ipa;
   const lemma = lemmaOf(dictionary, word);
   if (lemma) {
-    const fromLemma = dictionary
-      .prepare("SELECT ipa FROM dict_ipa_us WHERE word = ?")
-      .get(lemma) as { ipa: string } | undefined;
+    const fromLemma = cachedGet<{ ipa: string }>(
+      dictionary,
+      IPA_US_BY_WORD_SQL,
+      lemma
+    );
     if (fromLemma) return fromLemma.ipa;
   }
   const fromEcdict = findEntry(dictionary, word);

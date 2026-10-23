@@ -6,7 +6,7 @@ import {
   loadChapter,
   type BlockData,
 } from "../src/book-store.js";
-import { runImportTask } from "../src/import/import-task.js";
+import { drainImportTasks, runImportTask } from "../src/import/import-task.js";
 import type { PreparedBook } from "../src/import/pipeline.js";
 import type { Translator } from "../src/translate/translator.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
@@ -106,10 +106,63 @@ describe("runImportTask (the translation join, direct)", () => {
       null,
       "译:Gamma closes the chapter.",
     ]);
+    // The negative half read from storage, not derived: a helper that maps
+    // non-sentence blocks to null proves nothing, so the persisted
+    // translation_text is what asserts (audit 2026-10-23).
+    const nonSentenceRows = database
+      .prepare(
+        "SELECT translation_text AS translationText FROM blocks WHERE kind != 'sentence'"
+      )
+      .all() as { translationText: string | null }[];
+    expect(nonSentenceRows).toEqual([
+      { translationText: null },
+      { translationText: null },
+    ]);
 
     expect(translationTexts(loadChapter(database, bookId, 2)?.blocks)).toEqual([
       "译:Delta stands alone.",
     ]);
+  });
+
+  it("drainImportTasks resolves only after the in-flight task settles", async () => {
+    let release!: (value: (string | null)[]) => void;
+    const translator = createFakeTranslator(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        })
+    );
+    const bookId = createImportingBook(
+      database,
+      joinProbeBook.title,
+      joinProbeBook.format,
+      null
+    );
+    const task = runImportTask(
+      { database, dictionary, translator },
+      bookId,
+      joinProbeBook
+    );
+
+    let drained = false;
+    const draining = drainImportTasks(10_000).then(() => {
+      drained = true;
+    });
+    await Promise.resolve();
+    // Still in flight: the drain holds (its grace deadline is far away).
+    expect(drained).toBe(false);
+
+    // All four sentences, first round: a partial release would strand the
+    // retry rounds on fresh unresolved batches.
+    release([
+      "译:Alpha begins here.",
+      "译:Beta follows it.",
+      "译:Gamma closes the chapter.",
+      "译:Delta stands alone.",
+    ]);
+    await task;
+    await draining;
+    expect(drained).toBe(true);
   });
 
   it("hands the translator exactly the sentence texts in book order", async () => {

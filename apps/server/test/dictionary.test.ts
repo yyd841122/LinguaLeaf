@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lookupWord } from "../src/dict/dictionary.js";
-import { parseExchange } from "../src/dict/import-ecdict.js";
+import { parseExchangeRanked } from "../src/dict/import-ecdict.js";
 import { buildIpaLine, tokenizeWords } from "../src/dict/ipa-line.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 
@@ -63,37 +63,59 @@ describe("lookupWord resolution chain", () => {
   });
 });
 
-describe("parseExchange: ECDICT exchange field to inflection pairs", () => {
-  it("maps a base word's tense and plural forms back to the base word", () => {
+describe("parseExchangeRanked: ECDICT exchange field to ranked pairs", () => {
+  // Ranks matter to the importer: explicit `0:` mappings insert first and
+  // win INSERT OR IGNORE over another entry's inferred forms (audit
+  // 2026-10-23 — first-wins let "has" resolve to "ha").
+  it("maps a base word's tense and plural forms back to the base word, inferred", () => {
     expect(
-      parseExchange(
+      parseExchangeRanked(
         "perceive",
         "d:perceived/p:perceived/3:perceives/i:perceiving"
       )
-    ).toEqual([
-      ["perceived", "perceive"],
-      ["perceives", "perceive"],
-      ["perceiving", "perceive"],
-    ]);
+    ).toEqual({
+      explicit: [],
+      inferred: [
+        ["perceived", "perceive"],
+        ["perceives", "perceive"],
+        ["perceiving", "perceive"],
+      ],
+    });
   });
 
-  it("maps an inflected entry to its lemma via the 0: field", () => {
-    expect(parseExchange("books", "1:s3/0:book")).toEqual([["books", "book"]]);
+  it("maps an inflected entry to its lemma via the 0: field, explicit", () => {
+    expect(parseExchangeRanked("books", "1:s3/0:book")).toEqual({
+      explicit: [["books", "book"]],
+      inferred: [],
+    });
   });
 
   it("skips type codes, self references, and garbage parts", () => {
     // 1: holds a transformation type code (s3, pd), not a word.
-    expect(parseExchange("travelled", "0:travel/1:pd")).toEqual([
-      ["travelled", "travel"],
-    ]);
+    expect(parseExchangeRanked("travelled", "0:travel/1:pd")).toEqual({
+      explicit: [["travelled", "travel"]],
+      inferred: [],
+    });
     // A lemma entry pointing at itself carries no information.
-    expect(parseExchange("lay", "0:lay/i:laying")).toEqual([["laying", "lay"]]);
-    expect(parseExchange("fast", "r:faster/t:fastest")).toEqual([
-      ["faster", "fast"],
-      ["fastest", "fast"],
-    ]);
-    expect(parseExchange("word", "")).toEqual([]);
-    expect(parseExchange("word", "weird-part-without-colon")).toEqual([]);
+    expect(parseExchangeRanked("lay", "0:lay/i:laying")).toEqual({
+      explicit: [],
+      inferred: [["laying", "lay"]],
+    });
+    expect(parseExchangeRanked("fast", "r:faster/t:fastest")).toEqual({
+      explicit: [],
+      inferred: [
+        ["faster", "fast"],
+        ["fastest", "fast"],
+      ],
+    });
+    expect(parseExchangeRanked("word", "")).toEqual({
+      explicit: [],
+      inferred: [],
+    });
+    expect(parseExchangeRanked("word", "weird-part-without-colon")).toEqual({
+      explicit: [],
+      inferred: [],
+    });
   });
 });
 

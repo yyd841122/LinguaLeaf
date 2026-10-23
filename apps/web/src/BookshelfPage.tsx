@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ApiError, fetchJson } from "./api";
 import { downloadAttachment } from "./download";
@@ -84,13 +84,21 @@ export function BookshelfPage() {
   // While any book is importing, the shelf re-asks the list on an interval
   // so statuses and progress move without user action; the moment none is,
   // the interval goes away.
+  // Mutations (upload, delete) bump this; an in-flight poll predating the
+  // bump is stale and discarded — a snapshot from before a delete must not
+  // resurrect the row, and one predating a delete must not stop polling on
+  // a list with no importing row left (audit 2026-10-23).
+  const listVersionRef = useRef(0);
+
   const hasImporting =
     books?.some((book) => book.status === "importing") ?? false;
   useEffect(() => {
     if (!hasImporting) return;
     const interval = setInterval(() => {
+      const versionAtRequest = listVersionRef.current;
       fetchJson<{ books: BookSummary[] }>("/api/books")
         .then((data) => {
+          if (versionAtRequest !== listVersionRef.current) return;
           setBooks(data.books);
           setServerUnreachable(false);
         })
@@ -110,11 +118,23 @@ export function BookshelfPage() {
     try {
       const body = new FormData();
       body.append("file", file);
-      await fetchJson("/api/books", { method: "POST", body });
-      const { books: refreshed } = await fetchJson<{ books: BookSummary[] }>(
-        "/api/books"
-      );
-      setBooks(refreshed);
+      // The 202 body is the created book: it joins the shelf immediately,
+      // so a failed refresh cannot masquerade as a failed import (audit
+      // 2026-10-23). Its importing row also starts the poll.
+      const created = await fetchJson<BookSummary>("/api/books", {
+        method: "POST",
+        body,
+      });
+      listVersionRef.current += 1;
+      setBooks((current) => [created, ...(current ?? [])]);
+      try {
+        const { books: refreshed } = await fetchJson<{
+          books: BookSummary[];
+        }>("/api/books");
+        setBooks(refreshed);
+      } catch {
+        setError("书架刷新失败，请确认服务端正在运行。");
+      }
     } catch (error) {
       // Upload rejections carry a stable machine `code` beside their prose
       // (apps/server/src/wire.ts): this branch keys on the code, so server
@@ -167,7 +187,9 @@ export function BookshelfPage() {
     setError(null);
     try {
       await fetchJson(`/api/books/${book.id}`, { method: "DELETE" });
-      // Update the list in place — no refetch flash.
+      // Update the list in place — no refetch flash — and invalidate any
+      // poll already in flight (audit 2026-10-23).
+      listVersionRef.current += 1;
       setBooks((current) =>
         current ? current.filter((candidate) => candidate.id !== book.id) : null
       );

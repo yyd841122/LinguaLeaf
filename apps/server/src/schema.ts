@@ -99,14 +99,30 @@ export function migrateSchema(database: Database.Database): void {
   const bookColumns = database.prepare("PRAGMA table_info(books)").all() as {
     name: string;
   }[];
-  if (!bookColumns.some((column) => column.name === "status")) {
-    database.exec(
-      `ALTER TABLE books ADD COLUMN status TEXT NOT NULL DEFAULT 'ready';
-       ALTER TABLE books ADD COLUMN import_stage TEXT;
-       ALTER TABLE books ADD COLUMN import_percent INTEGER;
-       ALTER TABLE books ADD COLUMN import_error TEXT;`
-    );
-  }
+  // Each column is repaired independently: the four ALTERs commit one by
+  // one, so an interruption after an early one must not permanently skip
+  // the rest (recovery keyed on `status` alone did exactly that — audit
+  // 2026-10-23).
+  addColumnIfMissing(
+    bookColumns,
+    "status",
+    "ALTER TABLE books ADD COLUMN status TEXT NOT NULL DEFAULT 'ready'"
+  );
+  addColumnIfMissing(
+    bookColumns,
+    "import_stage",
+    "ALTER TABLE books ADD COLUMN import_stage TEXT"
+  );
+  addColumnIfMissing(
+    bookColumns,
+    "import_percent",
+    "ALTER TABLE books ADD COLUMN import_percent INTEGER"
+  );
+  addColumnIfMissing(
+    bookColumns,
+    "import_error",
+    "ALTER TABLE books ADD COLUMN import_error TEXT"
+  );
   // Databases created before the PDF import predate page_count (the shelf's
   // long-book hint reads it); altered in place like the ticket 08 columns.
   addColumnIfMissing(

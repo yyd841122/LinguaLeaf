@@ -247,6 +247,10 @@ main {
    (packages/reading-model, popup-anchor): 18rem/16rem/calc margin side —
    the export stylesheet interpolates the same constants. */
 .lookup-popup {
+  /* border-box keeps the rendered outer box at the shared POPUP_WIDTH_PX
+     (packages/reading-model) — content-box added the padding and border on
+     top and the clamp undershot by ~23px (audit 2026-10-23). */
+  box-sizing: border-box;
   position: fixed;
   z-index: 20;
   width: 18rem;

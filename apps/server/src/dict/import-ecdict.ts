@@ -17,11 +17,21 @@ import {
 // deduplicated here; collisions across entries are the importer's business.
 const INFLECTION_KEYS = new Set(["p", "d", "i", "3", "r", "t", "s"]);
 
-export function parseExchange(
+// The pairs split by authority: `explicit` is the entry's own `0:` lemma
+// (the form declares what it derives from), `inferred` is derived from a
+// base word's inflection list. The importer inserts explicit first, so an
+// entry's own lemma always outranks another entry's derived form whichever
+// row iterates first (audit 2026-10-23: first-wins let "has" resolve to
+// "ha" via the interjection's third-person form).
+export function parseExchangeRanked(
   word: string,
   exchange: string
-): Array<readonly [string, string]> {
-  const pairs: Array<readonly [string, string]> = [];
+): {
+  explicit: Array<readonly [string, string]>;
+  inferred: Array<readonly [string, string]>;
+} {
+  const explicit: Array<readonly [string, string]> = [];
+  const inferred: Array<readonly [string, string]> = [];
   const lemmaCandidate = normalizeToken(word);
   for (const part of exchange.split("/")) {
     const colon = part.indexOf(":");
@@ -30,18 +40,23 @@ export function parseExchange(
     const value = normalizeToken(part.slice(colon + 1));
     if (value === lemmaCandidate || !isSingleWordForm(value)) continue;
     if (key === "0") {
-      pairs.push([lemmaCandidate, value]);
+      explicit.push([lemmaCandidate, value]);
     } else if (INFLECTION_KEYS.has(key)) {
-      pairs.push([value, lemmaCandidate]);
+      inferred.push([value, lemmaCandidate]);
     }
   }
-  // Dedupe by form, keeping the first pair.
-  const seen = new Set<string>();
-  return pairs.filter(([form]) => {
-    if (seen.has(form)) return false;
-    seen.add(form);
-    return true;
-  });
+  // Dedupe by form within each rank, keeping the first pair.
+  const dedupe = (
+    pairs: Array<readonly [string, string]>
+  ): Array<readonly [string, string]> => {
+    const seen = new Set<string>();
+    return pairs.filter(([form]) => {
+      if (seen.has(form)) return false;
+      seen.add(form);
+      return true;
+    });
+  };
+  return { explicit: dedupe(explicit), inferred: dedupe(inferred) };
 }
 
 type EcdictRow = {
@@ -69,11 +84,27 @@ export function importEcdictDatabase(
     "SELECT word, phonetic, translation, exchange FROM stardict"
   );
   dictionary.transaction(() => {
+    // Pass one: words and every entry's own `0:` lemma mapping.
     for (const row of selectEntries.iterate() as IterableIterator<EcdictRow>) {
       const word = normalizeToken(row.word);
       if (!isSingleWordForm(word)) continue;
       insertWord.run(word, row.phonetic ?? "", row.translation ?? "");
-      for (const [form, lemma] of parseExchange(row.word, row.exchange ?? "")) {
+      for (const [form, lemma] of parseExchangeRanked(
+        row.word,
+        row.exchange ?? ""
+      ).explicit) {
+        insertInflection.run(form, lemma);
+      }
+    }
+    // Pass two: inferred mappings, after every explicit mapping has had its
+    // shot at INSERT OR IGNORE (see parseExchangeRanked — audit 2026-10-23).
+    for (const row of selectEntries.iterate() as IterableIterator<EcdictRow>) {
+      const word = normalizeToken(row.word);
+      if (!isSingleWordForm(word)) continue;
+      for (const [form, lemma] of parseExchangeRanked(
+        row.word,
+        row.exchange ?? ""
+      ).inferred) {
         insertInflection.run(form, lemma);
       }
     }

@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database.js";
 import {
   INTERRUPTED_MESSAGE,
@@ -49,6 +49,10 @@ describe("book-store", () => {
 
   beforeEach(() => {
     database = openDatabase(":memory:");
+  });
+
+  afterEach(() => {
+    database.close();
   });
 
   it("createImportingBook plants an importing row that findBookRow reads back", () => {

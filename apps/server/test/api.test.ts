@@ -8,6 +8,19 @@ import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
+
+// Dictionaries opened inline per test, closed after every test — scattered
+// handles leaked WAL files past the run (audit 2026-10-23).
+const openDictionaries: ReturnType<typeof openDictionary>[] = [];
+function openTrackedDictionary(): ReturnType<typeof openDictionary> {
+  const dictionary = openDictionary(":memory:");
+  openDictionaries.push(dictionary);
+  return dictionary;
+}
+
+afterEach(() => {
+  for (const dictionary of openDictionaries.splice(0)) dictionary.close();
+});
 import { waitForShelfBook } from "./fixtures/async-import.js";
 
 const sampleBookPath = fileURLToPath(
@@ -343,7 +356,7 @@ describe("import with an empty dictionary", () => {
   });
 
   it("still imports, with the IPA line generated but entirely blank", async () => {
-    const app = createApp(database, openDictionary(":memory:"));
+    const app = createApp(database, openTrackedDictionary());
     const sampleBookPath = fileURLToPath(
       new URL("./fixtures/sample-book.md", import.meta.url)
     );
@@ -376,7 +389,7 @@ describe("HTTP API seam", () => {
 
   it("reports a healthy server with a real SQLite connection", async () => {
     const response = await request(
-      createApp(database, openDictionary(":memory:"))
+      createApp(database, openTrackedDictionary())
     ).get("/api/health");
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("application/json");
@@ -385,7 +398,7 @@ describe("HTTP API seam", () => {
 
   it("returns an API 404 instead of the frontend HTML", async () => {
     const response = await request(
-      createApp(database, openDictionary(":memory:"))
+      createApp(database, openTrackedDictionary())
     ).get("/api/missing");
     expect(response.status).toBe(404);
     expect(response.body).toEqual({ error: "API route not found" });
@@ -398,7 +411,7 @@ describe("reading progress and book deletion through the HTTP API seam", () => {
 
   beforeEach(() => {
     database = openDatabase(":memory:");
-    app = createApp(database, openDictionary(":memory:"));
+    app = createApp(database, openTrackedDictionary());
   });
   afterEach(() => {
     database.close();
@@ -411,26 +424,28 @@ describe("reading progress and book deletion through the HTTP API seam", () => {
   it("saves reading progress and returns it for restore, with the shelf listing it", async () => {
     const bookId = await importBookId();
 
+    // Real positions in the sample book (chapter 2 is Red, 4 blocks;
+    // chapter 4 is the Interlude: a code block and a link paragraph).
     const saved = await request(app)
       .put(`/api/books/${bookId}/progress`)
-      .send({ chapter: 3, block: 5 });
+      .send({ chapter: 2, block: 1 });
     expect(saved.status).toBe(200);
-    expect(saved.body).toMatchObject({ chapter: 3, block: 5 });
+    expect(saved.body).toMatchObject({ chapter: 2, block: 1 });
 
     const restored = await request(app).get(`/api/books/${bookId}/progress`);
     expect(restored.status).toBe(200);
-    expect(restored.body).toMatchObject({ chapter: 3, block: 5 });
+    expect(restored.body).toMatchObject({ chapter: 2, block: 1 });
 
     const shelf = await request(app).get("/api/books");
-    expect(shelf.body.books[0].progress).toEqual({ chapter: 3, block: 5 });
+    expect(shelf.body.books[0].progress).toEqual({ chapter: 2, block: 1 });
 
     const moved = await request(app)
       .put(`/api/books/${bookId}/progress`)
-      .send({ chapter: 4, block: 1 });
+      .send({ chapter: 4, block: 2 });
     expect(moved.status).toBe(200);
     expect(
       (await request(app).get(`/api/books/${bookId}/progress`)).body
-    ).toMatchObject({ chapter: 4, block: 1 });
+    ).toMatchObject({ chapter: 4, block: 2 });
   });
 
   it("rejects progress payloads that are not positive integer positions", async () => {

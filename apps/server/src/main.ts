@@ -5,6 +5,7 @@ import { createApp } from "./app.js";
 import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
 import { failInterruptedImports } from "./book-store.js";
+import { drainImportTasks } from "./import/import-task.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
 import {
   createDeepSeekTranslator,
@@ -26,15 +27,6 @@ const runtimeRoot = development
 const database = openDatabase(
   resolve(runtimeRoot, process.env.DATABASE_PATH ?? ".data/lingualeaf.sqlite")
 );
-// Imports orphaned by the previous run can never resume — their task died
-// with the process. Mark them failed before serving so the shelf never
-// shows a book stuck importing (ticket 08).
-const interrupted = failInterruptedImports(database);
-if (interrupted > 0) {
-  console.warn(
-    `${interrupted} import(s) were interrupted by a restart and are marked failed on the shelf.`
-  );
-}
 // The dictionary lives next to the book database (.data at the runtime
 // root, DICTIONARY_PATH overrides). A missing file means an empty dictionary
 // (lookups miss, IPA lines come out blank) until the dict:import-* scripts
@@ -105,6 +97,17 @@ try {
     `LinguaLeaf listening on http://${host}:${typeof address === "object" && address ? address.port : port}`
   );
 
+  // Imports orphaned by the previous run can never resume — their task died
+  // with the process. Marked failed only after the port is ours: a second
+  // launch that loses the bind must not fail the first instance's active
+  // imports on its way out (audit 2026-10-23).
+  const interrupted = failInterruptedImports(database);
+  if (interrupted > 0) {
+    console.warn(
+      `${interrupted} import(s) were interrupted by a restart and are marked failed on the shelf.`
+    );
+  }
+
   let closing = false;
   const shutdown = async () => {
     if (closing) return;
@@ -121,6 +124,10 @@ try {
       console.error(error);
       process.exitCode = 1;
     } finally {
+      // Running imports get a grace window to land their writes before the
+      // database closes; whatever misses settles as interrupted on the next
+      // startup sweep (audit 2026-10-23).
+      await drainImportTasks(3000);
       database.close();
       dictionary.close();
       clearTimeout(timeout);

@@ -65,11 +65,22 @@ describe("blocks kind migration (ticket 07)", () => {
         )
         .run(bookId, 1, "An old chapter", 1).lastInsertRowid
     );
+    // Annotations seeded: the rebuild must carry them, not just kind/text
+    // (audit 2026-10-23 — the old fixture could not notice a dropped
+    // ipa_slots or translation column).
     database
       .prepare(
-        "INSERT INTO blocks (chapter_id, position, kind, original_text) VALUES (?, ?, ?, ?)"
+        "INSERT INTO blocks (chapter_id, position, kind, original_text, ipa_slots, ipa_text, translation_text) VALUES (?, ?, ?, ?, ?, ?, ?)"
       )
-      .run(chapterId, 1, "sentence", "A sentence from before EPUB support.");
+      .run(
+        chapterId,
+        1,
+        "sentence",
+        "A sentence from before EPUB support.",
+        '["\u0259"]',
+        "\u0259",
+        "旧的译文"
+      );
     database.close();
   }
 
@@ -78,12 +89,23 @@ describe("blocks kind migration (ticket 07)", () => {
 
     const database = openDatabase(databasePath);
     const rows = database
-      .prepare("SELECT kind, original_text FROM blocks ORDER BY position")
-      .all() as { kind: string; original_text: string }[];
+      .prepare(
+        "SELECT kind, original_text, ipa_slots, ipa_text, translation_text FROM blocks ORDER BY position"
+      )
+      .all() as {
+      kind: string;
+      original_text: string;
+      ipa_slots: string | null;
+      ipa_text: string | null;
+      translation_text: string | null;
+    }[];
     expect(rows).toEqual([
       {
         kind: "sentence",
         original_text: "A sentence from before EPUB support.",
+        ipa_slots: '["\u0259"]',
+        ipa_text: "\u0259",
+        translation_text: "旧的译文",
       },
     ]);
 

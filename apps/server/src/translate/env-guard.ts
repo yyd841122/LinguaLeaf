@@ -1,3 +1,5 @@
+import { parseEnv } from "node:util";
+
 // Startup guard for the DeepSeek environment (ticket 04 retro): the two
 // misconfiguration classes that cost a whole diagnosis round each — the
 // shell overriding .env values, and editor-glued non-ASCII bytes on wire
@@ -24,25 +26,12 @@ export type DeepSeekEnvDrift = {
   dirty: string[];
 };
 
-// A deliberately loose .env parser that mirrors what Node accepts: blank
-// lines and comments skipped, whitespace trimmed, surrounding quotes
-// stripped, first `=` splits name and value.
-function parseEnvFile(content: string): Record<string, string> {
-  const values: Record<string, string> = {};
-  for (const rawLine of content.split("\n")) {
-    const line = rawLine.trim();
-    if (line.length === 0 || line.startsWith("#")) continue;
-    const separator = line.indexOf("=");
-    if (separator <= 0) continue;
-    const name = line.slice(0, separator).trim();
-    const value = line
-      .slice(separator + 1)
-      .trim()
-      .replace(/^"(.*)"$/, "$1")
-      .replace(/^'(.*)'$/, "$1");
-    values[name] = value;
-  }
-  return values;
+// Node's own .env parser: --env-file and util.parseEnv share one format —
+// inline comments, `export NAME=...`, and quoted values parse exactly as
+// the runtime saw them (the hand-rolled splitter kept inline comments in
+// values and missed export prefixes — audit 2026-10-23).
+function parseEnvFile(content: string): Record<string, string | undefined> {
+  return { ...parseEnv(content) };
 }
 
 const clean = (value: string | undefined): string | undefined => {
@@ -56,13 +45,20 @@ export function findDeepSeekEnvDrift(
   env: Record<string, string | undefined>,
   envFileContent: string | null
 ): DeepSeekEnvDrift {
-  const fileValues =
+  const fileValues: Record<string, string | undefined> =
     envFileContent === null ? {} : parseEnvFile(envFileContent);
   const shadowed: string[] = [];
   for (const name of SHADOW_VARS) {
-    const fromShell = clean(env[name]);
-    const fromFile = clean(fileValues[name]);
-    if (fromShell && fromFile && fromShell !== fromFile) {
+    // Presence, not truthiness: an existing empty shell value also wins
+    // over the file (--env-file never overrides existing variables), so it
+    // shadows too (audit 2026-10-23).
+    const fromShell = env[name]?.trim();
+    const fromFile = fileValues[name]?.trim();
+    if (
+      fromShell !== undefined &&
+      fromFile !== undefined &&
+      fromShell !== fromFile
+    ) {
       shadowed.push(name);
     }
   }

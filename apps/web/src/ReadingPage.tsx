@@ -42,6 +42,14 @@ export function ReadingPage() {
   const chapterNumber = Number(chapter);
   const [toc, setToc] = useState<TableOfContents | null>(null);
   const [content, setContent] = useState<ChapterContent | null>(null);
+  // The route the loaded content belongs to. A navigation's first render has
+  // the old content under the new chapter number; autosave keys on this
+  // identity so that render never writes new-chapter/block-1 over the
+  // reader's real position (audit 2026-10-23).
+  const [loadedRoute, setLoadedRoute] = useState<{
+    bookId: number;
+    chapterNumber: number;
+  } | null>(null);
   // "unavailable" = the progress could not be asked for (server hiccup):
   // nothing to restore, and the autosave must not write either, or it would
   // overwrite the reader's real position with top-of-chapter.
@@ -88,6 +96,7 @@ export function ReadingPage() {
         if (cancelled) return;
         setToc(tocData);
         setContent(chapterData);
+        setLoadedRoute({ bookId, chapterNumber });
         setProgress(progressData);
       })
       .catch(() => {
@@ -103,6 +112,11 @@ export function ReadingPage() {
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<ReadingProgress | null>(null);
 
+  // Set when a save fails, cleared when one lands: a retry loop's last
+  // rendered state must not outlive its credibility (CODING_STANDARDS,
+  // audit 2026-10-23 — the silence made persistent outages look saved).
+  const [saveFailed, setSaveFailed] = useState(false);
+
   const flushSave = () => {
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
@@ -111,9 +125,13 @@ export function ReadingPage() {
     const pending = pendingSaveRef.current;
     pendingSaveRef.current = null;
     if (pending) {
-      void saveReadingProgress(bookId, pending).catch(() => {
-        // A failed save must never disturb reading; the next scroll retries.
-      });
+      void saveReadingProgress(bookId, pending)
+        .then(() => setSaveFailed(false))
+        .catch(() => {
+          // A failed save must never disturb reading; the next scroll
+          // retries, and this notice says the sync is not happening.
+          setSaveFailed(true);
+        });
     }
   };
 
@@ -159,6 +177,14 @@ export function ReadingPage() {
   // scroll produces an observed position. The last pending position is
   // flushed on chapter switch / unmount / pagehide.
   useEffect(() => {
+    // Only the render whose content matches this exact route may write.
+    if (
+      loadedRoute === null ||
+      loadedRoute.bookId !== bookId ||
+      loadedRoute.chapterNumber !== chapterNumber
+    ) {
+      return;
+    }
     if (!content) return;
     if (!skipSavesRef.current && progress !== "unavailable") {
       scheduleSave({ chapter: chapterNumber, block: 1 });
@@ -177,7 +203,7 @@ export function ReadingPage() {
       window.removeEventListener("pagehide", flushSave);
       flushSave();
     };
-  }, [content, chapterNumber]);
+  }, [content, chapterNumber, loadedRoute, bookId]);
 
   if (error) {
     return (
@@ -277,6 +303,11 @@ export function ReadingPage() {
       />
       {lookup ? (
         <WordLookupPopup click={lookup} onClose={() => setLookup(null)} />
+      ) : null}
+      {saveFailed ? (
+        <p role="status" className="save-warning">
+          阅读进度保存失败，位置可能没有同步。
+        </p>
       ) : null}
       <nav className="chapter-nav" aria-label="章节导航">
         {chapterNumber > 1 && (

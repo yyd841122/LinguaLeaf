@@ -67,7 +67,15 @@ export function createBooksRouter(
   const router = Router();
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_UPLOAD_BYTES },
+    // Only the "file" part carries data this route reads; field bytes,
+    // field count, and total parts are capped too, so a client cannot
+    // buffer memory in parts multer never hands over (audit 2026-10-23).
+    limits: {
+      fileSize: MAX_UPLOAD_BYTES,
+      fieldSize: 1024 * 1024,
+      fields: 10,
+      parts: 10,
+    },
   });
 
   router.post(
@@ -190,10 +198,10 @@ export function createBooksRouter(
     response.status(204).end();
   });
 
-  // Progress positions must be whole positive numbers; the guard doubles as
-  // the type narrowing TS needs before the values hit SQLite.
+  // Progress positions must be whole, safe positive numbers; the guard
+  // doubles as the type narrowing TS needs before the values hit SQLite.
   const isPositiveInteger = (value: unknown): value is number =>
-    typeof value === "number" && Number.isInteger(value) && value >= 1;
+    typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 
   router.put("/:id/progress", json(), (request, response) => {
     const body = request.body as { chapter?: unknown; block?: unknown };
@@ -211,6 +219,16 @@ export function createBooksRouter(
       return;
     }
     if (respondIfNotReady(book, response)) return;
+    // Positions must exist: a progress row pointing at a chapter or block
+    // the book does not have would only surface later as a dead link.
+    const chapterData = loadChapter(database, book.id, chapter);
+    if (
+      !chapterData ||
+      !chapterData.blocks.some((blockRow) => blockRow.position === block)
+    ) {
+      response.status(404).json({ error: "progress position not found" });
+      return;
+    }
     saveProgress(database, book.id, chapter, block);
     response.json({ chapter, block });
   });

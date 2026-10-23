@@ -56,6 +56,14 @@ export type EpubPackage = {
   // Zip paths to strip after building — a truncated archive whose spine
   // promises documents it no longer contains.
   dropFiles?: string[];
+  // Spine order as indices into docs — defaults to manifest/zip order, so a
+  // reader that walks either of those instead of the spine fails here
+  // (audit 2026-10-23).
+  spineOrder?: number[];
+  // Namespace-prefix every OPF element (opf:package, opf:itemref, ...): a
+  // valid package whose structural names carry a prefix (audit 2026-10-23 —
+  // literal XML selectors read such a book as empty).
+  prefixOpf?: boolean;
 };
 
 export async function buildEpub(book: EpubPackage): Promise<Buffer> {
@@ -70,30 +78,31 @@ export async function buildEpub(book: EpubPackage): Promise<Buffer> {
     date: FIXED_DATE,
     createFolders: false,
   });
+  const tag = (name: string): string => (book.prefixOpf ? `opf:${name}` : name);
   const manifestItems = [
     ...book.docs.map(
       (doc, index) =>
-        `<item id="doc${index}" href="${doc.manifestHref ?? doc.href}" media-type="application/xhtml+xml"/>`
+        `<${tag("item")} id="doc${index}" href="${doc.manifestHref ?? doc.href}" media-type="application/xhtml+xml"/>`
     ),
     ...(book.images ?? []).map(
       (image, index) =>
-        `<item id="img${index}" href="${image.href}" media-type="image/png"/>`
+        `<${tag("item")} id="img${index}" href="${image.href}" media-type="image/png"/>`
     ),
   ];
-  const spineItems = book.docs
-    .map((_doc, index) => `<itemref idref="doc${index}"/>`)
+  const spineItems = (book.spineOrder ?? book.docs.map((_doc, index) => index))
+    .map((docIndex) => `<${tag("itemref")} idref="doc${docIndex}"/>`)
     .join("");
   const opf = `<?xml version="1.0" encoding="UTF-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
-  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+<${tag("package")} xmlns${book.prefixOpf ? ":opf" : ""}="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="uid">
+  <${tag("metadata")} xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="uid">urn:uuid:lingualeaf-sample</dc:identifier>${
       book.title ? `\n    <dc:title>${book.title}</dc:title>` : ""
     }
     <dc:language>en</dc:language>
-  </metadata>
-  <manifest>${manifestItems.join("")}</manifest>
-  <spine>${spineItems}</spine>
-</package>`;
+  </${tag("metadata")}>
+  <${tag("manifest")}>${manifestItems.join("")}</${tag("manifest")}>
+  <${tag("spine")}>${spineItems}</${tag("spine")}>
+</${tag("package")}>`;
   if (!book.omitPackage) {
     zip.file("OEBPS/content.opf", opf, {
       date: FIXED_DATE,

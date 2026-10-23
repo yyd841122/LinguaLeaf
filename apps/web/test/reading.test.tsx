@@ -1,7 +1,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { act, renderHook } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError, fetchJson } from "../src/api";
+import { ReadingPage } from "../src/ReadingPage";
 import { ReadingView, type Block } from "../src/ReadingView";
 import {
   IpaSizeControl,
@@ -477,4 +479,170 @@ it("hides the translation line when showTranslation is false, keeping the origin
       (word) => word.textContent
     )
   ).toEqual(["Gupta", "woke", "early"]);
+});
+
+describe("ReadingPage through the component boundary", () => {
+  // The progress tests above exercise the fetch helper alone; these render
+  // the real page, so restoration, the debounced save, the unmount flush,
+  // and the save-failure notice run through the actual component (audit
+  // 2026-10-23 — none of those lifecycle boundaries had a component test).
+  const chapterBlocks: Block[] = [1, 2, 3].map((position) => ({
+    position,
+    kind: "sentence" as const,
+    originalText: `Sentence ${position} stands here.`,
+    ipaSlots: null,
+    ipaText: null,
+    translationText: null,
+  }));
+
+  function renderReadingPage() {
+    return render(
+      <MemoryRouter initialEntries={["/book/7/2"]}>
+        <Routes>
+          <Route path="/book/:id/:chapter" element={<ReadingPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+  }
+
+  type Call = { url: string; init: RequestInit };
+  function stubBookFetch(putBehavior: "ok" | "fail"): { calls: Call[] } {
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, init: init ?? {} });
+        if (url.endsWith("/progress") && init?.method === "PUT") {
+          return putBehavior === "fail"
+            ? new Response(null, { status: 503 })
+            : new Response(null, { status: 204 });
+        }
+        if (url.endsWith("/chapters/2")) {
+          return new Response(
+            JSON.stringify({
+              position: 2,
+              title: "Chapter Two",
+              blocks: chapterBlocks,
+            })
+          );
+        }
+        if (url.endsWith("/progress")) {
+          // A position in another chapter: the page must not jump, and the
+          // chapter-start autosave is the first write.
+          return new Response(JSON.stringify({ chapter: 1, block: 2 }));
+        }
+        if (url.endsWith("/api/books/7")) {
+          return new Response(
+            JSON.stringify({
+              id: 7,
+              title: "Probe Book",
+              chapters: [
+                { position: 1, title: "One", level: 1 },
+                { position: 2, title: "Two", level: 2 },
+              ],
+            })
+          );
+        }
+        return new Response(null, { status: 404 });
+      })
+    );
+    return { calls };
+  }
+
+  it("jumps to the saved block of this chapter on open", async () => {
+    const jump = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = jump;
+    // Saved block 3 belongs to THIS chapter: the restore path runs.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/chapters/2")) {
+          return new Response(
+            JSON.stringify({
+              position: 2,
+              title: "Chapter Two",
+              blocks: chapterBlocks,
+            })
+          );
+        }
+        if (url.endsWith("/progress")) {
+          return new Response(JSON.stringify({ chapter: 2, block: 3 }));
+        }
+        if (url.endsWith("/api/books/7")) {
+          return new Response(
+            JSON.stringify({
+              id: 7,
+              title: "Probe Book",
+              chapters: [{ position: 2, title: "Two", level: 2 }],
+            })
+          );
+        }
+        return new Response(null, { status: 404 });
+      })
+    );
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Chapter Two")).toBeTruthy();
+    expect(jump).toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it("autosaves the chapter start through the debounce and flushes on unmount", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      const { calls } = stubBookFetch("ok");
+      const view = renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByText("Chapter Two")).toBeTruthy();
+
+      // Unmount while the chapter-start save is still pending (debounce not
+      // elapsed): the flush must carry the position out with the page
+      // (audit 2026-10-23, verification round — the old order unmounted
+      // after the save had already landed, proving nothing).
+      act(() => {
+        view.unmount();
+      });
+      const puts = calls.filter(
+        (call) => call.url.endsWith("/progress") && call.init.method === "PUT"
+      );
+      expect(puts).toHaveLength(1);
+      expect(JSON.parse(String(puts[0]!.init.body))).toEqual({
+        chapter: 2,
+        block: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows the save-failed notice when a save does not land", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      stubBookFetch("fail");
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      // The reader sees that the sync is not happening (CODING_STANDARDS:
+      // a retry loop's last state must not outlive its credibility).
+      expect(
+        screen.getByText(/阅读进度保存失败，位置可能没有同步。/)
+      ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
 });

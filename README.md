@@ -40,7 +40,7 @@ npm run dev
 ```sh
 DEEPSEEK_API_KEY=sk-...            # 必填；不配置则照常导入，译文行留空
 DEEPSEEK_BASE_URL=https://api.deepseek.com   # 可选，任何 OpenAI 兼容端点
-DEEPSEEK_MODEL=deepseek-chat       # 可选
+DEEPSEEK_MODEL=deepseek-flash      # 可选
 DEEPSEEK_TRANSLATION_PROMPT=...    # 可选，整体替换内置的翻译风格提示词（自然意译、学习者友好）
 ```
 

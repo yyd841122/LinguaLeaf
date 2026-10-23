@@ -88,14 +88,16 @@ async function startStack(
 
 // The upload client path exactly as BookshelfPage runs it: fetchJson with
 // a FormData body carrying one File.
-async function uploadBook(path: string): Promise<{ id: number }> {
+async function uploadBook(
+  path: string
+): Promise<{ id: number } & Record<string, unknown>> {
   const bytes = await readFile(path);
   const form = new FormData();
   form.append(
     "file",
     new File([bytes], basename(path), { type: "text/markdown" })
   );
-  return fetchJson<{ id: number }>("/api/books", {
+  return fetchJson<{ id: number } & Record<string, unknown>>("/api/books", {
     method: "POST",
     body: form,
   });
@@ -264,9 +266,10 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
   it("round-trips a save through PUT and GET", async () => {
     await startStack();
     const id = await uploadReadyBook(sampleBookPath);
-    await saveReadingProgress(id, { chapter: 2, block: 5 });
+    // A position the book actually has: chapter 2 (Red) holds 4 blocks.
+    await saveReadingProgress(id, { chapter: 2, block: 4 });
     const progress = await fetchReadingProgress(id);
-    expect(progress).toEqual({ chapter: 2, block: 5 });
+    expect(progress).toEqual({ chapter: 2, block: 4 });
   });
 
   it("surfaces the invalid-position 400 with its body", async () => {
@@ -347,6 +350,26 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
   // Every rejection body carries a stable machine code beside the prose
   // (apps/server/src/wire.ts) — these pins are the executable half of the
   // shelf's copy map (apps/web/src/importCopy.ts).
+  it("pins the 202 body the shelf prepends as a book row", async () => {
+    await startStack();
+    // BookshelfPage prepends this body straight into the shelf list, so the
+    // fields it renders ride the wire contract (CODING_STANDARDS: extend
+    // the suite in the same change as a new consumer — audit 2026-10-23).
+    // No translator configured: the whole task runs inside the POST, so the
+    // row answers settled.
+    const created = await uploadBook(sampleBookPath);
+    expect(created).toMatchObject({
+      title: expect.any(String),
+      format: "markdown",
+      status: "ready",
+      importStage: null,
+      importPercent: null,
+      importError: null,
+      createdAt: expect.any(String),
+      pageCount: null,
+    });
+  });
+
   it("rejects an unknown extension with the 415 copy", async () => {
     await startStack();
     const error = await uploadRejection(

@@ -36,7 +36,10 @@ export function deepSeekConfigFromEnv(
   return {
     apiKey,
     baseUrl: env.DEEPSEEK_BASE_URL?.trim() || "https://api.deepseek.com",
-    model: env.DEEPSEEK_MODEL?.trim() || "deepseek-chat",
+    // deepseek-flash: the served workhorse name since deepseek-chat's
+    // 2026-07-24 retirement (api-docs.deepseek.com/updates) — audit
+    // 2026-10-23.
+    model: env.DEEPSEEK_MODEL?.trim() || "deepseek-flash",
     stylePrompt:
       env.DEEPSEEK_TRANSLATION_PROMPT?.trim() ||
       DEFAULT_TRANSLATION_STYLE_PROMPT,
@@ -86,7 +89,7 @@ function parseNumberedReplies(
 }
 
 type ChatCompletionResponse = {
-  choices?: { message?: { content?: string } }[];
+  choices?: { message?: { content?: unknown }; finish_reason?: string }[];
 };
 
 // The DeepSeek adapter: one translateBatch call is one OpenAI-compatible
@@ -117,9 +120,30 @@ export function createDeepSeekTranslator(config: DeepSeekConfig): Translator {
           }),
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         });
-        if (!response.ok) return sentences.map(() => null);
+        if (!response.ok) {
+          // An unread error body keeps its connection until it settles;
+          // cancel it so the socket returns to the pool (audit 2026-10-23).
+          await response.body?.cancel().catch(() => {});
+          return sentences.map(() => null);
+        }
         const payload = (await response.json()) as ChatCompletionResponse;
-        content = payload.choices?.[0]?.message?.content ?? "";
+        const choice = payload.choices?.[0];
+        // Only a settled completion parses: "length" (truncated) or any
+        // other non-stop reason can end mid-item, and the numbered parse
+        // would strand the tail — report the batch failed so it retries
+        // whole (audit 2026-10-23; widened in verification).
+        if (
+          choice?.finish_reason !== undefined &&
+          choice.finish_reason !== "stop"
+        ) {
+          content = "";
+        } else {
+          // Only a string parses: numeric/object content in valid JSON is a
+          // broken reply, handled on the all-failed path instead of throwing
+          // past the catch (audit 2026-10-23).
+          const rawContent: unknown = choice?.message?.content;
+          content = typeof rawContent === "string" ? rawContent : "";
+        }
       } catch {
         return sentences.map(() => null);
       }

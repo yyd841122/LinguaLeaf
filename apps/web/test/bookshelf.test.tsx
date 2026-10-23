@@ -1,4 +1,10 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BookshelfPage } from "../src/BookshelfPage";
@@ -239,9 +245,13 @@ describe("BookshelfPage import states (ticket 08)", () => {
     expect(screen.queryByText(/预计耗时较长/)).toBeNull();
 
     // And a book without a page count (EPUB, Markdown) never had pages
-    // to count, however long it is.
+    // to count, however long it is. A fresh render: the ready row above
+    // stopped the poll, so advancing timers in the settled tree would
+    // assert stale content (audit 2026-10-23).
+    cleanup();
     shelfState.books = [importingBook];
-    await actAdvance(2000);
+    renderShelf();
+    await actAdvance(0);
     expect(screen.queryByText(/预计耗时较长/)).toBeNull();
   });
 
@@ -323,9 +333,12 @@ describe("BookshelfPage import states (ticket 08)", () => {
 
   it("shows the encrypted-PDF copy keyed on the stable code, not the 文案", async () => {
     renderShelf();
+    // The body prose is deliberately NOT the original server copy: an
+    // implementation still branching on the message text would render the
+    // generic retry copy and fail here (audit 2026-10-23).
     mockUploadRejection(400, {
       code: "encrypted-pdf",
-      error: "加密 PDF 暂不支持",
+      error: "服务端重写过的加密提示文案",
     });
     await uploadFile("encrypted.pdf");
 

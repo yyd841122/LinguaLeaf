@@ -17,21 +17,25 @@ describe("speakWord", () => {
   });
 
   it("cancels any current utterance, then speaks the word in en-US", () => {
+    // One ordered event log: cancel must precede speak — speaking before
+    // cancelling lets the new pronunciation be cut off (audit 2026-10-23 —
+    // call counts alone passed either order).
+    const events: string[] = [];
     const spoken: { text: string; lang: string }[] = [];
-    let cancels = 0;
     vi.stubGlobal("speechSynthesis", {
       cancel: () => {
-        cancels += 1;
+        events.push("cancel");
       },
       speak: (utterance: unknown) => {
         const fake = utterance as FakeUtterance;
+        events.push("speak");
         spoken.push({ text: fake.text, lang: fake.lang });
       },
     });
     vi.stubGlobal("SpeechSynthesisUtterance", FakeUtterance);
 
     speakWord("books");
-    expect(cancels).toBe(1);
+    expect(events).toEqual(["cancel", "speak"]);
     expect(spoken).toEqual([{ text: "books", lang: "en-US" }]);
   });
 

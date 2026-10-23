@@ -83,8 +83,11 @@ export function extractChaptersFromHtml(html: string): ExtractedChapter[] {
       return;
     }
     if (tag === "pre") {
-      const code = node.text().trim();
-      if (code) current.items.push({ kind: "code", text: code });
+      // Interior indentation is the code — only the fence's surrounding
+      // blank edges go (newline-only trim), and trimming decides emptiness
+      // (audit 2026-10-23).
+      const code = node.text().replace(/^\n+|\n+$/g, "");
+      if (code.trim()) current.items.push({ kind: "code", text: code });
       return;
     }
     if (tag === "img") {
@@ -93,7 +96,11 @@ export function extractChaptersFromHtml(html: string): ExtractedChapter[] {
     }
     if (tag === "hr" || tag === "br") return;
     if (CONTAINER_TAGS.has(tag)) {
-      for (const child of node.children().toArray()) visit($(child));
+      // Direct text runs belong to the chapter too: contents() (not
+      // children()) walks text nodes, and the paragraph walker keeps them in
+      // reading order beside embedded elements (audit 2026-10-23:
+      // "<div>Before <em>middle</em> after.</div>" kept only "middle").
+      addParagraphContent(node);
       return;
     }
     // Anything else with text passes through verbatim rather than silently
@@ -136,7 +143,14 @@ export function extractChaptersFromHtml(html: string): ExtractedChapter[] {
           run += " ";
           continue;
         }
-        if (CONTAINER_TAGS.has(tag) || INNER_BLOCK_TAGS.has(tag)) {
+        if (
+          CONTAINER_TAGS.has(tag) ||
+          INNER_BLOCK_TAGS.has(tag) ||
+          /^h[1-6]$/.test(tag)
+        ) {
+          // Headings open chapters even nested in a container — walking
+          // into one as prose flattened the chapter boundary (audit
+          // 2026-10-23, verification round: REGRESSED → fixed).
           flushRun();
           visit($(child));
           continue;

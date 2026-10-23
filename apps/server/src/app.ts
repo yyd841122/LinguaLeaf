@@ -1,4 +1,8 @@
-import express from "express";
+import express, {
+  type NextFunction,
+  type Request,
+  type Response,
+} from "express";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
 import type { Translator } from "./translate/translator.js";
@@ -16,6 +20,38 @@ export function createApp(
   const app = express();
   app.disable("x-powered-by");
 
+  // A local single-user reader: mutating requests from a foreign Origin get
+  // no path (a drive-by page could otherwise POST books or flip progress).
+  // Same-origin (Origin host === Host header) and headerless tooling (curl,
+  // supertest, same-origin GET) pass untouched; ALLOWED_ORIGINS (comma-
+  // separated) admits deliberate extra origins.
+  const allowedOrigins = new Set(
+    (process.env.ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean)
+  );
+  app.use((request, response, next) => {
+    const origin = request.headers.origin;
+    const mutating = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+    if (mutating && typeof origin === "string") {
+      let trusted = allowedOrigins.has(origin);
+      if (!trusted) {
+        try {
+          const host = request.headers.host ?? "";
+          trusted = new URL(origin).host === host;
+        } catch {
+          trusted = false;
+        }
+      }
+      if (!trusted) {
+        response.status(403).json({ error: "cross-origin request rejected" });
+        return;
+      }
+    }
+    next();
+  });
+
   app.get("/api/health", (_request, response) => {
     database.prepare("SELECT 1").get();
     response.json({ status: "ok" });
@@ -29,6 +65,25 @@ export function createApp(
   app.use("/api", (_request, response) => {
     response.status(404).json({ error: "API route not found" });
   });
+
+  // One JSON envelope for anything a handler throws: details land in the
+  // server log, the client gets a bare 500 body — Express's default error
+  // page prints stack traces when NODE_ENV is unset.
+  app.use(
+    (
+      error: unknown,
+      _request: Request,
+      response: Response,
+      next: NextFunction
+    ) => {
+      console.error(error);
+      if (response.headersSent) {
+        next(error);
+        return;
+      }
+      response.status(500).json({ error: "internal server error" });
+    }
+  );
 
   return app;
 }

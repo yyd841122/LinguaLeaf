@@ -42,15 +42,29 @@ export async function saveReadingProgress(
 // The topmost block still poking into the viewport — the sentence the
 // reader is on. Blocks carry data-position from the server. Returns null
 // when nothing is measurable (empty chapter).
+//
+// Binary-searched over document order: blocks lay out top to bottom, so
+// "bottom > 0" flips from false to true exactly once — log2(n) layout reads
+// instead of one per block on every scroll event (a 700-block chapter paid
+// 700 reads per tick — audit 2026-10-23).
 export function topmostVisibleBlock(): number | null {
   const container = document.querySelector(".blocks");
   if (!container) return null;
-  for (const block of container.querySelectorAll<HTMLElement>(
-    "[data-position]"
-  )) {
-    if (block.getBoundingClientRect().bottom > 0) {
-      return Number(block.dataset.position);
+  // The live NodeList indexes directly — no per-scroll array copy.
+  const blocks = container.querySelectorAll<HTMLElement>("[data-position]");
+  let low = 0;
+  let high = blocks.length - 1;
+  let answer: number | null = null;
+  while (low <= high) {
+    const mid = (low + high) >> 1;
+    const candidate = blocks[mid];
+    if (!candidate) break;
+    if (candidate.getBoundingClientRect().bottom > 0) {
+      answer = Number(candidate.dataset.position);
+      high = mid - 1;
+    } else {
+      low = mid + 1;
     }
   }
-  return null;
+  return answer;
 }

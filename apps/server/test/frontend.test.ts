@@ -7,6 +7,9 @@ import type Database from "better-sqlite3";
 import request from "supertest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
+
+// Dictionaries opened per test, closed in afterEach (audit 2026-10-23).
+const openDictionaries: ReturnType<typeof openDictionary>[] = [];
 import { openDictionary } from "../src/dict/dictionary.js";
 import { openDatabase } from "../src/database.js";
 import { attachFrontend } from "../src/frontend.js";
@@ -56,11 +59,14 @@ describe("frontend hosting through the HTTP API seam", () => {
 
   afterEach(async () => {
     database.close();
+    for (const dictionary of openDictionaries.splice(0)) dictionary.close();
     await rm(projectRoot, { recursive: true, force: true });
   });
 
   it("serves the built app, assets, chapter entry and API on one server", async () => {
-    const app = createApp(database, openDictionary(":memory:"));
+    const dictionary = openDictionary(":memory:");
+    openDictionaries.push(dictionary);
+    const app = createApp(database, dictionary);
     const server = createServer(app);
     await attachFrontend(app, server, {
       development: false,
@@ -85,7 +91,9 @@ describe("frontend hosting through the HTTP API seam", () => {
   });
 
   it("serves Vite HTML and the API through Express in development", async () => {
-    const app = createApp(database, openDictionary(":memory:"));
+    const dictionary = openDictionary(":memory:");
+    openDictionaries.push(dictionary);
+    const app = createApp(database, dictionary);
     const server = createServer(app);
     const closeFrontend = await attachFrontend(app, server, {
       development: true,

@@ -27,6 +27,13 @@ describe("normalizeLookupToken (the lookup fold)", () => {
     expect(normalizeLookupToken("“well-known”")).toBe("well-known");
   });
 
+  it("reads an over-long folded token as a miss", () => {
+    // Not a word at any length past the cap; reading it as a miss bounds
+    // every consumer's work (audit 2026-10-23).
+    expect(normalizeLookupToken("a".repeat(65))).toBe("");
+    expect(normalizeLookupToken("a".repeat(64))).toBe("a".repeat(64));
+  });
+
   it("keeps internal apostrophes and hyphens through the edge strip", () => {
     expect(normalizeLookupToken("don't")).toBe("don't");
     expect(normalizeLookupToken("well-known")).toBe("well-known");

@@ -12,7 +12,7 @@ describe("deepSeekConfigFromEnv", () => {
     expect(config).toMatchObject({
       apiKey: "k",
       baseUrl: "https://api.deepseek.com",
-      model: "deepseek-chat",
+      model: "deepseek-flash",
     });
     // The built-in style prompt must carry the spec's translation stance:
     // natural, idiomatic Simplified Chinese (自然意译的简体中文).
@@ -42,7 +42,12 @@ type CapturedRequest = { url: string; init: RequestInit };
 
 // A fetch stub for the adapter's HTTP boundary: captures every request and
 // replies with a scripted chat-completion body (or HTTP status).
-function stubFetch(reply: { content: string } | { status: number }): {
+function stubFetch(
+  reply:
+    | { content: string; finishReason?: string }
+    | { status: number }
+    | { rawBody: unknown }
+): {
   fetchImpl: typeof fetch;
   requests: CapturedRequest[];
 } {
@@ -52,12 +57,23 @@ function stubFetch(reply: { content: string } | { status: number }): {
     if ("status" in reply) {
       return new Response("upstream exploded", { status: reply.status });
     }
-    return new Response(
-      JSON.stringify({
-        choices: [{ message: { role: "assistant", content: reply.content } }],
-      }),
-      { status: 200, headers: { "content-type": "application/json" } }
-    );
+    const body =
+      "rawBody" in reply
+        ? reply.rawBody
+        : {
+            choices: [
+              {
+                message: { role: "assistant", content: reply.content },
+                ...(reply.finishReason
+                  ? { finish_reason: reply.finishReason }
+                  : {}),
+              },
+            ],
+          };
+    return new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   }) as typeof fetch;
   return { fetchImpl, requests };
 }
@@ -65,11 +81,68 @@ function stubFetch(reply: { content: string } | { status: number }): {
 const CONFIG = {
   apiKey: "sk-test",
   baseUrl: "https://api.deepseek.com",
-  model: "deepseek-chat",
+  model: "deepseek-flash",
   stylePrompt: "自然意译。",
 };
 
 describe("createDeepSeekTranslator", () => {
+  it("reports every sentence failed when content is not a string", async () => {
+    // Valid JSON, broken shape: a numeric/object/array content must land on
+    // the all-failed path, not throw past the catch and fail the whole book
+    // import (audit 2026-10-23).
+    for (const rawBody of [
+      { choices: [{ message: { role: "assistant", content: 42 } }] },
+      { choices: [{ message: { role: "assistant", content: { text: "x" } } }] },
+      { choices: [{ message: { role: "assistant", content: ["a"] } }] },
+      { choices: [] },
+      {},
+    ]) {
+      const { fetchImpl } = stubFetch({ rawBody });
+      const translator = createDeepSeekTranslator({ ...CONFIG, fetchImpl });
+      await expect(
+        translator.translateBatch(["One.", "Two."])
+      ).resolves.toEqual([null, null]);
+    }
+  });
+
+  it("cancels an unread error body before returning", async () => {
+    // A non-200 reply whose body nobody reads holds its connection until it
+    // settles; the adapter cancels it so the socket returns to the pool
+    // (audit 2026-10-23).
+    let cancelled = false;
+    const fetchImpl = (async () =>
+      ({
+        ok: false,
+        status: 503,
+        body: {
+          cancel: async () => {
+            cancelled = true;
+          },
+        },
+      }) as unknown as Response) as typeof fetch;
+    const translator = createDeepSeekTranslator({ ...CONFIG, fetchImpl });
+
+    await expect(translator.translateBatch(["One.", "Two."])).resolves.toEqual([
+      null,
+      null,
+    ]);
+    expect(cancelled).toBe(true);
+  });
+
+  it("reports the batch failed when the completion was truncated", async () => {
+    // finish_reason "length": the numbered parse would strand a mid-item
+    // tail as a permanent miss, so the whole batch reports failed and the
+    // orchestrator retries it (audit 2026-10-23).
+    const { fetchImpl } = stubFetch({
+      content: "1. 天一亮他就醒了。\n2. 海面",
+      finishReason: "length",
+    });
+    const translator = createDeepSeekTranslator({ ...CONFIG, fetchImpl });
+    await expect(
+      translator.translateBatch(["Mr. Gupta woke early.", "The sea was calm."])
+    ).resolves.toEqual([null, null]);
+  });
+
   it("sends one OpenAI-compatible chat request per batch and parses the numbered reply back into aligned translations", async () => {
     const { fetchImpl, requests } = stubFetch({
       content:
@@ -99,7 +172,7 @@ describe("createDeepSeekTranslator", () => {
       messages: { role: string; content: string }[];
       stream: boolean;
     };
-    expect(body.model).toBe("deepseek-chat");
+    expect(body.model).toBe("deepseek-flash");
     expect(body.stream).toBe(false);
     expect(body.messages).toHaveLength(2);
     expect(body.messages[0]).toEqual({ role: "system", content: "自然意译。" });

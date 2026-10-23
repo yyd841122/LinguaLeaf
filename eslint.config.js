@@ -2,6 +2,20 @@ import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
 
+// Browser source must not touch Node-only names: tsc compiles with no-undef
+// off, so they pass both lint and typecheck and fail only at runtime
+// (audit 2026-10-23). Shared by the two browser blocks below.
+const noNodeGlobalsInBrowser = {
+  "no-restricted-globals": [
+    "error",
+    { name: "process", message: "browser code must not use Node APIs" },
+    { name: "Buffer", message: "browser code must not use Node APIs" },
+    { name: "require", message: "browser code must not use Node APIs" },
+    { name: "module", message: "browser code must not use Node APIs" },
+    { name: "global", message: "use globalThis instead" },
+  ],
+};
+
 export default tseslint.config(
   {
     ignores: [
@@ -35,6 +49,7 @@ export default tseslint.config(
   {
     files: ["apps/web/src/**/*.{ts,tsx}", "apps/web/test/**/*.{ts,tsx}"],
     languageOptions: { globals: globals.browser },
+    rules: noNodeGlobalsInBrowser,
   },
   {
     // The reading-model package is browser-oriented shared code (its own
@@ -44,5 +59,6 @@ export default tseslint.config(
       "packages/reading-model/test/**/*.ts",
     ],
     languageOptions: { globals: globals.browser },
+    rules: noNodeGlobalsInBrowser,
   }
 );

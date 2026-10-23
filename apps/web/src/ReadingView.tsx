@@ -1,4 +1,9 @@
-import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+} from "react";
+import { memo } from "react";
 import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
 
 export type SentenceBlock = {
@@ -56,12 +61,24 @@ function WordSegments({
     const ipa = showSlots ? segment.ipa : undefined;
     nodes.push(
       ipa ? (
-        <span className="ipa-word" data-word={segment.word} key={index}>
+        <span
+          className="ipa-word"
+          data-word={segment.word}
+          key={index}
+          role="button"
+          tabIndex={0}
+        >
           <span className="ipa-word-text">{segment.word}</span>
           <span className="ipa-word-ipa">{ipa}</span>
         </span>
       ) : (
-        <span className="lookup-word" data-word={segment.word} key={index}>
+        <span
+          className="lookup-word"
+          data-word={segment.word}
+          key={index}
+          role="button"
+          tabIndex={0}
+        >
           {segment.word}
         </span>
       )
@@ -160,7 +177,7 @@ export type ClickPoint = { x: number; y: number };
 // happened — the popup anchors there.
 export type WordClick = { word: string; point: ClickPoint };
 
-export function ReadingView({
+export const ReadingView = memo(function ReadingView({
   chapter,
   ipaSize,
   originalSize,
@@ -189,11 +206,29 @@ export function ReadingView({
       onWordClick({ word, point: { x: event.clientX, y: event.clientY } });
     }
   };
+  // Keyboard reaches the same words: Enter/Space on a focused word span runs
+  // the same lookup, anchored to the word's own box (audit 2026-10-23 — the
+  // spans were mouse-only).
+  const handleWordKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (!onWordClick) return;
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    if (!word) return;
+    event.preventDefault();
+    const box = target.getBoundingClientRect();
+    onWordClick({
+      word,
+      point: { x: box.left + box.width / 2, y: box.bottom },
+    });
+  };
   return (
     <section
       className="reading"
       aria-labelledby="chapter-title"
       onClick={handleWordClick}
+      onKeyDown={handleWordKeyDown}
       style={
         {
           ...(ipaSize === undefined ? null : { "--ipa-size": `${ipaSize}px` }),
@@ -219,4 +254,4 @@ export function ReadingView({
       </div>
     </section>
   );
-}
+});
