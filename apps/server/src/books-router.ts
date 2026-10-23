@@ -2,15 +2,8 @@ import { Router, json, type Request, type Response } from "express";
 import multer from "multer";
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
-import { EpubParseError, isEpubFilename, readEpubBook } from "./import/epub.js";
-import {
-  EncryptedPdfError,
-  isPdfFilename,
-  PdfParseError,
-  readPdfBook,
-  ScannedPdfError,
-} from "./import/pdf.js";
-import { isMarkdownFilename, readMarkdownBook } from "./import/markdown.js";
+import { readUpload, UNSUPPORTED_FORMAT } from "./import/format-readers.js";
+import { REJECTION_STATUS, UploadRejected } from "./import/upload-rejection.js";
 import {
   annotatedBookFilename,
   renderAnnotatedBook,
@@ -34,10 +27,16 @@ import type { ImportRejection } from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-// Shared body of both 415 branches of the upload handler.
-const UNSUPPORTED_FORMAT: ImportRejection = {
-  code: "unsupported-format",
-  error: "only .epub, .md, .markdown or .pdf files are accepted",
+// The one response path for a coded upload rejection: the wire body is
+// reason + rewordable prose, the status comes from the one table.
+const respondRejection = (
+  response: Response,
+  rejection: UploadRejected
+): void => {
+  response.status(REJECTION_STATUS[rejection.reason]).json({
+    code: rejection.reason,
+    error: rejection.message,
+  } satisfies ImportRejection);
 };
 
 const toBookJson = (row: BookRow) => ({
@@ -77,18 +76,20 @@ export function createBooksRouter(
       upload.single("file")(request, response, (error: unknown) => {
         if (error instanceof multer.MulterError) {
           // The one MulterError the shelf reasons about is the size cap —
-          // it gets the stable file-too-large code and its own shelf copy,
+          // it rides the same coded-rejection path as the format readers,
           // since retrying can never succeed. Other multer rejects keep
-          // the raw code echo.
-          const tooLarge = error.code === "LIMIT_FILE_SIZE";
-          response.status(tooLarge ? 413 : 400).json(
-            tooLarge
-              ? ({
-                  code: "file-too-large",
-                  error: `uploaded file exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB limit`,
-                } satisfies ImportRejection)
-              : { error: error.code }
-          );
+          // the raw code echo (a deliberate, uncoded leftover).
+          if (error.code === "LIMIT_FILE_SIZE") {
+            respondRejection(
+              response,
+              new UploadRejected(
+                "file-too-large",
+                `uploaded file exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB limit`
+              )
+            );
+          } else {
+            response.status(400).json({ error: error.code });
+          }
           return;
         }
         next(error);
@@ -100,52 +101,16 @@ export function createBooksRouter(
         response.status(415).json(UNSUPPORTED_FORMAT);
         return;
       }
-      // Format front halves: bytes → extracted chapters. A broken EPUB is a
-      // client error (400); everything shared runs past this point.
+      // Format front halves: bytes → extracted chapters through the
+      // registry. A bad upload arrives as one UploadRejected carrying its
+      // wire reason — which format rejected it, and at what cost, is the
+      // readers' and the table's knowledge, not this file's.
       let prepared;
       try {
-        if (isEpubFilename(file.originalname)) {
-          prepared = await readEpubBook(file.buffer, file.originalname);
-        } else if (isMarkdownFilename(file.originalname)) {
-          prepared = readMarkdownBook(
-            file.originalname,
-            file.buffer.toString("utf8")
-          );
-        } else if (isPdfFilename(file.originalname)) {
-          prepared = await readPdfBook(file.buffer, file.originalname);
-        } else {
-          response.status(415).json(UNSUPPORTED_FORMAT);
-          return;
-        }
+        prepared = await readUpload(file.originalname, file.buffer);
       } catch (error) {
-        // Each rejection pairs its class with the stable code the shelf's
-        // copy keys on (wire.ts) — the message stays rewordable prose.
-        if (error instanceof EpubParseError) {
-          response.status(400).json({
-            code: "invalid-epub",
-            error: `invalid EPUB: ${error.message}`,
-          } satisfies ImportRejection);
-          return;
-        }
-        if (error instanceof ScannedPdfError) {
-          response.status(422).json({
-            code: "scanned-pdf",
-            error: error.message,
-          } satisfies ImportRejection);
-          return;
-        }
-        if (error instanceof EncryptedPdfError) {
-          response.status(400).json({
-            code: "encrypted-pdf",
-            error: error.message,
-          } satisfies ImportRejection);
-          return;
-        }
-        if (error instanceof PdfParseError) {
-          response.status(400).json({
-            code: "invalid-pdf",
-            error: `invalid PDF: ${error.message}`,
-          } satisfies ImportRejection);
+        if (error instanceof UploadRejected) {
+          respondRejection(response, error);
           return;
         }
         throw error;

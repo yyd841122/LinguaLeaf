@@ -1,4 +1,5 @@
 import { posix } from "node:path";
+import { UploadRejected } from "./upload-rejection.js";
 import JSZip from "jszip";
 import * as cheerio from "cheerio";
 import type { PreparedBook } from "./pipeline.js";
@@ -15,10 +16,11 @@ export function isEpubFilename(filename: string): boolean {
 }
 
 // A structurally broken upload — not a zip, no container, no package
-// document, a spine document missing from the archive. The router reports
-// this class as 400; anything downstream of extraction (sentence splitting,
-// annotation) cannot fail the import.
-export class EpubParseError extends Error {}
+// document, a spine document missing from the archive. These reject the
+// upload as the invalid-epub wire reason (a 400); anything downstream of
+// extraction (sentence splitting, annotation) cannot fail the import.
+const invalidEpub = (message: string): UploadRejected =>
+  new UploadRejected("invalid-epub", `invalid EPUB: ${message}`);
 
 // Href segments are URL-encoded in the container (spaces as %20); a
 // malformed escape falls back to the raw segment instead of throwing.
@@ -44,12 +46,12 @@ export async function readEpubBook(
   try {
     zip = await JSZip.loadAsync(content);
   } catch {
-    throw new EpubParseError("not a valid EPUB (ZIP) file");
+    throw invalidEpub("not a valid EPUB (ZIP) file");
   }
 
   const zipText = async (path: string): Promise<string> => {
     const file = zip.file(path);
-    if (!file) throw new EpubParseError(`EPUB is missing ${path}`);
+    if (!file) throw invalidEpub(`EPUB is missing ${path}`);
     return file.async("string");
   };
 
@@ -58,7 +60,7 @@ export async function readEpubBook(
   });
   const packagePath = container("rootfile").first().attr("full-path");
   if (!packagePath) {
-    throw new EpubParseError("container.xml names no package document");
+    throw invalidEpub("container.xml names no package document");
   }
 
   const opf = cheerio.load(await zipText(packagePath), { xmlMode: true });

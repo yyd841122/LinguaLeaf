@@ -5,6 +5,7 @@ import {
   type StructuredTextItem,
 } from "unpdf";
 import type { PreparedBook } from "./pipeline.js";
+import { UploadRejected } from "./upload-rejection.js";
 
 // Single source of truth for what counts as a PDF book file.
 export const PDF_EXTENSION = /\.pdf$/i;
@@ -13,22 +14,18 @@ export function isPdfFilename(filename: string): boolean {
   return PDF_EXTENSION.test(filename);
 }
 
-// A structurally broken or unsupported PDF — unparseable bytes. The router
-// reports this class as 400, mirroring EpubParseError; the scan gate has its
-// own class (ScannedPdfError) with its own status, and encryption its own
-// subclass so the body can carry the 加密 文案 verbatim.
-export class PdfParseError extends Error {}
+// The PDF front half's rejection vocabulary: broken bytes and unsupported
+// structures reject as invalid-pdf (a 400, mirroring EPUB's shape), a
+// password-protected file as encrypted-pdf — still a 400, the upload
+// itself is fine but can never import — and a scan-shaped text layer as
+// scanned-pdf (422, rejected before any book row exists). The message
+// stays reader-facing prose; the reason is the contract
+// (import/upload-rejection.ts).
 
-// A password-protected PDF (spec: 加密 PDF 暂不支持). Still a 400 — the
-// upload itself is fine but can never import — but its body carries the
-// stable encrypted-pdf code beside the 文案, not the generic invalid-PDF
-// prefix.
-export class EncryptedPdfError extends PdfParseError {}
-
-// A PDF whose text layer is too sparse to read (scan detection). The router
-// reports this class as 422 with the reader-facing 文案, and no book is
-// created — the rejection happens before any row exists.
-export class ScannedPdfError extends Error {}
+// The shared prefix of every invalid-pdf message, matching the wire shape
+// the contract suite pins.
+const invalidPdf = (message: string): UploadRejected =>
+  new UploadRejected("invalid-pdf", `invalid PDF: ${message}`);
 
 // A page whose cleaned text is shorter than this many characters counts as
 // scan-shaped; the book is rejected when the median page sits below it.
@@ -247,10 +244,10 @@ const dropRunningHeads = (pages: string[][]): string[][] => {
 // One mapping for every unpdf failure: password-protected documents get
 // the 加密 文案, everything else (broken bytes, corrupt page tree) is a
 // broken upload in the 400 family — never a server fault.
-const asParseError = (error: unknown): PdfParseError =>
+const asParseError = (error: unknown): UploadRejected =>
   (error as { name?: string } | null)?.name === "PasswordException"
-    ? new EncryptedPdfError("加密 PDF 暂不支持")
-    : new PdfParseError("not a valid PDF file");
+    ? new UploadRejected("encrypted-pdf", "加密 PDF 暂不支持")
+    : invalidPdf("not a valid PDF file");
 
 // The PDF front half of the import: extract the text layer and hand the
 // shared pipeline a PreparedBook shaped like the EPUB front half's, so
@@ -269,7 +266,7 @@ export async function readPdfBook(
   }
   try {
     if (pdf.numPages > MAX_PDF_PAGES) {
-      throw new PdfParseError(`PDF has more than ${MAX_PDF_PAGES} pages`);
+      throw invalidPdf(`PDF has more than ${MAX_PDF_PAGES} pages`);
     }
 
     let items;
@@ -294,12 +291,12 @@ export async function readPdfBook(
     // Unreachable in practice — a parsed PDF always has at least one page —
     // but keeps the median total without assertions.
     if (upper === undefined) {
-      throw new PdfParseError("PDF has no readable pages");
+      throw invalidPdf("PDF has no readable pages");
     }
     const lower = sorted[middle - 1] ?? upper;
     const median = sorted.length % 2 === 1 ? upper : (lower + upper) / 2;
     if (median < SCAN_PAGE_MEDIAN_THRESHOLD) {
-      throw new ScannedPdfError("扫描件/图片型 PDF 暂不支持");
+      throw new UploadRejected("scanned-pdf", "扫描件/图片型 PDF 暂不支持");
     }
 
     // Metadata title, falling back to the upload's file name — the chapter
