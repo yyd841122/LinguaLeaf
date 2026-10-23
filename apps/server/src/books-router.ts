@@ -30,11 +30,13 @@ import {
   type BookRow,
   type ShelfEntry,
 } from "./book-store.js";
+import type { ImportRejection } from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
 // Shared body of both 415 branches of the upload handler.
-const UNSUPPORTED_FORMAT = {
+const UNSUPPORTED_FORMAT: ImportRejection = {
+  code: "unsupported-format",
   error: "only .epub, .md, .markdown or .pdf files are accepted",
 };
 
@@ -74,9 +76,19 @@ export function createBooksRouter(
     (request, response, next) => {
       upload.single("file")(request, response, (error: unknown) => {
         if (error instanceof multer.MulterError) {
-          response
-            .status(error.code === "LIMIT_FILE_SIZE" ? 413 : 400)
-            .json({ error: error.code });
+          // The one MulterError the shelf reasons about is the size cap —
+          // it gets the stable file-too-large code and its own shelf copy,
+          // since retrying can never succeed. Other multer rejects keep
+          // the raw code echo.
+          const tooLarge = error.code === "LIMIT_FILE_SIZE";
+          response.status(tooLarge ? 413 : 400).json(
+            tooLarge
+              ? ({
+                  code: "file-too-large",
+                  error: `uploaded file exceeds the ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB limit`,
+                } satisfies ImportRejection)
+              : { error: error.code }
+          );
           return;
         }
         next(error);
@@ -106,22 +118,34 @@ export function createBooksRouter(
           return;
         }
       } catch (error) {
+        // Each rejection pairs its class with the stable code the shelf's
+        // copy keys on (wire.ts) — the message stays rewordable prose.
         if (error instanceof EpubParseError) {
-          response
-            .status(400)
-            .json({ error: `invalid EPUB: ${error.message}` });
+          response.status(400).json({
+            code: "invalid-epub",
+            error: `invalid EPUB: ${error.message}`,
+          } satisfies ImportRejection);
           return;
         }
         if (error instanceof ScannedPdfError) {
-          response.status(422).json({ error: error.message });
+          response.status(422).json({
+            code: "scanned-pdf",
+            error: error.message,
+          } satisfies ImportRejection);
           return;
         }
         if (error instanceof EncryptedPdfError) {
-          response.status(400).json({ error: error.message });
+          response.status(400).json({
+            code: "encrypted-pdf",
+            error: error.message,
+          } satisfies ImportRejection);
           return;
         }
         if (error instanceof PdfParseError) {
-          response.status(400).json({ error: `invalid PDF: ${error.message}` });
+          response.status(400).json({
+            code: "invalid-pdf",
+            error: `invalid PDF: ${error.message}`,
+          } satisfies ImportRejection);
           return;
         }
         throw error;

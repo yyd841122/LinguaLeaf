@@ -227,6 +227,7 @@ describe("PDF import through the HTTP API seam", () => {
       });
     expect(created.status).toBe(400);
     expect(created.body.error).toMatch(/invalid PDF/i);
+    expect(created.body.code).toBe("invalid-pdf");
 
     const shelf = await request(app).get("/api/books");
     expect(shelf.body.books).toEqual([]);
@@ -325,6 +326,7 @@ describe("PDF import through the HTTP API seam", () => {
       });
     expect(created.status).toBe(422);
     expect(created.body.error).toBe("扫描件/图片型 PDF 暂不支持");
+    expect(created.body.code).toBe("scanned-pdf");
 
     const shelf = await request(app).get("/api/books");
     expect(shelf.body.books).toEqual([]);
@@ -421,6 +423,7 @@ describe("PDF import through the HTTP API seam", () => {
     expect(created.status).toBe(400);
     // The spec's 文案, verbatim in the body (spec.md Revisions: 加密文案).
     expect(created.body.error).toBe("加密 PDF 暂不支持");
+    expect(created.body.code).toBe("encrypted-pdf");
 
     const shelf = await request(app).get("/api/books");
     expect(shelf.body.books).toEqual([]);
@@ -435,6 +438,7 @@ describe("PDF import through the HTTP API seam", () => {
       });
     expect(created.status).toBe(400);
     expect(created.body.error).toMatch(/invalid PDF/i);
+    expect(created.body.code).toBe("invalid-pdf");
 
     const shelf = await request(app).get("/api/books");
     expect(shelf.body.books).toEqual([]);

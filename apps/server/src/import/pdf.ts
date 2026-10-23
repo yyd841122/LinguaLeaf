@@ -20,8 +20,9 @@ export function isPdfFilename(filename: string): boolean {
 export class PdfParseError extends Error {}
 
 // A password-protected PDF (spec: 加密 PDF 暂不支持). Still a 400 — the
-// upload itself is fine but can never import — but its body is the promised
-// 文案, not the generic invalid-PDF prefix.
+// upload itself is fine but can never import — but its body carries the
+// stable encrypted-pdf code beside the 文案, not the generic invalid-PDF
+// prefix.
 export class EncryptedPdfError extends PdfParseError {}
 
 // A PDF whose text layer is too sparse to read (scan detection). The router

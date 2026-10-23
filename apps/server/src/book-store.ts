@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { BookStatus, ImportStage } from "./wire.js";
 
 // The book store: every SQL statement over the four book tables — books,
 // chapters, blocks, reading_progress — lives here and nowhere else. The
@@ -11,16 +12,6 @@ import type Database from "better-sqlite3";
 // envelopes: books-router the HTTP, import-task the orchestration, export
 // the rendering. schema.ts keeps DDL and migrations, which by nature run
 // before any of these shapes exist.
-
-// The shelf states of a book (ticket 08). 'importing' covers everything
-// between the POST that created the row and the settle write; the
-// reader-facing states are 'ready' and 'failed'.
-export type BookStatus = "importing" | "ready" | "failed";
-
-// The stages the bookshelf shows while importing. IPA lookups and insert
-// are effectively instant; only 'translating' lasts long enough to be
-// watched, so it is the one stage that carries a percent.
-export type ImportStage = "annotating" | "translating" | "saving";
 
 // The block kinds the data model stores — mirrors the blocks.kind CHECK in
 // schema.ts (SQL cannot import it); adding a kind means touching this union

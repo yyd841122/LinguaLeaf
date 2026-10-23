@@ -342,6 +342,9 @@ describe("downloadAttachment over the real server (download.ts)", () => {
 });
 
 describe("upload rejections through the real client path (fetchJson + FormData)", () => {
+  // Every rejection body carries a stable machine code beside the prose
+  // (apps/server/src/wire.ts) — these pins are the executable half of the
+  // shelf's copy map (apps/web/src/importCopy.ts).
   it("rejects an unknown extension with the 415 copy", async () => {
     await startStack();
     const error = await uploadRejection(
@@ -351,11 +354,12 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(415);
     expect((error as ApiError).body).toEqual({
+      code: "unsupported-format",
       error: "only .epub, .md, .markdown or .pdf files are accepted",
     });
   });
 
-  it("rejects a scanned PDF with the 422 copy", async () => {
+  it("rejects a scanned PDF with the 422 scan code", async () => {
     await startStack();
     const error = await uploadRejection(
       "scanned.pdf",
@@ -364,11 +368,12 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(422);
     expect((error as ApiError).body).toEqual({
+      code: "scanned-pdf",
       error: "扫描件/图片型 PDF 暂不支持",
     });
   });
 
-  it("rejects an encrypted PDF with the body the shelf machine-reads", async () => {
+  it("rejects an encrypted PDF with its stable code — the shelf keys on the code, not the 文案", async () => {
     await startStack();
     const error = await uploadRejection(
       "encrypted.pdf",
@@ -376,7 +381,10 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     );
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(400);
-    expect((error as ApiError).body).toEqual({ error: "加密 PDF 暂不支持" });
+    expect((error as ApiError).body).toEqual({
+      code: "encrypted-pdf",
+      error: "加密 PDF 暂不支持",
+    });
   });
 
   it("rejects a broken EPUB with the invalid-copy 400", async () => {
@@ -388,6 +396,7 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(400);
     expect(String((error as ApiError).body?.error)).toMatch(/^invalid EPUB/);
+    expect((error as ApiError).body?.code).toBe("invalid-epub");
   });
 
   it("rejects a broken PDF with the invalid-copy 400", async () => {
@@ -399,9 +408,10 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(400);
     expect(String((error as ApiError).body?.error)).toMatch(/^invalid PDF/);
+    expect((error as ApiError).body?.code).toBe("invalid-pdf");
   });
 
-  it("rejects an over-limit upload with the 413 body", async () => {
+  it("rejects an over-limit upload with the file-too-large code", async () => {
     await startStack();
     // One byte past the server's 20MB multer limit — the content itself is
     // never parsed.
@@ -411,6 +421,9 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     );
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(413);
-    expect((error as ApiError).body).toEqual({ error: "LIMIT_FILE_SIZE" });
+    expect((error as ApiError).body).toEqual({
+      code: "file-too-large",
+      error: "uploaded file exceeds the 20 MB limit",
+    });
   });
 });
