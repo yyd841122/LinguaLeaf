@@ -217,3 +217,20 @@ side's shape is derived. If the shapes come from two independent
 traversals, the pairing is a latent misalignment — collapse to one held
 reference set (or a shared key) and pin the pairing with a test that
 would catch the drift.
+
+## An Express error handler is four arguments, or it is middleware
+
+Express dispatches on function arity: a handler with (err, req, res, next) is
+an error handler; the same function minus one argument is ordinary middleware
+whose first parameter is the request. Dropping an unused trailing next to
+satisfy a linter silently converts the error handler into a catch-all
+middleware that answers 500 for everything routed below it.
+
+Why: the audit round's JSON error envelope shipped as three arguments after a
+lint fix, and every request past the API 404 — the whole frontend — answered
+500 with the request object logged as the error
+(.cc-suite/audits/audit-20261023-140500-findings.md, review round).
+
+At review: when a diff adds or edits an error-handling middleware, count the
+parameters; three is a bug, not a style choice. Keep the unused trailing next
+even when the handler always responds itself.
