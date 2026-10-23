@@ -30,9 +30,12 @@ originalText}。server 端 decodeBlock 恰好按这个联合产出,但两侧只�
 - 目录与章内容经 fetchJson 打真路由,钉 web 类型声明了的形状(键集、
   判别 kind、可空性、ipaSlots 是数组);值级形状仍归 api.test.ts;
 - image 臂经 buildEpub 真上传到达——契约套件的上传路径也第一次过 EPUB;
-- 409 家族:既有 gated-import 夹具一次盖住 TOC / 章内容 / 导出
+- 409 家族:既有 gated-import 夹具一次盖住章内容 / 导出
   (downloadAttachment 的 catchable ApiError;409 走 !ok 抛错路径,
-  不触 DOM 半边,无需浏览器 stub);
+  不触 DOM 半边,无需浏览器 stub)。盘点时发现 TOC 路由并不守
+  respondIfNotReady——importing 期间答 200 + 空 chapters(ReadingPage
+  的 Promise.all 反正被章 409 打断,无害的不对称);按 pinned-not-endorsed
+  钉实际行为,不改服务端;
 - 500 打嗝:关掉夹具词典制造真 500,fetchWordLookup 必须抛
   (ApiError 500),不得返回 null;错误中间件的 console.error 就地 spy。
 
@@ -46,9 +49,11 @@ originalText}。server 端 decodeBlock 恰好按这个联合产出,但两侧只�
    (buildEpub 已有确定性夹具):一本一章小书、一段夹一张图,走真上传。
    非句块 decodeBlock 是一条 else 臂,code / raw 已由样本书钉住形状,
    image 臂补的是 kind 值本身。
-3. **409 钉家族不钉孤例**。既有 409 测试只钉了 progress 一条路由,而它
-   的名字写的是 "reading routes"——在同一个门上把 TOC / 章内容 / 导出
-   加盖进去,让名字与断言一致;progress 的既有断言不动。
+3. **409 钉家族不钉孤例,TOC 的不设防也是契约**。既有 409 测试只钉了
+   progress 一条路由,而它的名字写的是 "reading routes"——在同一个门上
+   把章内容 / 导出加盖进去;TOC 实测不守 respondIfNotReady(200 + 空
+   chapters),不为其改服务端,把实际行为连注释一起钉住;progress 的
+   既有断言不动。
 4. **500 用真断连制造,不 mock fetch**。词典就是 better-sqlite3,close
    后取词抛 SqliteError → Express 错误中间件 → 500 JSON,这条链本身就是
    被钉的契约。afterEach 的二次 close 在实例上用 no-op 顶替,不动共享

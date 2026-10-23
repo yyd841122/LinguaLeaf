@@ -258,6 +258,27 @@ describe("fetchWordLookup over the real server (wordLookup.ts)", () => {
     const entry = await fetchWordLookup("iguana");
     expect(entry).toBeNull();
   });
+
+  it("throws a server hiccup — a 500 must not read as the word being missing", async () => {
+    await startStack();
+    const errorSpy = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    // A real break, not a mocked fetch: the closed SQLite handle makes the
+    // next lookup throw into the error middleware's 500 JSON envelope.
+    // The instance's close is stubbed so the shared afterEach's second
+    // close stays a no-op.
+    stack!.dictionary.close();
+    (stack!.dictionary as { close: () => void }).close = () => {};
+    try {
+      await expect(fetchWordLookup("book")).rejects.toMatchObject({
+        status: 500,
+        body: { error: "internal server error" },
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
 });
 
 describe("reading progress over the real server (readingProgress.ts)", () => {
@@ -311,6 +332,26 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
     // deterministic: reading routes answer only settled books.
     await expect(fetchReadingProgress(created.id)).rejects.toMatchObject({
       status: 409,
+    });
+    // The rest of the guarded family: chapter content through fetchJson,
+    // the export through downloadAttachment's catchable failure (its !ok
+    // path throws before any DOM work).
+    await expect(
+      fetchJson(`/api/books/${created.id}/chapters/1`)
+    ).rejects.toMatchObject({ status: 409 });
+    await expect(
+      downloadAttachment(`/api/books/${created.id}/export`)
+    ).rejects.toMatchObject({ status: 409 });
+    // The TOC route carries no not-ready guard — it answers the importing
+    // row with an empty chapter list. Pinned, not endorsed: this is the
+    // test that flips if the TOC joins respondIfNotReady.
+    const importing = await fetchJson<{ chapters: unknown[] }>(
+      `/api/books/${created.id}`
+    );
+    expect(importing).toMatchObject({
+      id: created.id,
+      status: "importing",
+      chapters: [],
     });
     releaseGate();
     await waitForShelfBook(app, created.id, "ready");
