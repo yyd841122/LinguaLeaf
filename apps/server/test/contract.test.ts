@@ -9,7 +9,11 @@ import type { Express } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
-import { createImportingBook, setImportProgress } from "../src/book-store.js";
+import {
+  createImportingBook,
+  setImportProgress,
+  settleImport,
+} from "../src/book-store.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
@@ -320,19 +324,16 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
   });
 
   it("409s the guarded reading routes and lets the TOC answer the importing row", async () => {
-    let releaseGate!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      releaseGate = resolve;
-    });
-    const { app } = await startStack({
-      translate: async (sentences) => {
-        await gate;
-        return sentences.map(() => null);
-      },
-    });
-    const created = await uploadBook(sampleBookPath);
-    // The book sits in 'importing' until the gate opens, so the 409 is
-    // deterministic: reading routes answer only settled books.
+    const { app, database } = await startStack();
+    // The pipeline's writes land inside the POST now (ticket 02), so no
+    // real import can be caught mid-flight; the importing row is planted
+    // the way a crashed import leaves it — created, never settled. The
+    // clients below still meet it over the real wire.
+    const created = {
+      id: createImportingBook(database, "A Seamed Book", "markdown", null),
+    };
+    // Reading routes answer only settled books, so the 409s are
+    // deterministic.
     await expect(fetchReadingProgress(created.id)).rejects.toMatchObject({
       status: 409,
     });
@@ -356,7 +357,8 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
       status: "importing",
       chapters: [],
     });
-    releaseGate();
+    // The task's own settle write (the store seam) opens everything up.
+    settleImport(database, created.id, "ready", null);
     await waitForShelfBook(app, created.id, "ready");
   });
 });
@@ -646,11 +648,13 @@ describe("chapter translation over the real server (chapterTranslation.ts)", () 
     // The chapter payload's appended state fields — the wire contract the
     // reading page's button and poll key on (appended to the existing
     // chapter envelope; the blocks' exact key sets keep their own pins).
+    // Since ticket 02 a fresh import rests at untranslated — the state the
+    // reading page's 翻译本章 button renders for.
     const before = await fetchJson<Record<string, unknown>>(
       `/api/books/${id}/chapters/2`
     );
     expect(before).toMatchObject({
-      translationStatus: "translated",
+      translationStatus: "untranslated",
       translationPercent: null,
       translationError: null,
     });
@@ -717,7 +721,10 @@ describe("the shelf labels every stage the wire can carry (importCopy.ts)", () =
       "markdown",
       null
     );
-    for (const stage of ["annotating", "translating", "saving"] as const) {
+    // The translating stage left the wire with on-demand translation
+    // (ticket 02) — the loop below is the union's executable half, so the
+    // narrowed union is exactly what it walks.
+    for (const stage of ["annotating", "saving"] as const) {
       setImportProgress(database, bookId, stage, null);
       const shelf = await fetchJson<{
         books: Array<{ id: number; importStage: string | null }>;

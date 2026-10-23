@@ -38,10 +38,10 @@ if (!dictionary.prepare("SELECT 1 FROM dict_words LIMIT 1").get()) {
     "Dictionary is empty — run the dict:import-* scripts (see README) to fill the IPA line and lookup API."
   );
 }
-// The DeepSeek translator fills the translation line at import time. No
-// API key configured means no translator: books import with empty
-// translation lines until .env is set up (see README), same stance as the
-// empty dictionary above.
+// The DeepSeek translator serves the reading page's on-demand chapter
+// translation (ADR-0004) — imports never touch the network (ticket 02).
+// No API key configured means the 翻译本章 trigger answers 409 until .env
+// is set up (see README); imports are unaffected either way.
 // The .env file the launcher loaded (`--env-file-if-exists=.env` is
 // CWD-relative), inspected for the two misconfiguration classes that fail
 // silently later: shell values overriding the file, and glued-on non-ASCII
@@ -66,7 +66,7 @@ if (envDrift.dirty.length > 0) {
 const deepSeekConfig = deepSeekConfigFromEnv();
 if (!deepSeekConfig) {
   console.warn(
-    "DEEPSEEK_API_KEY is not set — imported books will have empty translation lines (see README)."
+    "DEEPSEEK_API_KEY is not set — 翻译本章 is unavailable until .env is set up (see README); imports are unaffected."
   );
 } else {
   console.log(

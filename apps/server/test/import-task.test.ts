@@ -3,33 +3,32 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database.js";
 import {
   createImportingBook,
+  findBookRow,
   loadChapter,
   type BlockData,
 } from "../src/book-store.js";
 import { drainImportTasks, runImportTask } from "../src/import/import-task.js";
 import type { PreparedBook } from "../src/import/pipeline.js";
-import type { Translator } from "../src/translate/translator.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
-import { createFakeTranslator } from "./fixtures/translator.js";
 
 // Direct import-task tests: no HTTP, no polling — the task's promise is
-// the whole wait. The api suite pins translation at the wire (progress,
-// failed sentences, the shelf); these pin what only the join itself can
-// see: translations landing on sentence blocks in a chapter where
-// sentences and non-sentence blocks interleave (.scratch/translation-join/).
+// the whole wait. Since on-demand-translation (ticket 02) the task holds
+// no network stage; these pin what only the task level can see: blocks
+// landing in reading order with IPA filled and every translation NULL for
+// the chapter route to fill on demand, and the tracker drain shutdown
+// leans on.
 
-const joinProbeBook: PreparedBook = {
-  title: "Join Probe",
+const probeBook: PreparedBook = {
+  title: "Probe Book",
   format: "markdown",
   chapters: [
     {
       title: "Mixed",
       level: 2,
       items: [
-        { kind: "paragraph", text: "Alpha begins here. Beta follows it." },
+        { kind: "paragraph", text: "He wrote a book. Beta follows it." },
         { kind: "image", text: "A map of the islands" },
         { kind: "code", text: "npm test" },
-        { kind: "paragraph", text: "Gamma closes the chapter." },
       ],
     },
     {
@@ -40,34 +39,23 @@ const joinProbeBook: PreparedBook = {
   ],
 };
 
-// One seeded import run both tests observe: the translator records the
-// sentence texts it was handed, the store holds what the join wrote.
-async function runJoinProbe(
-  database: Database.Database,
-  dictionary: ReturnType<typeof createFixtureDictionary>,
-  translator: Translator
-): Promise<number> {
-  const bookId = createImportingBook(
-    database,
-    joinProbeBook.title,
-    joinProbeBook.format,
-    null
-  );
-  await runImportTask(
-    { database, dictionary, translator },
-    bookId,
-    joinProbeBook
-  );
-  return bookId;
-}
+// The translation column read straight from storage, so the NULL claim is
+// about the persisted rows, not a derived view of them.
+const storedTranslations = (database: Database.Database): (string | null)[] =>
+  (
+    database
+      .prepare("SELECT translation_text AS translationText FROM blocks")
+      .all() as { translationText: string | null }[]
+  ).map((row) => row.translationText);
 
-// The join's read shape: only sentence blocks carry a translation line.
-const translationTexts = (blocks: BlockData[] | undefined): (string | null)[] =>
+// The sentence blocks' translation lines in reading order; non-sentence
+// kinds do not carry one.
+const translationLines = (blocks: BlockData[] | undefined): (string | null)[] =>
   (blocks ?? []).map((block) =>
     block.kind === "sentence" ? block.translationText : null
   );
 
-describe("runImportTask (the translation join, direct)", () => {
+describe("runImportTask (direct)", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof createFixtureDictionary>;
 
@@ -81,101 +69,66 @@ describe("runImportTask (the translation join, direct)", () => {
     dictionary.close();
   });
 
-  it("lands translations on sentence blocks by order, not by raw block index", async () => {
-    const translator = createFakeTranslator((batch) =>
-      batch.map((sentence) => `译:${sentence}`)
+  it("lands blocks in reading order with IPA filled and translations NULL", async () => {
+    const bookId = createImportingBook(
+      database,
+      probeBook.title,
+      probeBook.format,
+      null
     );
-    const bookId = await runJoinProbe(database, dictionary, translator);
+    await runImportTask({ database, dictionary }, bookId, probeBook);
 
     const mixed = loadChapter(database, bookId, 1);
     expect(
       mixed?.blocks.map((block) => [block.kind, block.originalText])
     ).toEqual([
-      ["sentence", "Alpha begins here."],
+      ["sentence", "He wrote a book."],
       ["sentence", "Beta follows it."],
       ["image", "A map of the islands"],
       ["code", "npm test"],
-      ["sentence", "Gamma closes the chapter."],
     ]);
-    // A raw-index join would put 译:Alpha on the image; the sentence-order
-    // join leaves the interleaved non-sentence blocks null instead.
-    expect(translationTexts(mixed?.blocks)).toEqual([
-      "译:Alpha begins here.",
-      "译:Beta follows it.",
-      null,
-      null,
-      "译:Gamma closes the chapter.",
-    ]);
-    // The negative half read from storage, not derived: a helper that maps
-    // non-sentence blocks to null proves nothing, so the persisted
-    // translation_text is what asserts (audit 2026-10-23).
-    const nonSentenceRows = database
-      .prepare(
-        "SELECT translation_text AS translationText FROM blocks WHERE kind != 'sentence'"
+    // IPA lands as before (the fixture dictionary knows he/wrote/a/book);
+    // the unknown sentence's slots stay blank, not absent.
+    expect(
+      mixed?.blocks.map((block) =>
+        block.kind === "sentence" ? block.ipaText : null
       )
-      .all() as { translationText: string | null }[];
-    expect(nonSentenceRows).toEqual([
-      { translationText: null },
-      { translationText: null },
-    ]);
+    ).toEqual(["hi roʊt ə bʊk", "", null, null]);
+    expect(translationLines(mixed?.blocks)).toEqual([null, null, null, null]);
+    expect(mixed).toMatchObject({ translationStatus: "untranslated" });
 
-    expect(translationTexts(loadChapter(database, bookId, 2)?.blocks)).toEqual([
-      "译:Delta stands alone.",
+    expect(translationLines(loadChapter(database, bookId, 2)?.blocks)).toEqual([
+      null,
+    ]);
+    // The NULL is the stored reality across every block row.
+    expect(storedTranslations(database)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
     ]);
   });
 
-  it("drainImportTasks resolves only after the in-flight task settles", async () => {
-    let release!: (value: (string | null)[]) => void;
-    const translator = createFakeTranslator(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        })
-    );
+  it("routes through the task tracker: the shutdown drain settles with the import", async () => {
     const bookId = createImportingBook(
       database,
-      joinProbeBook.title,
-      joinProbeBook.format,
+      probeBook.title,
+      probeBook.format,
       null
     );
-    const task = runImportTask(
-      { database, dictionary, translator },
-      bookId,
-      joinProbeBook
-    );
-
-    let drained = false;
-    const draining = drainImportTasks(10_000).then(() => {
-      drained = true;
+    await runImportTask({ database, dictionary }, bookId, probeBook);
+    // The task body no longer awaits anything (the network stage left in
+    // ticket 02), but it still runs through the tracker — the shutdown
+    // drain stays honest with the now-instant task. chapter-task.test.ts
+    // pins the holding half of the same drain with a task that can still
+    // be held mid-flight.
+    await drainImportTasks(0);
+    expect(findBookRow(database, bookId)).toMatchObject({
+      status: "ready",
+      import_stage: null,
+      import_percent: null,
+      import_error: null,
     });
-    await Promise.resolve();
-    // Still in flight: the drain holds (its grace deadline is far away).
-    expect(drained).toBe(false);
-
-    // All four sentences, first round: a partial release would strand the
-    // retry rounds on fresh unresolved batches.
-    release([
-      "译:Alpha begins here.",
-      "译:Beta follows it.",
-      "译:Gamma closes the chapter.",
-      "译:Delta stands alone.",
-    ]);
-    await task;
-    await draining;
-    expect(drained).toBe(true);
-  });
-
-  it("hands the translator exactly the sentence texts in book order", async () => {
-    const translator = createFakeTranslator((batch) =>
-      batch.map((sentence) => `译:${sentence}`)
-    );
-    await runJoinProbe(database, dictionary, translator);
-
-    expect(translator.calls.flat()).toEqual([
-      "Alpha begins here.",
-      "Beta follows it.",
-      "Gamma closes the chapter.",
-      "Delta stands alone.",
-    ]);
   });
 });

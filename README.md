@@ -33,18 +33,18 @@ npm run dev
 
 可复制 `.env.example` 为 `.env`，配置 `HOST`、`PORT`、`DATABASE_PATH`；默认监听 `0.0.0.0:3000`，数据库保存在仓库根目录的 `.data/lingualeaf.sqlite`，相对数据库路径以仓库根目录为基准。`GET /api/health` 检查 SQLite 连接并返回 `{"status":"ok"}`。
 
-## 译文行（DeepSeek 翻译）
+## 译文（DeepSeek 按章翻译）
 
-导入时服务端通过 OpenAI 兼容接口调用 DeepSeek，把全书句子分批翻译成自然意译的简体中文，写入译文行（标注在导入时一次性生成，见 ADR 0002）。在 `.env` 中配置：
+导入只注音标（ADR 0004）：书入库即有音标与句子块，译文为空。译文按章按需生成——在阅读页对某一章点「翻译本章」，服务端通过 OpenAI 兼容接口调用 DeepSeek，把该章句子分批翻译成自然意译的简体中文。在 `.env` 中配置：
 
 ```sh
-DEEPSEEK_API_KEY=sk-...            # 必填；不配置则照常导入，译文行留空
+DEEPSEEK_API_KEY=sk-...            # 必填；不配置则导入不受影响，「翻译本章」触发被服务端 409 拒绝
 DEEPSEEK_BASE_URL=https://api.deepseek.com   # 可选，任何 OpenAI 兼容端点
 DEEPSEEK_MODEL=deepseek-flash      # 可选
 DEEPSEEK_TRANSLATION_PROMPT=...    # 可选，整体替换内置的翻译风格提示词（自然意译、学习者友好）
 ```
 
-行为约定：句子按批（每批 20 句）请求而非逐句单发；请求失败自动重试（失败句单独重试，最多 3 轮）；最终翻译失败的句子译文留空，导入正常完成。`DEEPSEEK_API_KEY` 缺失时导入不受影响（与词库为空时音标行留空同一姿态）。
+行为约定：句子按批（每批 20 句）请求而非逐句单发；请求失败自动重试（失败句单独重试，最多 3 轮）；最终翻译失败的句子译文留空，章节照常标记为已翻译。已翻译的章可再次点「重新翻译」覆盖旧译文。
 
 ```sh
 npm run build

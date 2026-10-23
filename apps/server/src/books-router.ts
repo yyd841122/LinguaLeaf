@@ -127,22 +127,20 @@ export function createBooksRouter(
         throw error;
       }
       // Parsing was the synchronous half; nothing has been stored yet, so a
-      // rejected file leaves no trace. The annotation work (IPA, transla-
-      // tion) runs as a background task on the created row: the POST
-      // answers 202 immediately (a long book's translation could hold a
-      // request for hours — beyond ADR 0002's envelope), and the shelf's
-      // status carries the progress (ticket 08).
+      // rejected file leaves no trace. The annotation work (sentence split
+      // and IPA) runs as a background task on the created row: the POST
+      // answers 202 immediately, and the shelf's status carries the
+      // progress (ticket 08). Translation is not the import's business
+      // anymore (ADR-0004 ticket 02): chapters land untranslated and the
+      // chapter trigger route owns the network work, which is why the
+      // translator is not handed to the import task here.
       const bookId = createImportingBook(
         database,
         prepared.title,
         prepared.format,
         prepared.pageCount ?? null
       );
-      void runImportTask(
-        { database, dictionary, translator: translator ?? null },
-        bookId,
-        prepared
-      );
+      void runImportTask({ database, dictionary }, bookId, prepared);
       const row = findBookRow(database, bookId);
       if (!row) {
         // Unreachable in practice — the row was just inserted — but keeps

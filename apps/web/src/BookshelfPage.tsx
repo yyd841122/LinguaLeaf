@@ -221,7 +221,7 @@ export function BookshelfPage() {
           />
         </label>
         {/* Disabled for the whole import lifecycle, not just the POST:
-            a translating book means the shelf is still busy. */}
+            an importing book means the shelf is still busy. */}
         <button type="submit" disabled={importing || hasImporting}>
           {importing || hasImporting ? "导入中…" : "导入"}
         </button>
@@ -261,10 +261,9 @@ export function BookshelfPage() {
                 )}
                 <span className="meta">
                   {book.status === "importing"
-                    ? `导入中 · ${importStageLabel(
-                        book.importStage,
-                        book.importPercent
-                      )}${isLongPdf(book) ? " · 预计耗时较长" : ""}`
+                    ? `导入中 · ${importStageLabel(book.importStage)}${
+                        isLongPdf(book) ? " · 预计耗时较长" : ""
+                      }`
                     : book.status === "failed"
                       ? `导入失败：${book.importError ?? "未知错误"}`
                       : `${book.format} · 导入于 ${formatImportedAt(book.createdAt)}${

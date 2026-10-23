@@ -8,7 +8,6 @@ import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
-import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 import { buildEpub, createSampleEpub } from "./fixtures/epub.js";
 
@@ -20,13 +19,10 @@ describe("EPUB import through the HTTP API seam", () => {
   beforeEach(() => {
     database = openDatabase(":memory:");
     dictionary = createFixtureDictionary();
-    // The translator rides along to prove the annotation pipeline behind the
-    // EPUB front half is the same one Markdown uses (ticket 07).
-    app = createApp(
-      database,
-      dictionary,
-      createFakeTranslator((batch) => batch.map((sentence) => `译:${sentence}`))
-    );
+    // The IPA pins prove the annotation pipeline behind the EPUB front
+    // half is the same one Markdown uses (ticket 07). The translation
+    // lines stay NULL: importing no longer translates (ticket 02).
+    app = createApp(database, dictionary);
   });
   afterEach(() => {
     database.close();
@@ -173,7 +169,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "He wrote the book on quiet reading.",
         ipaSlots: ["hi", "roʊt", "", "bʊk", "", "", ""],
         ipaText: "hi roʊt  bʊk",
-        translationText: "译:He wrote the book on quiet reading.",
+        translationText: null,
       },
       {
         position: 2,
@@ -181,7 +177,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "A second paragraph keeps the spine honest.",
         ipaSlots: ["ə", "", "", "", "", "", ""],
         ipaText: "ə",
-        translationText: "译:A second paragraph keeps the spine honest.",
+        translationText: null,
       },
     ]);
 
@@ -196,7 +192,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "A picture sits between two sentences.",
         ipaSlots: ["ə", "", "", "", "", ""],
         ipaText: "ə",
-        translationText: "译:A picture sits between two sentences.",
+        translationText: null,
       },
       { position: 2, kind: "image", originalText: "A red dot" },
       {
@@ -205,7 +201,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "The story continues after the picture.",
         ipaSlots: ["", "", "", "", "", ""],
         ipaText: "",
-        translationText: "译:The story continues after the picture.",
+        translationText: null,
       },
       { position: 4, kind: "image", originalText: "A blue square" },
       {
@@ -214,7 +210,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "The square closes the chapter.",
         ipaSlots: ["", "", "", "", ""],
         ipaText: "",
-        translationText: "译:The square closes the chapter.",
+        translationText: null,
       },
     ]);
 

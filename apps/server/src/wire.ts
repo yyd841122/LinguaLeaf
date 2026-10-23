@@ -22,10 +22,12 @@ export type BookStatus = "importing" | "ready" | "failed";
 export type TranslationStatus =
   "untranslated" | "translating" | "translated" | "failed";
 
-// The stages the bookshelf shows while importing. IPA lookups and insert
-// are effectively instant; only 'translating' lasts long enough to be
-// watched, so it is the one stage that carries a percent.
-export type ImportStage = "annotating" | "translating" | "saving";
+// The stages the bookshelf shows while importing. The translating stage
+// left the pipeline with on-demand translation (ADR-0004, ticket 02) — an
+// import is IPA lookups plus the block insert, effectively instant, so no
+// stage carries a percent anymore. books.import_percent stays on the wire
+// for rows older imports wrote; the startup sweep clears it.
+export type ImportStage = "annotating" | "saving";
 
 // Stable machine codes for the upload rejections the shelf branches on.
 // The body's `error` field stays reader-facing prose the server may reword;

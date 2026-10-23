@@ -41,8 +41,10 @@ const importingBook: ShelfBook = {
   format: "markdown",
   createdAt: "2026-10-18T00:00:00.000Z",
   status: "importing",
-  importStage: "translating",
-  importPercent: 40,
+  // The only stages the wire can still carry (ticket 02 removed the
+  // translating stage); imports no longer carry a percent.
+  importStage: "annotating",
+  importPercent: null,
   importError: null,
   pageCount: null,
   progress: null,
@@ -151,13 +153,13 @@ describe("BookshelfPage import states (ticket 08)", () => {
     );
   }
 
-  it("shows a book importing with stage and percent, then readable when ready", async () => {
+  it("shows a book importing with its stage, then readable when ready", async () => {
     renderShelf();
     await uploadFile("held-book.md");
 
-    // The shelf reflects the importing row: progress with stage + percent,
-    // title not yet a link, delete stays available.
-    expect(screen.getByText(/导入中 · 翻译译文 40%/)).toBeTruthy();
+    // The shelf reflects the importing row: stage label, title not yet a
+    // link, delete stays available.
+    expect(screen.getByText(/导入中 · 标注生成中/)).toBeTruthy();
     expect(screen.queryByRole("link", { name: "A Held Book" })).toBeNull();
     expect(
       screen.getByRole("button", { name: "删除《A Held Book》" })
@@ -186,17 +188,18 @@ describe("BookshelfPage import states (ticket 08)", () => {
   it("labels every known stage and falls back for an unknown one", async () => {
     renderShelf();
     await uploadFile("held-book.md");
-    expect(screen.getByText(/导入中 · 翻译译文 40%/)).toBeTruthy();
+    expect(screen.getByText(/导入中 · 标注生成中/)).toBeTruthy();
 
-    // annotating carries no percent; an unknown stage — unreachable per
-    // the shared union, but the books.import_stage TEXT column cannot rule
-    // it out — shows a neutral label. Pinned, not endorsed: this is the
-    // test that flips if the neutral-label guard is deliberately removed.
+    // saving carries the shelf's other stage; an unknown stage —
+    // unreachable per the shared union, but the books.import_stage TEXT
+    // column cannot rule it out — shows a neutral label. Pinned, not
+    // endorsed: this is the test that flips if the neutral-label guard is
+    // deliberately removed.
     shelfState.books = [
-      { ...importingBook, importStage: "annotating", importPercent: null },
+      { ...importingBook, importStage: "saving", importPercent: null },
     ];
     await actAdvance(2000);
-    expect(screen.getByText(/导入中 · 标注生成中/)).toBeTruthy();
+    expect(screen.getByText(/导入中 · 保存书籍/)).toBeTruthy();
 
     shelfState.books = [
       { ...importingBook, importStage: "packing", importPercent: null },
@@ -217,9 +220,7 @@ describe("BookshelfPage import states (ticket 08)", () => {
     ];
     renderShelf();
     await actAdvance(0);
-    expect(
-      screen.getByText(/导入中 · 翻译译文 40% · 预计耗时较长/)
-    ).toBeTruthy();
+    expect(screen.getByText(/导入中 · 标注生成中 · 预计耗时较长/)).toBeTruthy();
   });
 
   it("does not hint at exactly 300 pages, or for books without a page count", async () => {
@@ -234,7 +235,7 @@ describe("BookshelfPage import states (ticket 08)", () => {
     ];
     renderShelf();
     await actAdvance(0);
-    expect(screen.getByText(/导入中 · 翻译译文 40%/)).toBeTruthy();
+    expect(screen.getByText(/导入中 · 标注生成中/)).toBeTruthy();
     expect(screen.queryByText(/预计耗时较长/)).toBeNull();
 
     // A settled long PDF is no longer waiting on anything.
@@ -255,7 +256,7 @@ describe("BookshelfPage import states (ticket 08)", () => {
     expect(screen.queryByText(/预计耗时较长/)).toBeNull();
   });
 
-  it("disables the import button while any book is translating", async () => {
+  it("disables the import button while a book is importing", async () => {
     renderShelf();
     expect(screen.getByRole("button", { name: "导入" })).not.toBeDisabled();
 

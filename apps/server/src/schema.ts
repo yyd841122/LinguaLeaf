@@ -2,10 +2,10 @@ import type Database from "better-sqlite3";
 
 // Schema for the import pipeline. `ipa_slots` (JSON array, one entry per
 // word token) and `ipa_text` (flat fallback line) are filled at import time
-// from the local dictionary (ticket 03); `translation_text` is filled at
-// import time by the configured translator (ticket 04) and stays NULL for
-// sentences whose translation failed or when none is configured. NULL
-// renders as an empty placeholder in the reading view. `reading_progress`
+// from the local dictionary (ticket 03); `translation_text` starts NULL —
+// importing stopped translating (ADR-0004, on-demand-translation ticket
+// 02) — and is filled per chapter by the reading page's 翻译本章 trigger.
+// NULL renders as an empty placeholder in the reading view. `reading_progress`
 // (ticket 05) remembers where each book was last read — one row per book,
 // server-side so reopening on any device restores the position. Blocks of
 // kind 'image' (ticket 07) hold the illustration's alt text in

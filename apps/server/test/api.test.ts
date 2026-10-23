@@ -6,6 +6,11 @@ import type Database from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
+import {
+  createImportingBook,
+  persistBook,
+  settleImport,
+} from "../src/book-store.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 
@@ -598,7 +603,12 @@ describe("failed imports at the HTTP API seam", () => {
 
 // The importing state is visible to more than the shelf: reading routes
 // must refuse a book whose chapters do not exist yet, and a reader deleting
-// a book mid-import must win over the task still in flight (ticket 08).
+// an importing book must win over whatever the task had left behind
+// (ticket 08). The pipeline no longer has a slow stage to hold a real
+// import open (on-demand-translation ticket 02 — the task's writes land
+// inside the POST), so the mid-flight state is planted the way a crashed
+// import leaves it: an importing row without its settle, which the startup
+// sweep fails on the next boot.
 describe("import lifecycle guards at the HTTP API seam", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof openDictionary>;
@@ -612,28 +622,14 @@ describe("import lifecycle guards at the HTTP API seam", () => {
     dictionary.close();
   });
 
-  // An app whose translator never answers until the test releases it.
-  function createHeldApp() {
-    let release!: (value: (string | null)[]) => void;
-    const held = new Promise<(string | null)[]>((resolve) => {
-      release = resolve;
-    });
-    const translator = createFakeTranslator(() => held);
-    const app = createApp(database, dictionary, translator);
-    return { app, release: () => release([]) };
-  }
-
-  async function startImport(app: Express): Promise<number> {
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", sampleBookPath);
-    expect(created.status).toBe(202);
-    return created.body.id as number;
-  }
-
   it("answers 409 for reading routes while a book is still importing", async () => {
-    const { app, release } = createHeldApp();
-    const bookId = await startImport(app);
+    const app = createApp(database, dictionary);
+    const bookId = createImportingBook(
+      database,
+      "The Way of the Test",
+      "markdown",
+      null
+    );
 
     // The book itself is listable with its live status and no chapters.
     const book = await request(app).get(`/api/books/${bookId}`);
@@ -654,23 +650,60 @@ describe("import lifecycle guards at the HTTP API seam", () => {
       ).status
     ).toBe(409);
 
-    release();
-    await waitForShelfBook(app, bookId, "ready");
+    // The task's own settle writes — driven here through the store, the
+    // seam the task uses — are what open the same routes.
+    persistBook(database, bookId, [
+      {
+        title: "One",
+        level: 1,
+        blocks: [
+          {
+            kind: "sentence",
+            text: "One.",
+            ipaSlots: null,
+            ipaText: null,
+            translation: null,
+          },
+        ],
+      },
+    ]);
+    settleImport(database, bookId, "ready", null);
     expect(
       (await request(app).get(`/api/books/${bookId}/chapters/1`)).status
     ).toBe(200);
   });
 
-  it("deleting an importing book wins over the in-flight task", async () => {
-    const { app, release } = createHeldApp();
-    const bookId = await startImport(app);
+  it("deleting an importing book takes the row and any half-built content with it", async () => {
+    const app = createApp(database, dictionary);
+    const bookId = createImportingBook(
+      database,
+      "The Way of the Test",
+      "markdown",
+      null
+    );
+    // Half-built content — the shape a crash mid-import leaves, and the
+    // thing a task still in flight must not resurrect. The store's
+    // never-resurrect guards stay pinned at the store level
+    // (book-store.test.ts); the delete route itself carries no not-ready
+    // guard, so a mid-import delete answers 204.
+    persistBook(database, bookId, [
+      {
+        title: "One",
+        level: 1,
+        blocks: [
+          {
+            kind: "sentence",
+            text: "One.",
+            ipaSlots: null,
+            ipaText: null,
+            translation: null,
+          },
+        ],
+      },
+    ]);
 
     const deleted = await request(app).delete(`/api/books/${bookId}`);
     expect(deleted.status).toBe(204);
-
-    release();
-    // Let the task's continuation run out (retry rounds, persist attempt).
-    await new Promise((resolve) => setTimeout(resolve, 20));
 
     expect((await request(app).get("/api/books")).body.books).toEqual([]);
     for (const table of ["books", "chapters", "blocks"]) {
@@ -682,7 +715,14 @@ describe("import lifecycle guards at the HTTP API seam", () => {
   });
 });
 
-describe("translation at the HTTP API seam", () => {
+// The import no longer translates (on-demand-translation ticket 02):
+// chapters land with IPA and NULL translations, and even a translator
+// assembled for the chapter route is never dialed at import time. The
+// 留空-on-retry semantics that once governed the import's batches moved to
+// the chapter task — pinned in the chapter-translation describe below —
+// and the translating stage's shelf progress went with it, so the old
+// percent pins have no subject left.
+describe("the import leaves the translation work to the chapter route", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof openDictionary>;
 
@@ -695,7 +735,7 @@ describe("translation at the HTTP API seam", () => {
     dictionary.close();
   });
 
-  it("fills the translation lines of an imported book from the injected translator", async () => {
+  it("lands every chapter with NULL translation lines, never dialing the assembled translator", async () => {
     const translator = createFakeTranslator((batch) =>
       batch.map((sentence) => `译:${sentence}`)
     );
@@ -703,156 +743,17 @@ describe("translation at the HTTP API seam", () => {
 
     const bookId = await importSampleBookReady(app);
 
+    // Not one sentence went out at import time — the translator belongs to
+    // the chapter trigger route alone.
+    expect(translator.calls).toEqual([]);
     const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
     expect(red.status).toBe(200);
+    expect(red.body).toMatchObject({ translationStatus: "untranslated" });
     expect(
       red.body.blocks.map(
         (block: { translationText: string | null }) => block.translationText
       )
-    ).toEqual([
-      "译:Mr. Gupta woke early.",
-      "译:The morning was quiet, and the sea was calm.",
-      "译:He wrote a failing test first.",
-      "译:Then he made it pass!",
-    ]);
-  });
-
-  it("leaves a sentence empty when its translation fails, and still imports the book", async () => {
-    const translator = createFakeTranslator((batch) =>
-      batch.map((sentence) =>
-        sentence.includes("failing") ? null : `译:${sentence}`
-      )
-    );
-    const app = createApp(database, dictionary, translator);
-
-    const bookId = await importSampleBookReady(app);
-
-    const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
-    const blocks = red.body.blocks as {
-      originalText: string;
-      translationText: string | null;
-    }[];
-    expect(
-      blocks.find((block) => block.originalText.includes("failing"))
-    ).toMatchObject({ translationText: null });
-    expect(
-      blocks.find((block) => block.originalText.startsWith("Mr."))
-    ).toMatchObject({ translationText: "译:Mr. Gupta woke early." });
-  });
-
-  it("reports translating progress on the shelf while the translator works", async () => {
-    // Hold the first batch: the task is mid-flight and stays there until
-    // the test releases it, which pins the visible importing state.
-    let release: ((value: (string | null)[]) => void) | undefined;
-    const held = new Promise<(string | null)[]>((resolve) => {
-      release = resolve;
-    });
-    const translator = createFakeTranslator(() => held);
-    const app = createApp(database, dictionary, translator);
-
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", sampleBookPath);
-    expect(created.status).toBe(202);
-    // The task's synchronous prefix (IPA pass, first batch dispatch) has
-    // run by the time the POST answers; the percent starts at 0.
-    expect(created.body).toMatchObject({
-      status: "importing",
-      importStage: "translating",
-      importPercent: 0,
-      importError: null,
-    });
-
-    // The shelf — what the bookshelf polls — carries the same live state.
-    const importing = await request(app).get("/api/books");
-    expect(importing.body.books[0]).toMatchObject({
-      status: "importing",
-      importStage: "translating",
-      importPercent: 0,
-    });
-
-    release?.([]);
-    await waitForShelfBook(app, created.body.id, "ready");
-    const shelf = await request(app).get("/api/books");
-    expect(shelf.body.books[0]).toMatchObject({
-      status: "ready",
-      importStage: null,
-      importPercent: null,
-      importError: null,
-    });
-  });
-
-  it("moves the shelf percent forward batch by batch, never backwards, and settles ready", async () => {
-    // 45 sentences make three 20-sentence batches; every batch parks until
-    // the test releases it, so each percent step is observed through the
-    // same shelf endpoint the bookshelf polls. Spec (修订语义): 单调不降,
-    // an honest ceiling below 100 until the loop itself returns, and the
-    // final state ready — the 99→saving→ready tail is synchronous, so the
-    // ceiling itself never shows on the shelf.
-    const paragraphs = Array.from(
-      { length: 45 },
-      (_, index) =>
-        `Sentence ${index + 1} opens with a quiet walk beside the river.`
-    );
-    // Each parked batch resolves with its own translations when released,
-    // so every batch succeeds on the first round and the retry machinery
-    // stays out of the way of the percent steps under test.
-    const releases: (() => void)[] = [];
-    const translator = createFakeTranslator(
-      (sentences) =>
-        new Promise((resolve) => {
-          releases.push(() =>
-            resolve(sentences.map((sentence) => `译:${sentence}`))
-          );
-        })
-    );
-    const app = createApp(database, dictionary, translator);
-
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", Buffer.from(paragraphs.join("\n\n")), {
-        filename: "forty-five-sentences.md",
-        contentType: "text/markdown",
-      });
-    expect(created.status).toBe(202);
-    // The task's synchronous prefix ran before the POST answered: the
-    // first batch is parked and the percent sits at its floor.
-    expect(created.body).toMatchObject({
-      status: "importing",
-      importStage: "translating",
-      importPercent: 0,
-    });
-    expect(releases).toHaveLength(1);
-
-    const observed: number[] = [created.body.importPercent as number];
-    for (;;) {
-      // Release the parked batch: the task updates the percent and parks
-      // on the next batch (or settles ready) in microtasks, before the
-      // request below can reach the server.
-      releases.shift()!();
-      const shelf = await request(app).get("/api/books");
-      const book = shelf.body.books[0] as {
-        status: string;
-        importPercent: number | null;
-      };
-      if (book.status !== "importing") {
-        // Only the settled success may end the loop; a failed import would
-        // otherwise slip through here and die later as a confusing
-        // waitForShelfBook timeout.
-        expect(book.status).toBe("ready");
-        expect(book).toMatchObject({ importPercent: null });
-        break;
-      }
-      observed.push(book.importPercent as number);
-    }
-
-    // One step per released batch plus the floor: worked example, 20 of 45
-    // sentences done rounds to 44%, 40 of 45 to 89%. The sorted-equal
-    // check is the spec's 单调不降 stated on the observed sequence.
-    expect(observed).toEqual([0, 44, 89]);
-    expect([...observed].sort((a, b) => a - b)).toEqual(observed);
-    expect(Math.max(...observed)).toBeLessThan(100);
-    await waitForShelfBook(app, created.body.id, "ready");
+    ).toEqual([null, null, null, null]);
   });
 
   it("imports with empty translation lines when no translator is configured", async () => {
@@ -882,10 +783,11 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
     dictionary.close();
   });
 
-  // A translator whose armed calls park until released: the import's own
-  // batches (which ran before the test arms the gate) flow through, the
-  // chapter task's first batch parks — its synchronous prefix has run by
-  // the time the trigger POST answers, so a release is queued.
+  // A translator whose armed calls park until released: since ticket 02
+  // the import makes no translator calls at all, so every call this fake
+  // sees belongs to the chapter task — arm before triggering, and the
+  // chapter's first batch parks (its synchronous prefix has run by the
+  // time the trigger POST answers, so a release is queued).
   function gatedChapterTranslator() {
     let parked = false;
     const releases: (() => void)[] = [];
@@ -982,29 +884,50 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
   });
 
   it("409s the trigger on a book that is not ready, joining the reading family", async () => {
-    // Hold the import's first batch: the book sits importing, and the
-    // trigger must get the same 409 the reading routes answer.
-    let releaseImport: (() => void) | undefined;
-    const translator = createFakeTranslator(
-      (sentences) =>
-        new Promise((resolve) => {
-          releaseImport = () =>
-            resolve(sentences.map((sentence) => `译:${sentence}`));
-        })
+    // The pipeline no longer has a slow stage to hold a real import open
+    // (ticket 02), so the importing state is planted the way a crashed
+    // import leaves it — an importing row with no settle. The trigger must
+    // get the same 409 the reading routes answer.
+    const app = createApp(
+      database,
+      dictionary,
+      createFakeTranslator((batch) => batch.map((s) => `译:${s}`))
     );
-    const app = createApp(database, dictionary, translator);
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", sampleBookPath);
-    expect(created.status).toBe(202);
+    const bookId = createImportingBook(
+      database,
+      "The Way of the Test",
+      "markdown",
+      null
+    );
 
     const triggered = await request(app).post(
-      `/api/books/${created.body.id}/chapters/1/translate`
+      `/api/books/${bookId}/chapters/1/translate`
     );
     expect(triggered.status).toBe(409);
 
-    releaseImport?.();
-    await waitForShelfBook(app, created.body.id, "ready");
+    // The task's own settle writes open the route: a claimed chapter comes
+    // back in its brand-new translating state.
+    persistBook(database, bookId, [
+      {
+        title: "One",
+        level: 1,
+        blocks: [
+          {
+            kind: "sentence",
+            text: "One.",
+            ipaSlots: null,
+            ipaText: null,
+            translation: null,
+          },
+        ],
+      },
+    ]);
+    settleImport(database, bookId, "ready", null);
+    const triggered2 = await request(app).post(
+      `/api/books/${bookId}/chapters/1/translate`
+    );
+    expect(triggered2.status).toBe(202);
+    expect(triggered2.body).toMatchObject({ translationStatus: "translating" });
   });
 
   it("409s the trigger when no translator is configured", async () => {
@@ -1015,9 +938,11 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
       `/api/books/${bookId}/chapters/2/translate`
     );
     expect(triggered.status).toBe(409);
-    // The chapter stays as it was: a refused trigger claims nothing.
+    // The chapter stays as it was: a refused trigger claims nothing. Since
+    // ticket 02 a fresh import's resting state is untranslated — every
+    // book starts here until its chapters are translated on demand.
     const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
-    expect(chapter.body.translationStatus).toBe("translated");
+    expect(chapter.body.translationStatus).toBe("untranslated");
   });
 
   it("leaves an exhausted sentence empty after three rounds and still settles translated", async () => {
@@ -1041,11 +966,11 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
       const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
       expect(chapter.body.translationStatus).toBe("translated");
     });
-    // The task's own calls are the last three (the import's already
-    // settled before the trigger): chapter 2 holds four sentences — round
-    // 1 requests all four, rounds 2 and 3 re-request only the failed one,
-    // then the rounds run out.
-    expect(translator.calls.slice(-3)).toEqual([
+    // Every call is the chapter task's (the import makes none since
+    // ticket 02): chapter 2 holds four sentences — round 1 requests all
+    // four, rounds 2 and 3 re-request only the failed one, then the
+    // rounds run out.
+    expect(translator.calls).toEqual([
       [
         "Mr. Gupta woke early.",
         "The morning was quiet, and the sea was calm.",
@@ -1095,14 +1020,10 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
         contentType: "text/markdown",
       });
     expect(created.status).toBe(202);
-    // The import's own three batches parked; keep releasing until the book
-    // settles with all 45 sentences in chapter 1 — then the chapter task's
-    // batches park the same way.
-    await vi.waitFor(async () => {
-      releases.splice(0).forEach((release) => release());
-      const shelf = await request(app).get("/api/books");
-      expect(shelf.body.books[0]?.status).toBe("ready");
-    });
+    // The import settles inside the POST now (ticket 02) — it parks
+    // nothing — so the 45 sentences sit in chapter 1 before the trigger;
+    // the chapter task's batches park exactly as the shelf's used to.
+    await waitForShelfBook(app, created.body.id, "ready");
 
     const triggered = await request(app).post(
       `/api/books/${created.body.id}/chapters/1/translate`

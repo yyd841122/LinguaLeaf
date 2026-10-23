@@ -19,11 +19,12 @@ export type PreparedBook = {
 };
 
 // The annotation pass that is pure CPU: sentence splitting plus per-word
-// IPA lookups against the local dictionary (all fast). Translation — the
-// slow, network-bound pass — happens later in the import task
-// (import-task.ts), so its progress can be reported per batch. The rows it
-// returns are the book store's write shape (BlockRow): one module computes
-// them, one module inserts them.
+// IPA lookups against the local dictionary (all fast). It is the import's
+// only annotation work — the network-bound translation left the pipeline
+// in on-demand-translation (ADR-0004 ticket 02), so every block lands with
+// its translation NULL and the chapter route fills it on demand. The rows
+// it returns are the book store's write shape (BlockRow): one module
+// computes them, one module inserts them.
 export function buildChapterBlocks(
   book: PreparedBook,
   dictionary: Dictionary

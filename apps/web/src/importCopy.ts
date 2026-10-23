@@ -10,26 +10,22 @@ import type { ImportErrorCode, ImportStage } from "../../server/src/wire";
 
 export const IMPORT_STAGE_LABELS: Record<ImportStage, string> = {
   annotating: "标注生成中",
-  translating: "翻译译文",
   saving: "保存书籍",
 };
 
-// An importing row's stage label; the percent rides on the label with a
-// space ('translating' is the only stage that carries one).
-export function importStageLabel(
-  stage: ImportStage | null,
-  percent: number | null
-): string {
-  const label =
-    stage === null
-      ? ""
-      : Object.hasOwn(IMPORT_STAGE_LABELS, stage)
-        ? IMPORT_STAGE_LABELS[stage]
-        : // Unreachable per the shared union; the books.import_stage TEXT
-          // column cannot rule it out. Pinned, not endorsed — the
-          // unknown-stage test in bookshelf.test.tsx owns this flip.
-          "处理中";
-  return percent === null ? label : `${label} ${percent}%`;
+// An importing row's stage label. The percent left with the translating
+// stage (on-demand-translation ticket 02): no remaining stage writes one,
+// so the label has nothing to append — the wire's importPercent field
+// stays for rows older imports left behind.
+export function importStageLabel(stage: ImportStage | null): string {
+  return stage === null
+    ? ""
+    : Object.hasOwn(IMPORT_STAGE_LABELS, stage)
+      ? IMPORT_STAGE_LABELS[stage]
+      : // Unreachable per the shared union; the books.import_stage TEXT
+        // column cannot rule it out. Pinned, not endorsed — the
+        // unknown-stage test in bookshelf.test.tsx owns this flip.
+        "处理中";
 }
 
 // The size mentions in the first two copy lines mirror the server's

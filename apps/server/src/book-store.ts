@@ -228,22 +228,17 @@ export function persistBook(
       "INSERT INTO blocks (chapter_id, position, kind, original_text, ipa_slots, ipa_text, translation_text) VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
     chapters.forEach((chapter, chapterIndex) => {
-      // The initial status derives by the same block-presence rule as the
-      // migration's backfill (spec decision 5): a chapter holding sentence
-      // blocks has been through the import translation and counts
-      // translated, so freshly imported books never flip to untranslated.
-      const translationStatus = chapter.blocks.some(
-        (block) => block.kind === "sentence"
-      )
-        ? "translated"
-        : "untranslated";
+      // Fresh chapters always start untranslated (ADR-0004 ticket 02): the
+      // import no longer translates, so block presence implies nothing.
+      // The migration's one-time backfill keeps its own block-presence
+      // rule for rows that predate the change (schema.ts).
       const chapterId = Number(
         insertChapter.run(
           bookId,
           chapterIndex + 1,
           chapter.title,
           chapter.level,
-          translationStatus
+          "untranslated"
         ).lastInsertRowid
       );
       let position = 0;

@@ -5,7 +5,6 @@ import type Database from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
-import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 import {
   chapterTextPages,
@@ -22,15 +21,13 @@ describe("PDF import through the HTTP API seam", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof createFixtureDictionary>;
   let app: Express;
-  let translator: ReturnType<typeof createFakeTranslator>;
 
   beforeEach(() => {
     database = openDatabase(":memory:");
     dictionary = createFixtureDictionary();
-    translator = createFakeTranslator((batch) =>
-      batch.map((sentence) => `译:${sentence}`)
-    );
-    app = createApp(database, dictionary, translator);
+    // No translator: importing stopped translating (ticket 02) — the
+    // translation lines land NULL and the chapter route fills them later.
+    app = createApp(database, dictionary);
   });
   afterEach(() => {
     database.close();
@@ -74,7 +71,9 @@ describe("PDF import through the HTTP API seam", () => {
         page.split("\n").map((sentence) => ({
           kind: "sentence",
           originalText: sentence,
-          translationText: `译:${sentence}`,
+          // Import annotates, never translates (ticket 02): the lines
+          // wait NULL for the chapter route.
+          translationText: null,
         }))
       )
     );
@@ -97,7 +96,6 @@ describe("PDF import through the HTTP API seam", () => {
     await expectChapterPages(bookId, 1, pages.slice(0, 2));
     await expectChapterPages(bookId, 2, pages.slice(2, 4));
     await expectChapterPages(bookId, 3, pages.slice(4, 6));
-    expect(translator.calls.length).toBeGreaterThan(0);
   });
 
   it.each([
@@ -317,7 +315,7 @@ describe("PDF import through the HTTP API seam", () => {
     ).toBe(3);
   });
 
-  it("rejects an image-only PDF with 422, creating no book and no translation work", async () => {
+  it("rejects an image-only PDF with 422 and creates no book row", async () => {
     const created = await request(app)
       .post("/api/books")
       .attach("file", await createScannedPdf({ pages: 4 }), {
@@ -330,7 +328,6 @@ describe("PDF import through the HTTP API seam", () => {
 
     const shelf = await request(app).get("/api/books");
     expect(shelf.body.books).toEqual([]);
-    expect(translator.calls).toEqual([]);
   });
 
   it("treats a median page of exactly the threshold as text and one below as scanned", async () => {
@@ -444,7 +441,7 @@ describe("PDF import through the HTTP API seam", () => {
     expect(shelf.body.books).toEqual([]);
   });
 
-  it("imports a text-layer PDF into a ready book with merged sentences and translations", async () => {
+  it("imports a text-layer PDF into a ready book with merged sentences", async () => {
     const created = await request(app)
       .post("/api/books")
       .attach("file", await createSamplePdf(), {
@@ -484,10 +481,9 @@ describe("PDF import through the HTTP API seam", () => {
       "The third page closes the sample with a final calm remark.",
       "The book ends the way it began, in plain and legible English sentences ready for annotation.",
     ]);
-    // The shared annotation pipeline ran: the fake translator rode along.
-    expect(chapter.body.blocks[0].translationText).toBe(
-      "译:The first page opens the sample book with a steady voice."
-    );
+    // The shared annotation pipeline ran — but only the local half: the
+    // translation line waits NULL for the chapter route (ticket 02).
+    expect(chapter.body.blocks[0].translationText).toBeNull();
     expect(chapter.body.blocks[0].kind).toBe("sentence");
   });
 });

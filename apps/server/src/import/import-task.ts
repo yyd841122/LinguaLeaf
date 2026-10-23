@@ -1,7 +1,5 @@
 import type Database from "better-sqlite3";
 import type { Dictionary } from "../dict/dictionary.js";
-import type { Translator } from "../translate/translator.js";
-import { translateChapters } from "../translate/batch.js";
 import { buildChapterBlocks, type PreparedBook } from "./pipeline.js";
 import { persistBook, setImportProgress, settleImport } from "../book-store.js";
 import { createTaskTracker } from "../task-tracker.js";
@@ -22,18 +20,20 @@ export function drainImportTasks(graceMs: number): Promise<void> {
   return importTasks.drain(graceMs);
 }
 
-// Runs one book's annotation pass to completion. The Translator contract is
-// total (it reports failures as nulls, never throws), so the only errors
-// reaching the catch are genuine faults; they fail the book's import with
-// a clear shelf message instead of leaving it importing forever. This
-// function never throws — the router fires it without awaiting. All writes
-// go through the book store, whose guards keep a deleted (or already
-// settled) book from being resurrected by a late tick.
+// Runs one book's annotation pass to completion: sentence splitting and
+// per-word IPA from the local dictionary, then the block insert. Network
+// translation left the pipeline in on-demand-translation (ADR-0004 ticket
+// 02) — chapters land untranslated and the reading page's 翻译本章 trigger
+// owns that work — so nothing here awaits anymore. The task still routes
+// through the tracker and keeps the settle guards, so the shutdown drain
+// and a deleted (or already settled) book stay handled by the same shape
+// as before. This function never throws — the router fires it without
+// awaiting. All writes go through the book store, whose guards keep a
+// deleted book from being resurrected by a late tick.
 export function runImportTask(
   deps: {
     database: Database.Database;
     dictionary: Dictionary;
-    translator?: Translator | null;
   },
   bookId: number,
   book: PreparedBook
@@ -45,51 +45,13 @@ async function runImportTaskInner(
   deps: {
     database: Database.Database;
     dictionary: Dictionary;
-    translator?: Translator | null;
   },
   bookId: number,
   book: PreparedBook
 ): Promise<void> {
-  const { database, dictionary, translator } = deps;
+  const { database, dictionary } = deps;
   try {
     const chapterBlocks = buildChapterBlocks(book, dictionary);
-    // One traversal holds the sentence-block references. The translator's
-    // input is their text at the call site below, and the write-back
-    // mutates these same objects, so the join back into chapterBlocks —
-    // and into persistBook — is object identity, not a second filtered
-    // count that could drift from this one (.scratch/translation-join/).
-    const sentenceBlocksByChapter = chapterBlocks.map((blocks) =>
-      blocks.filter((block) => block.kind === "sentence")
-    );
-    const sentenceCount = sentenceBlocksByChapter.flat().length;
-
-    if (translator && sentenceCount > 0) {
-      setImportProgress(database, bookId, "translating", 0);
-      const translationsByChapter = await translateChapters(
-        translator,
-        sentenceBlocksByChapter.map((blocks) =>
-          blocks.map((block) => block.text)
-        ),
-        (done) => {
-          // Retry rounds re-process sentences that already counted, so the
-          // slot counter can reach total while work is still in flight;
-          // 99 is the honest ceiling until the loop itself returns.
-          setImportProgress(
-            database,
-            bookId,
-            "translating",
-            Math.min(99, Math.round((done / sentenceCount) * 100))
-          );
-        }
-      );
-      sentenceBlocksByChapter.forEach((blocks, chapterIndex) => {
-        const translations = translationsByChapter[chapterIndex] ?? [];
-        blocks.forEach((block, index) => {
-          block.translation = translations[index] ?? null;
-        });
-      });
-    }
-
     setImportProgress(database, bookId, "saving", null);
     const persisted = persistBook(
       database,

@@ -9,9 +9,10 @@ import type { Translator } from "./translate/translator.js";
 import { createBooksRouter } from "./books-router.js";
 import { createLookupRouter } from "./dict/lookup-router.js";
 
-// The translator is the import pipeline's optional annotation source: like
-// the dictionary, absent means imports complete with the annotation line
-// empty (translation here, IPA there).
+// The translator is the chapter route's optional network source (ADR-0004):
+// absent means the 翻译本章 trigger answers 409 until a key is configured.
+// It is deliberately NOT handed to the import task — imports stopped
+// translating in on-demand-translation ticket 02.
 export function createApp(
   database: Database.Database,
   dictionary: Dictionary,

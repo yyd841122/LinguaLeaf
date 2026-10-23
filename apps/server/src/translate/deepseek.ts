@@ -26,8 +26,9 @@ export type DeepSeekConfig = {
 
 // Reads the DeepSeek settings from the given environment (process.env by
 // default). Returns null when no API key is configured: the caller then
-// imports without a translator, exactly like running with an empty
-// dictionary — books import, translation lines stay empty.
+// assembles no translator, and the reading page's 翻译本章 trigger answers
+// 409 until a key shows up. Imports never needed this anyway — they
+// stopped translating in on-demand-translation ticket 02.
 export function deepSeekConfigFromEnv(
   env: Record<string, string | undefined> = process.env
 ): DeepSeekConfig | null {

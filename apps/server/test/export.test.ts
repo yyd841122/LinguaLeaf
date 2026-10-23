@@ -7,8 +7,16 @@ import type Database from "better-sqlite3";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import { normalizeLookupToken } from "../src/dict/dictionary.js";
+import {
+  createImportingBook,
+  findChapterRow,
+  listChapters,
+  listSentenceBlocks,
+  persistBook,
+  saveSentenceTranslations,
+  settleImport,
+} from "../src/book-store.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
-import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 
 const sampleBookPath = fileURLToPath(
@@ -32,8 +40,9 @@ function clickWord(document: Document, word: string): void {
 }
 
 // Shared by every export describe: a book on the shelf through the real
-// upload seam, with the fake translator deciding which sentences get a
-// translation line at all.
+// upload seam. Translations are no longer an import concern (ticket 02) —
+// tests that need lines write them through the store, the same seam the
+// chapter translation task uses (writeTranslations below).
 // Every dictionary createExportApp opens, closed in each describe's
 // afterEach — discarded handles leaked WAL files past the test run (audit
 // 2026-10-23).
@@ -41,18 +50,36 @@ const openDictionaries: ReturnType<typeof createFixtureDictionary>[] = [];
 
 function createExportApp(
   database: Database.Database,
-  translate?: (
-    sentences: string[]
-  ) => (string | null)[] | Promise<(string | null)[]>,
   prepareDictionary?: (
     dictionary: ReturnType<typeof createFixtureDictionary>
   ) => void
 ) {
-  const translator = translate ? createFakeTranslator(translate) : undefined;
   const dictionary = createFixtureDictionary();
   openDictionaries.push(dictionary);
   prepareDictionary?.(dictionary);
-  return createApp(database, dictionary, translator ?? null);
+  return createApp(database, dictionary);
+}
+
+// Lands translation rows through the chapter task's own write path: every
+// sentence the map translates (null otherwise) gets its row, so export
+// tests shape exactly which lines exist without dragging the import
+// pipeline back into the translation business.
+function writeTranslations(
+  database: Database.Database,
+  bookId: number,
+  translate: (sentence: string) => string | null
+): void {
+  for (const head of listChapters(database, bookId)) {
+    const chapter = findChapterRow(database, bookId, head.position);
+    if (!chapter) continue;
+    saveSentenceTranslations(
+      database,
+      listSentenceBlocks(database, chapter.id).map((block) => ({
+        id: block.id,
+        translation: translate(block.text),
+      }))
+    );
+  }
 }
 
 async function importSampleBookReady(
@@ -108,10 +135,12 @@ describe("GET /api/books/:id/export", () => {
     const translated = new Map([
       ["He wrote a failing test first.", "他先写了失败的测试。"],
     ]);
-    const app = createExportApp(database, (sentences) =>
-      sentences.map((sentence) => translated.get(sentence) ?? null)
-    );
     const bookId = await importSampleBookReady(app);
+    writeTranslations(
+      database,
+      bookId,
+      (sentence) => translated.get(sentence) ?? null
+    );
 
     const response = await request(app).get(`/api/books/${bookId}/export`);
     expect(response.status).toBe(200);
@@ -192,30 +221,40 @@ describe("GET /api/books/:id/export", () => {
   });
 
   it("answers 409 while the book is still importing, 200 once ready", async () => {
-    let release!: (value: (string | null)[]) => void;
-    const held = new Promise<(string | null)[]>((resolve) => {
-      release = resolve;
-    });
-    const app = createExportApp(database, () => held);
-    const created = await request(app)
-      .post("/api/books")
-      .attach("file", sampleBookPath);
-    expect(created.status).toBe(202);
-
-    const importing = await request(app).get(
-      `/api/books/${created.body.id}/export`
+    // The pipeline's writes land inside the POST now (ticket 02), so the
+    // importing row is planted the way a crashed import leaves it.
+    const bookId = createImportingBook(
+      database,
+      "The Way of the Test",
+      "markdown",
+      null
     );
+
+    const importing = await request(app).get(`/api/books/${bookId}/export`);
     expect(importing.status).toBe(409);
     expect(importing.body).toEqual({ error: "book is not ready for reading" });
 
-    // Resolve with []: every sentence's translation misses (null), matching
-    // what the existing held-translator tests release with. resolve() with
-    // no argument would hand the task undefined and crash the import.
-    release([]);
-    await waitForShelfBook(app, created.body.id, "ready");
-    expect(
-      (await request(app).get(`/api/books/${created.body.id}/export`)).status
-    ).toBe(200);
+    // The task's own settle write (the store seam) opens the route.
+    persistBook(database, bookId, [
+      {
+        title: "One",
+        level: 1,
+        blocks: [
+          {
+            kind: "sentence",
+            text: "One.",
+            ipaSlots: null,
+            ipaText: null,
+            translation: null,
+          },
+        ],
+      },
+    ]);
+    settleImport(database, bookId, "ready", null);
+    await waitForShelfBook(app, bookId, "ready");
+    expect((await request(app).get(`/api/books/${bookId}/export`)).status).toBe(
+      200
+    );
   });
 
   it("carries a Chinese title in the RFC 5987 filename* form, sanitized for filesystems", async () => {
@@ -245,7 +284,7 @@ describe("GET /api/books/:id/export", () => {
     // translation carries a live script tag, and the book below puts the
     // word into a sentence — so the hostile text rides the embedded
     // vocabulary JSON, not just the escaped markup.
-    const poisonApp = createExportApp(database, undefined, (dictionary) => {
+    const poisonApp = createExportApp(database, (dictionary) => {
       dictionary
         .prepare(
           "INSERT INTO dict_words (word, phonetic, translation) VALUES (?, ?, ?)"
@@ -552,17 +591,15 @@ describe("exported file behavior (jsdom)", () => {
   }
 
   it("toggles each annotation line independently and remembers the state", async () => {
-    // A translated import: the translation toggle needs real lines, and the
-    // visibility assertions below need all three line kinds present (audit
-    // 2026-10-23 — the old run imported no translations and checked body
-    // classes, so swapping a display rule would have passed unnoticed).
-    const translatedApp = createExportApp(database, (sentences) =>
-      sentences.map((sentence) => `译:${sentence}`)
-    );
-    const bookId = await importSampleBookReady(translatedApp);
-    const html = (
-      await request(translatedApp).get(`/api/books/${bookId}/export`)
-    ).text;
+    // A fully translated book: the translation toggle needs real lines, and
+    // the visibility assertions below need all three line kinds present
+    // (audit 2026-10-23 — the old run imported no translations and checked
+    // body classes, so swapping a display rule would have passed
+    // unnoticed). The lines land through the chapter task's write path —
+    // importing itself no longer translates (ticket 02).
+    const bookId = await importSampleBookReady(app);
+    writeTranslations(database, bookId, (sentence) => `译:${sentence}`);
+    const html = (await request(app).get(`/api/books/${bookId}/export`)).text;
 
     // Computed visibility, not class names: the toggle's contract is what
     // the reader sees.

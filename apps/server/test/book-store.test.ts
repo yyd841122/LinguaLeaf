@@ -99,11 +99,13 @@ describe("book-store", () => {
 
     // Sentence blocks decode to the three annotation lines with their
     // slots as an array; other kinds carry only their text.
+    // A fresh import's chapters all start untranslated (ADR-0004 ticket
+    // 02): the import no longer translates, whatever the blocks hold.
     expect(loadChapter(database, id, 1)).toEqual({
       position: 1,
       title: "One",
       level: 1,
-      translationStatus: "translated",
+      translationStatus: "untranslated",
       translationPercent: null,
       translationError: null,
       blocks: [
@@ -191,9 +193,7 @@ describe("book-store", () => {
     expect(
       persistBook(database, id, [{ title: "One", level: null, blocks: [] }])
     ).toBe(false);
-    expect(() =>
-      setImportProgress(database, id, "translating", 40)
-    ).not.toThrow();
+    expect(() => setImportProgress(database, id, "saving", 40)).not.toThrow();
     expect(() => settleImport(database, id, "ready", null)).not.toThrow();
     expect(findBookRow(database, id)).toBeUndefined();
     expect(database.prepare("SELECT * FROM blocks").all()).toEqual([]);
@@ -203,7 +203,7 @@ describe("book-store", () => {
     const ready = createImportingBook(database, "Settled", "markdown", null);
     persistBook(database, ready, [{ title: "One", level: null, blocks: [] }]);
     settleImport(database, ready, "ready", null);
-    setImportProgress(database, ready, "translating", 40);
+    setImportProgress(database, ready, "saving", 40);
     const row = findBookRow(database, ready);
     expect(row?.status).toBe("ready");
     expect(row?.import_stage).toBeNull();
@@ -226,7 +226,7 @@ describe("book-store", () => {
 
   it("settleImport clears the live progress columns and records the failure", () => {
     const id = createImportingBook(database, "A Title", "markdown", null);
-    setImportProgress(database, id, "translating", 40);
+    setImportProgress(database, id, "saving", 40);
     settleImport(database, id, "failed", INTERRUPTED_MESSAGE);
     expect(findBookRow(database, id)).toMatchObject({
       status: "failed",
@@ -249,7 +249,7 @@ describe("book-store", () => {
     );
     settleImport(database, finished, "ready", null);
     const second = createImportingBook(database, "Second", "epub", null);
-    setImportProgress(database, second, "translating", 10);
+    setImportProgress(database, second, "saving", 10);
 
     expect(failInterruptedImports(database)).toBe(2);
     // A second sweep finds nothing left to settle.
@@ -348,11 +348,14 @@ describe("chapter translation state machine", () => {
     return id;
   }
 
-  it("persistBook derives each chapter's initial status from its blocks", () => {
+  it("persistBook starts every freshly imported chapter untranslated", () => {
     const id = bookWithChapters();
-    // The derivation mirrors the migration's block-presence rule (spec
-    // decision 5): sentence blocks mean the import translation ran.
-    expect(loadChapter(database, id, 1)?.translationStatus).toBe("translated");
+    // The import no longer translates (ADR-0004 ticket 02), so sentence
+    // blocks no longer imply translated — that derivation survives only in
+    // the migration's one-time backfill for rows that predate the change.
+    expect(loadChapter(database, id, 1)?.translationStatus).toBe(
+      "untranslated"
+    );
     expect(loadChapter(database, id, 2)?.translationStatus).toBe(
       "untranslated"
     );
@@ -366,7 +369,7 @@ describe("chapter translation state machine", () => {
       position: 1,
       title: "One",
       level: 1,
-      translation_status: "translated",
+      translation_status: "untranslated",
       translation_error: null,
       translation_percent: null,
     });
