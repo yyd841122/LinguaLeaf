@@ -4,12 +4,40 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 未就绪的书上触发翻译 → 409（并入既有"书未就绪"家族）
-- [ ] 同章翻译进行中再触发 → 409；不同章并行合法（两章同时翻译中互不拒绝）
-- [ ] 触发成功 → 202 + 章载荷；后台完成后章状态 translated 且载荷可见
-- [ ] 单句三轮重试耗尽 → 译文留空、章仍 translated（「留空」语义在新路径重现，不删除）
-- [ ] 章载荷带翻译状态；按钮三态变形 + 百分比轮询在阅读页可见
-- [ ] 契约套件既有断言零删除零改写，新增只追加
-- [ ] 每个实现 commit：typecheck && test && lint 绿（看退出码，不看 tail）；收尾 verify 全绿；基线 = 本票首个实现 commit 之前的 HEAD
+- [x] 未就绪的书上触发翻译 → 409（并入既有"书未就绪"家族）
+- [x] 同章翻译进行中再触发 → 409；不同章并行合法（两章同时翻译中互不拒绝）
+- [x] 触发成功 → 202 + 章载荷；后台完成后章状态 translated 且载荷可见
+- [x] 单句三轮重试耗尽 → 译文留空、章仍 translated（「留空」语义在新路径重现，不删除）
+- [x] 章载荷带翻译状态；按钮三态变形 + 百分比轮询在阅读页可见
+- [x] 契约套件既有断言零删除零改写，新增只追加
+- [x] 每个实现 commit：typecheck && test && lint 绿（看退出码，不看 tail）；收尾 verify 全绿；基线 = 本票首个实现 commit 之前的 HEAD
+
+## Comments
+
+Done in d80e34e（基线 b77f309）。状态机层：chapters 表新增
+translation_status/error/percent 列，存量章按「含句子块即已译」一次性
+推导（spec 决策 5，schema.test 钉迁移与回填恰好跑一次），
+persistBook 同规则给新章定初值。路由层：POST
+`/api/books/:id/chapters/:chapter/translate`——404 → respondIfNotReady
+409 家族 → 章 404 → 未配翻译服务 409（03 灰按钮落地前的诚实行为）→
+beginChapterTranslation 原子 claim（同章 409、跨章并行合法）→ 202 带
+translating 载荷 → `void` 起后台任务。任务层（chapter-task.ts）复用
+translateChapters：20 句一批、三轮重试后留空（api.test 钉 calls 序列
+恰好三轮）、99% 封顶、引用持有对齐写回、永不 throw。载荷层：章载荷
+增发 translationStatus/Percent/Error，TOC 键集不动。阅读页：工具栏第三
+按钮三态（翻译本章 / 翻译中 N% 禁用 / 重新翻译），202 体即时上屏，
+1.5s 轮询跟随生命周期；轮询持续失败显式提示、落地即清
+（CODING_STANDARDS retry-loop 规范）；契约套件纯追加（client 路径 +
+409 双击钉）。
+
+Review pass（Standards+Spec 双轴）in 17a4587：chapters 列清单收敛为
+CHAPTER_COLUMNS 一处（照 BOOK_COLUMNS 规范；listChapters head-only 是
+有据例外）；后台任务在飞集合提取为共享 task-tracker，章节任务补上
+导入任务同款 shutdown 宽限并新增 drain/never-throw 直测
+（chapter-task.test.ts）；ReadingPage 重复 stale-route 守卫提取；
+组件测试桩补 translationError 与真实载荷同形。Spec 轴确认：7 项验收
+全覆盖、契约断言零删除零改写、无实现错误；两处范围外行为（未配服务
+409、双 notice）为规范驱动，保留。门禁：typecheck && test && lint 全绿
+（275 tests，exit 0），verify 全绿（exit 0）。
