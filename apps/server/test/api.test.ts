@@ -46,6 +46,31 @@ async function importSampleBookReady(app: Express): Promise<number> {
   return created.body.id as number;
 }
 
+// The one-chapter content a mid-import crash leaves behind (and what the
+// task persists just before settling): shared by the tests that plant an
+// importing row's leftover, and by the ones that walk the same row to
+// ready through the task's own store seam.
+function plantLeftoverChapter(
+  database: Database.Database,
+  bookId: number
+): void {
+  persistBook(database, bookId, [
+    {
+      title: "One",
+      level: 1,
+      blocks: [
+        {
+          kind: "sentence",
+          text: "One.",
+          ipaSlots: null,
+          ipaText: null,
+          translation: null,
+        },
+      ],
+    },
+  ]);
+}
+
 describe("Markdown import through the HTTP API seam", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof openDictionary>;
@@ -652,21 +677,7 @@ describe("import lifecycle guards at the HTTP API seam", () => {
 
     // The task's own settle writes — driven here through the store, the
     // seam the task uses — are what open the same routes.
-    persistBook(database, bookId, [
-      {
-        title: "One",
-        level: 1,
-        blocks: [
-          {
-            kind: "sentence",
-            text: "One.",
-            ipaSlots: null,
-            ipaText: null,
-            translation: null,
-          },
-        ],
-      },
-    ]);
+    plantLeftoverChapter(database, bookId);
     settleImport(database, bookId, "ready", null);
     expect(
       (await request(app).get(`/api/books/${bookId}/chapters/1`)).status
@@ -686,21 +697,7 @@ describe("import lifecycle guards at the HTTP API seam", () => {
     // never-resurrect guards stay pinned at the store level
     // (book-store.test.ts); the delete route itself carries no not-ready
     // guard, so a mid-import delete answers 204.
-    persistBook(database, bookId, [
-      {
-        title: "One",
-        level: 1,
-        blocks: [
-          {
-            kind: "sentence",
-            text: "One.",
-            ipaSlots: null,
-            ipaText: null,
-            translation: null,
-          },
-        ],
-      },
-    ]);
+    plantLeftoverChapter(database, bookId);
 
     const deleted = await request(app).delete(`/api/books/${bookId}`);
     expect(deleted.status).toBe(204);
@@ -907,21 +904,7 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
 
     // The task's own settle writes open the route: a claimed chapter comes
     // back in its brand-new translating state.
-    persistBook(database, bookId, [
-      {
-        title: "One",
-        level: 1,
-        blocks: [
-          {
-            kind: "sentence",
-            text: "One.",
-            ipaSlots: null,
-            ipaText: null,
-            translation: null,
-          },
-        ],
-      },
-    ]);
+    plantLeftoverChapter(database, bookId);
     settleImport(database, bookId, "ready", null);
     const triggered2 = await request(app).post(
       `/api/books/${bookId}/chapters/1/translate`
