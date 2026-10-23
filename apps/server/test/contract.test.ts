@@ -9,11 +9,13 @@ import type { Express } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
+import { createImportingBook, setImportProgress } from "../src/book-store.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 import { createEncryptedPdf, createScannedPdf } from "./fixtures/pdf.js";
 import { ApiError, fetchJson } from "../../../apps/web/src/api";
+import { IMPORT_STAGE_LABELS } from "../../../apps/web/src/importCopy";
 import { fetchWordLookup } from "../../../apps/web/src/wordLookup";
 import {
   fetchReadingProgress,
@@ -425,5 +427,34 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
       code: "file-too-large",
       error: "uploaded file exceeds the 20 MB limit",
     });
+  });
+});
+
+describe("the shelf labels every stage the wire can carry (importCopy.ts)", () => {
+  it("carries each store-written stage through the shelf with a non-empty label", async () => {
+    const { database } = await startStack();
+    // The store is the authority for what the wire can carry: write every
+    // stage through it, then read the shelf back through the same client
+    // path the component polls. The literals below are checked against the
+    // shared union by setImportProgress's parameter type; the exhaustive
+    // Record<ImportStage, string> in importCopy.ts is the compile half of
+    // this pin.
+    const bookId = createImportingBook(
+      database,
+      "Stage Label Pin",
+      "markdown",
+      null
+    );
+    for (const stage of ["annotating", "translating", "saving"] as const) {
+      setImportProgress(database, bookId, stage, null);
+      const shelf = await fetchJson<{
+        books: Array<{ id: number; importStage: string | null }>;
+      }>("/api/books");
+      const row = shelf.books.find((book) => book.id === bookId);
+      expect(row, `stage ${stage} missing from the shelf`).toBeDefined();
+      expect(row!.importStage).toBe(stage);
+      expect(Object.keys(IMPORT_STAGE_LABELS)).toContain(stage);
+      expect(IMPORT_STAGE_LABELS[stage]).not.toBe("");
+    }
   });
 });
