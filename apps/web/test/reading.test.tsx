@@ -44,6 +44,25 @@ const blocks: Block[] = [
   },
 ];
 
+// The ReadingPage harness shared by the component-boundary describes
+// below: the page mounted at /book/7/2 through the real router.
+function renderReadingPage() {
+  return render(
+    <MemoryRouter initialEntries={["/book/7/2"]}>
+      <Routes>
+        <Route path="/book/:id/:chapter" element={<ReadingPage />} />
+      </Routes>
+    </MemoryRouter>
+  );
+}
+
+// The annotation toggles persist across tests; tests that assert on the
+// rendered lines start from the visible defaults.
+function clearAnnotationToggles() {
+  window.localStorage.removeItem("lingualeaf.showIpa");
+  window.localStorage.removeItem("lingualeaf.showTranslation");
+}
+
 it("renders a sentence without slots as original line, flat IPA line, translation line", () => {
   render(
     <ReadingView chapter={{ position: 2, title: "Chapter One: Red", blocks }} />
@@ -526,16 +545,6 @@ describe("ReadingPage through the component boundary", () => {
     translationText: null,
   }));
 
-  function renderReadingPage() {
-    return render(
-      <MemoryRouter initialEntries={["/book/7/2"]}>
-        <Routes>
-          <Route path="/book/:id/:chapter" element={<ReadingPage />} />
-        </Routes>
-      </MemoryRouter>
-    );
-  }
-
   type Call = { url: string; init: RequestInit };
   function stubBookFetch(putBehavior: "ok" | "fail"): { calls: Call[] } {
     const calls: Call[] = [];
@@ -704,20 +713,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
 
   // Earlier tests in this file persist both toggles as false; these assert
   // on the rendered lines, so each starts from the visible defaults.
-  beforeEach(() => {
-    window.localStorage.removeItem("lingualeaf.showIpa");
-    window.localStorage.removeItem("lingualeaf.showTranslation");
-  });
-
-  function renderReadingPage() {
-    return render(
-      <MemoryRouter initialEntries={["/book/7/2"]}>
-        <Routes>
-          <Route path="/book/:id/:chapter" element={<ReadingPage />} />
-        </Routes>
-      </MemoryRouter>
-    );
-  }
+  beforeEach(clearAnnotationToggles);
 
   // The three state fields mirror the real chapter payload's shape (the
   // stub stubs the wire, not a subset of it); no test scripts "failed"
@@ -1046,20 +1042,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
     },
   ];
 
-  beforeEach(() => {
-    window.localStorage.removeItem("lingualeaf.showIpa");
-    window.localStorage.removeItem("lingualeaf.showTranslation");
-  });
-
-  function renderReadingPage() {
-    return render(
-      <MemoryRouter initialEntries={["/book/7/2"]}>
-        <Routes>
-          <Route path="/book/:id/:chapter" element={<ReadingPage />} />
-        </Routes>
-      </MemoryRouter>
-    );
-  }
+  beforeEach(clearAnnotationToggles);
 
   function stubChapterFetch(payload: Record<string, unknown>): void {
     vi.stubGlobal(
