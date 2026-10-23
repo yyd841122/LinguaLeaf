@@ -30,18 +30,23 @@ export async function runImportTask(
   const { database, dictionary, translator } = deps;
   try {
     const chapterBlocks = buildChapterBlocks(book, dictionary);
-    const sentencesByChapter = chapterBlocks.map((blocks) =>
-      blocks
-        .filter((block) => block.kind === "sentence")
-        .map((block) => block.text)
+    // One traversal holds the sentence-block references. The translator's
+    // input is their text at the call site below, and the write-back
+    // mutates these same objects, so the join back into chapterBlocks —
+    // and into persistBook — is object identity, not a second filtered
+    // count that could drift from this one (.scratch/translation-join/).
+    const sentenceBlocksByChapter = chapterBlocks.map((blocks) =>
+      blocks.filter((block) => block.kind === "sentence")
     );
-    const sentenceCount = sentencesByChapter.flat().length;
+    const sentenceCount = sentenceBlocksByChapter.flat().length;
 
     if (translator && sentenceCount > 0) {
       setImportProgress(database, bookId, "translating", 0);
       const translationsByChapter = await translateChapters(
         translator,
-        sentencesByChapter,
+        sentenceBlocksByChapter.map((blocks) =>
+          blocks.map((block) => block.text)
+        ),
         (done) => {
           // Retry rounds re-process sentences that already counted, so the
           // slot counter can reach total while work is still in flight;
@@ -54,15 +59,11 @@ export async function runImportTask(
           );
         }
       );
-      chapterBlocks.forEach((blocks, chapterIndex) => {
+      sentenceBlocksByChapter.forEach((blocks, chapterIndex) => {
         const translations = translationsByChapter[chapterIndex] ?? [];
-        let sentenceIndex = 0;
-        for (const block of blocks) {
-          if (block.kind === "sentence") {
-            block.translation = translations[sentenceIndex] ?? null;
-            sentenceIndex += 1;
-          }
-        }
+        blocks.forEach((block, index) => {
+          block.translation = translations[index] ?? null;
+        });
       });
     }
 
