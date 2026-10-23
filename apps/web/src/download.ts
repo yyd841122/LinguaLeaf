@@ -1,4 +1,8 @@
 import { ApiError } from "./api";
+import {
+  annotatedBookFilename,
+  cleanFilenameBase,
+} from "@lingualeaf/reading-model";
 
 // Download a file attachment via fetch → Blob rather than a plain link: a
 // 404/409/500 or a network error becomes a catchable failure the shelf can
@@ -13,9 +17,14 @@ export async function downloadAttachment(url: string): Promise<void> {
   const objectUrl = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = objectUrl;
-  anchor.download = sanitizeFilename(
+  // Header names arrive suffixed and normally already clean (the server
+  // named them with annotatedBookFilename); the re-clean keeps a weird
+  // header from planting a name no filesystem accepts. A header that
+  // cleans to nothing falls back to the server's own empty-title name.
+  const cleaned = cleanFilenameBase(
     filenameFromDisposition(response.headers.get("content-disposition"))
   );
+  anchor.download = cleaned.length > 0 ? cleaned : annotatedBookFilename(null);
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -44,20 +53,6 @@ function filenameFromDisposition(disposition: string | null): string | null {
   return captured ? captured.trim() : null;
 }
 
-// The header is normally already clean (the server's annotatedBookFilename
-// does the same pass), but this client cannot verify what a proxy or a
-// future server change puts in the header: one local cleaning pass keeps a
-// weird header from planting a name no filesystem accepts. Keep the rules
-// identical to annotatedBookFilename — the two passes must agree on what a
-// legal name is; variant tests on both sides pin the shared shapes.
-function sanitizeFilename(name: string | null): string {
-  // \p{Cc} covers the control characters no filesystem wants in a name
-  // (written as the Unicode category — a literal \x00 range would trip the
-  // no-control-regex rule).
-  const cleaned = (name ?? "")
-    .replace(/[\\/:*?"<>|\p{Cc}]/gu, "_")
-    // Windows silently drops trailing dots and spaces on save.
-    .replace(/[. ]+$/, "")
-    .trim();
-  return cleaned.length > 0 ? cleaned : "book.html";
-}
+// The cleaning pass is the reading model's cleanFilenameBase — the same
+// rule the server's header naming runs; this module owns only the header
+// parsing above and the suffixed fallback.

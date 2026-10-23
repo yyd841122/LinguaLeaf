@@ -1,11 +1,20 @@
-import type { Dictionary, WordLookup } from "../dict/dictionary.js";
-import { lookupWord, normalizeLookupToken } from "../dict/dictionary.js";
-import { WORD_PATTERN } from "../dict/ipa-line.js";
+import type { Dictionary } from "../dict/dictionary.js";
+import { lookupWord } from "../dict/dictionary.js";
+import {
+  WORD_PATTERN,
+  normalizeLookupToken,
+  segmentOriginal,
+  type WordLookup,
+} from "@lingualeaf/reading-model";
 import type {
   BlockData,
   ChapterData,
   SentenceBlockData,
 } from "../book-store.js";
+
+// The attachment filename rule lives in the reading model; re-exported so
+// the router keeps one import site for the export's naming.
+export { annotatedBookFilename } from "@lingualeaf/reading-model";
 
 // The annotated book file (GLOSSARY.md): a self-contained single-file HTML
 // rendering of everything the library holds for one book — chapter titles,
@@ -25,54 +34,35 @@ const escapeHtml = (text: string): string =>
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 
-// Download filename for the attachment header. The Chinese title survives
-// (it rides in the RFC 5987 filename* form Express generates); what is
-// stripped is what no common filesystem accepts in a name.
-export function annotatedBookFilename(title: string): string {
-  const cleaned = title
-    // \p{Cc} covers the control characters no filesystem wants in a name
-    // (written as the Unicode category — a literal \x00 range would trip
-    // the no-control-regex rule).
-    .replace(/[\\/:*?"<>|\p{Cc}]/gu, "_")
-    // Windows silently drops trailing dots and spaces on save.
-    .replace(/[. ]+$/, "")
-    .trim();
-  return `${cleaned.length > 0 ? cleaned : "book"}.html`;
-}
-
-// One sentence block's three lines (GLOSSARY: 句子块). The original line
-// walks the same word matches the import used to fill the slots, pairing
-// each word with its transcription in a stacked unit (mirror of the app's
-// WordSegments; WORD_PATTERN is shared, not re-declared). Books whose slots
-// predate the pairing — or whose slots no longer match the word count —
-// fall back to the flat IPA line, exactly like the reading view. The
-// translation line is omitted when missing (an intentional difference from
-// the app, which renders an empty placeholder line: the file stays compact).
+// One sentence block's three lines (GLOSSARY: 句子块). The original line is
+// the reading model's shared walk (segmentOriginal): the same word matches
+// the import used to fill the slots, each word paired with its transcription
+// in a stacked unit (the JSX half of the same walk is the app's
+// WordSegments). Books whose slots predate the pairing — or whose slots no
+// longer match the word count — fall back to the flat IPA line, exactly
+// like the reading view. The translation line is omitted when missing (an
+// intentional difference from the app, which renders an empty placeholder
+// line: the file stays compact).
 const renderSentenceBlock = (block: SentenceBlockData): string => {
-  // The slots arrive decoded from the book store (its codec already failed
-  // loudly on a corrupt row); null keeps the flat IPA line as the fallback.
-  const slots = block.ipaSlots;
-  const matches = [...block.originalText.matchAll(WORD_PATTERN)];
-  const slotPaired = slots !== null && slots.length === matches.length;
+  const { paired, segments } = segmentOriginal(
+    block.originalText,
+    block.ipaSlots
+  );
   let original = "";
-  let cursor = 0;
-  matches.forEach((match, index) => {
-    const start = match.index ?? cursor;
-    if (start > cursor) {
-      original += escapeHtml(block.originalText.slice(cursor, start));
+  for (const segment of segments) {
+    if (segment.kind === "text") {
+      original += escapeHtml(segment.text);
+      continue;
     }
-    const word = escapeHtml(match[0]);
-    const ipa = slotPaired ? slots[index] : undefined;
+    const word = escapeHtml(segment.word);
     // The unit stem (ipa-word) stays clickable and visible even when the
     // IPA line is toggled off — only the transcription child hides.
-    original += ipa
-      ? `<span class="ipa-word" data-word="${word}"><span class="ipa-word-text">${word}</span><span class="ipa-word-ipa">${escapeHtml(ipa)}</span></span>`
+    original += segment.ipa
+      ? `<span class="ipa-word" data-word="${word}"><span class="ipa-word-text">${word}</span><span class="ipa-word-ipa">${escapeHtml(segment.ipa)}</span></span>`
       : `<span class="lookup-word" data-word="${word}">${word}</span>`;
-    cursor = start + match[0].length;
-  });
-  original += escapeHtml(block.originalText.slice(cursor));
+  }
 
-  const ipaLine = slotPaired
+  const ipaLine = paired
     ? ""
     : `<p class="ipa-line">${escapeHtml(block.ipaText ?? "")}</p>`;
   const translation = block.translationText?.trim();
@@ -211,14 +201,14 @@ const FILE_SCRIPT = `
 
   // -- 点词查详情 --
   // Words arrive pre-tokenized: every clickable word in the file was
-  // wrapped at export time by the same shared pattern the IPA line uses
-  // (dict/ipa-line.ts WORD_PATTERN — the web's ReadingView keeps its own
-  // synced copy of that pattern for its render-time wrapping; this file
-  // needs no runtime copy because the wrapping is baked into the markup).
-  // What the file does own is the lookup-key fold below: a faithful copy
-  // of the server's normalizeLookupToken (dict/dictionary.ts). Keep the
+  // wrapped at export time by the reading model's shared pattern
+  // (WORD_PATTERN); this file needs no runtime copy because the wrapping
+  // is baked into the markup. What the file does own is the lookup-key
+  // fold below: a faithful copy of the reading model's
+  // normalizeLookupToken (packages/reading-model, lookup-fold). Keep the
   // two identical — a divergent fold makes case and curly-quote variants
-  // silently miss the vocabulary.
+  // silently miss the vocabulary. (The whole script becomes a compiled TS
+  // entry in the reading-model ticket 02.)
   var VOCAB = {};
   try {
     VOCAB = JSON.parse(
@@ -263,9 +253,10 @@ const FILE_SCRIPT = `
     row.hidden = true;
   }
   // Anchor clamp mirroring the app's WordLookupPopup (plain arithmetic on
-  // the click point, no layout reads). The numbers are named after that
-  // component's constants — keep the values identical with them and with
-  // the .lookup-* stylesheet below: three sites move together.
+  // the click point, no layout reads). The values are copies of the
+  // reading model's POPUP_* constants (packages/reading-model,
+  // popup-anchor) — keep them identical with those and with the .lookup-*
+  // stylesheet below until the clamp itself moves into the entry.
   var POPUP_WIDTH_PX = 288;
   var POPUP_MAX_HEIGHT_PX = 256;
   var POPUP_MARGIN_PX = 8;
@@ -352,11 +343,12 @@ const FILE_SCRIPT = `
   });
 
   // -- 发音 --
-  // Browser speech synthesis for the popup's word, mirroring the app's
-  // speakWord (apps/web/src/wordLookup.ts): silent no-op where the API is
-  // missing or partial — an unsupported environment must never turn a
-  // click into an error. Repeated clicks restart from silence. Whether any
-  // sound comes out offline depends on the device's local voices.
+  // Browser speech synthesis for the popup's word: a faithful copy of the
+  // reading model's speakWord (packages/reading-model, speak — shared by
+  // the app's wordLookup). Silent no-op where the API is missing or
+  // partial — an unsupported environment must never turn a click into an
+  // error. Repeated clicks restart from silence. Whether any sound comes
+  // out offline depends on the device's local voices.
   document
     .getElementById("lookup-speak")
     .addEventListener("click", function () {

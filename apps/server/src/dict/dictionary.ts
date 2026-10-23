@@ -2,6 +2,10 @@ import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import DatabaseConstructor from "better-sqlite3";
 import type Database from "better-sqlite3";
+import {
+  normalizeLookupToken,
+  type WordLookup,
+} from "@lingualeaf/reading-model";
 
 // The server-local dictionary: ECDICT rows (trimmed to what lookups need)
 // plus the American IPA table from ipa-dict and the inflection index the
@@ -36,28 +40,15 @@ export function openDictionary(filename: string): Dictionary {
   return dictionary;
 }
 
-export type WordLookup = {
-  word: string;
-  lemma: string | null;
-  ipa: string | null;
-  pos: string | null;
-  translation: string | null;
-};
-
-// Import-time normalization: pure folding only — lower case, curly
-// apostrophes, trimmed. No edge stripping: a source entry that only becomes
-// a word after stripping ("3D" -> "d") must stay out of the dictionary.
-export function normalizeToken(token: string): string {
-  return token.trim().toLowerCase().replaceAll("’", "'");
-}
-
-// Lookup-time normalization for tokens that arrive as clicked text: the
-// import fold, plus the punctuation clinging to the edges ("book,",
-// "'book'"). Internal apostrophes and hyphens survive ("don't",
-// "well-known").
-export function normalizeLookupToken(token: string): string {
-  return normalizeToken(token).replace(/^[^a-z']+|[^a-z']+$/g, "");
-}
+// The lookup-key fold and the entry shape live in the reading model
+// (packages/reading-model) — the annotated book file's popups fold clicked
+// tokens with the same code. Re-exported here so the server's importers and
+// tests keep one import site.
+export {
+  normalizeToken,
+  normalizeLookupToken,
+  type WordLookup,
+} from "@lingualeaf/reading-model";
 
 // The word shapes both importers keep: a single lower-case letter run,
 // possibly joined inside by apostrophes or hyphens. Phrases ("give up"),

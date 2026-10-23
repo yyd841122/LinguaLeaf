@@ -6,6 +6,7 @@ export default tseslint.config(
   {
     ignores: [
       ".output/**",
+      "**/dist/**",
       ".data/**",
       "**/node_modules/**",
       ".claude/**",
@@ -32,6 +33,15 @@ export default tseslint.config(
   },
   {
     files: ["apps/web/src/**/*.{ts,tsx}", "apps/web/test/**/*.{ts,tsx}"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    // The reading-model package is browser-oriented shared code (its own
+    // vitest config runs under the node block above).
+    files: [
+      "packages/reading-model/src/**/*.ts",
+      "packages/reading-model/test/**/*.ts",
+    ],
     languageOptions: { globals: globals.browser },
   }
 );

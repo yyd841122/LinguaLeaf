@@ -1,6 +1,6 @@
 # 01 · reading-model 包落地:五条规则 + WordLookup 类型单源
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -32,3 +32,34 @@ Status: ready-for-agent
 断言零改动通过(行为信封——本票不改变任何线上行为)。
 
 ## Comments
+
+## Comments
+
+Done. Gate held as written: `npm run typecheck && npm test && npm run
+lint` green, and every pre-existing web/server suite passed with zero
+assertion changes — the envelope held (206 old tests untouched, +24
+package unit tests). `npm run verify` also green end-to-end; both build
+outputs resolve the package at runtime (web bundle carries the shared
+speak code, server build imports through the workspace link).
+
+Two shape corrections the first gate run forced (both caught by tests,
+none by hand-waving):
+
+1. The filename rule is NOT one function: the server appends `.html` to
+   a title, the web client must not (header names arrive suffixed). The
+   honest split is `cleanFilenameBase` (the one cleaning pass, both ends)
+   + `annotatedBookFilename` (the server's suffixed attachment name,
+   which doubles as the web's empty-header fallback via
+   `annotatedBookFilename(null)`). A first merge that appended everywhere
+   produced `X.html.html` — the bookshelf + contract download tests
+   caught it before any human would have.
+2. Fold/corner test expectations: `normalizeLookupToken("'book',")` keeps
+   its leading apostrophe (allowed class), and a corner click anchors at
+   top = vertical offset (14), not the margin — both pinned in package
+   tests now.
+
+Also: dist is eslint-ignored (build output carried `window` into
+no-undef), and `pretypecheck`/`pretest` build the package so server
+typecheck/tests always see a fresh dist. Editing package src means the
+next `npm run typecheck`/`npm test`/`npm run build` rebuilds it; bare
+`npm run dev` reads the last-built dist (acceptable — noted for retro).

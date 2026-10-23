@@ -1,13 +1,10 @@
 import type { Dictionary } from "./dictionary.js";
 import { resolveIpa } from "./dictionary.js";
+import { WORD_PATTERN } from "@lingualeaf/reading-model";
 
-// A word is a run of letters, possibly joined inside by apostrophes or
-// hyphens ("don't", "well-written"). Numbers and standalone punctuation are
-// not words: they get no slot on the IPA line. Exported for the annotated-
-// book renderer, which walks the same matches to pair each word with its
-// slot (the web's ReadingView keeps its own synced copy of the pattern).
-export const WORD_PATTERN = /\p{L}+(?:['’-]\p{L}+)*/gu;
-
+// The word rule itself is the reading model's WORD_PATTERN: the import's
+// slots are filled in its match order, and both reading frontends walk the
+// same matches.
 export function tokenizeWords(sentence: string): string[] {
   return sentence.match(WORD_PATTERN) ?? [];
 }

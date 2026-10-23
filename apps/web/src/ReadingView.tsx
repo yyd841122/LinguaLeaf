@@ -1,4 +1,5 @@
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
+import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
 
 export type SentenceBlock = {
   position: number;
@@ -32,49 +33,42 @@ export type ChapterContent = {
   blocks: Block[];
 };
 
-// Same word rule as the server's tokenizer (apps/server/src/dict/ipa-line.ts):
-// slot i of ipaSlots belongs to the i-th match of this pattern in
-// originalText. Keep the two patterns identical or pairing silently breaks.
-const WORD_PATTERN = /\p{L}+(?:['’-]\p{L}+)*/gu;
-
 // Renders the sentence as clickable word units — the word, its IPA beneath
 // when slots pair — so every transcription stays attached to its own word at
 // any line wrap (ticket 03) and every word is a lookup target (ticket 06).
 // Words without a slot, and the punctuation between words, stay as plain
-// text. The surface form rides on data-word for the click delegation.
+// text. The surface form rides on data-word for the click delegation. The
+// walk itself is the reading model's segmentOriginal; this is its JSX half.
 function WordSegments({
-  block,
+  segments,
   showSlots,
 }: {
-  block: SentenceBlock;
+  segments: Segment[];
   showSlots: boolean;
 }) {
-  const segments: ReactNode[] = [];
-  let cursor = 0;
+  const nodes: ReactNode[] = [];
   let index = 0;
-  for (const match of block.originalText.matchAll(WORD_PATTERN)) {
-    const start = match.index ?? cursor;
-    if (start > cursor) {
-      segments.push(block.originalText.slice(cursor, start));
+  for (const segment of segments) {
+    if (segment.kind === "text") {
+      nodes.push(segment.text);
+      continue;
     }
-    const ipa = showSlots ? block.ipaSlots?.[index] : undefined;
-    segments.push(
+    const ipa = showSlots ? segment.ipa : undefined;
+    nodes.push(
       ipa ? (
-        <span className="ipa-word" data-word={match[0]} key={index}>
-          <span className="ipa-word-text">{match[0]}</span>
+        <span className="ipa-word" data-word={segment.word} key={index}>
+          <span className="ipa-word-text">{segment.word}</span>
           <span className="ipa-word-ipa">{ipa}</span>
         </span>
       ) : (
-        <span className="lookup-word" data-word={match[0]} key={index}>
-          {match[0]}
+        <span className="lookup-word" data-word={segment.word} key={index}>
+          {segment.word}
         </span>
       )
     );
-    cursor = start + match[0].length;
     index += 1;
   }
-  segments.push(block.originalText.slice(cursor));
-  return <>{segments}</>;
+  return <>{nodes}</>;
 }
 
 // One sentence block: the original line (words paired with their IPA when
@@ -91,19 +85,20 @@ function SentenceBlockView({
   showIpa: boolean;
   showTranslation: boolean;
 }) {
-  const wordCount = [...block.originalText.matchAll(WORD_PATTERN)].length;
   // Two separate facts: whether slots pair with the words, and whether the
   // reader wants IPA at all. With IPA hidden the word units stay (lookups
-  // work regardless of the toggle) — they just carry no transcription.
-  const slotPaired =
-    block.ipaSlots !== null && block.ipaSlots.length === wordCount;
-  const paired = showIpa && slotPaired;
+  // work regardless of the toggle) — they just carry no transcription. The
+  // shared walk runs once; the flat-line fallback keys off the pairing.
+  const { paired, segments } = segmentOriginal(
+    block.originalText,
+    block.ipaSlots
+  );
   return (
     <div className="sentence-block" data-position={block.position}>
       <p className="original-line">
-        <WordSegments block={block} showSlots={paired} />
+        <WordSegments segments={segments} showSlots={showIpa && paired} />
       </p>
-      {showIpa && !slotPaired ? (
+      {showIpa && !paired ? (
         <p className="ipa-line">{block.ipaText ?? ""}</p>
       ) : null}
       {showTranslation ? (

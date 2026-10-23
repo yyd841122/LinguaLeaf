@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { anchorPopup } from "@lingualeaf/reading-model";
 import { fetchWordLookup, speakWord, type WordLookup } from "./wordLookup";
 import type { ClickPoint, WordClick } from "./ReadingView";
 
@@ -12,41 +13,15 @@ type LookupState =
   | { phase: "missing" }
   | { phase: "error" };
 
-// Keep in sync with .lookup-popup in style.css (18rem wide, 16rem tall at
-// most): the anchoring clamps the popup inside the viewport with plain
-// arithmetic so it never needs layout reads.
-const POPUP_WIDTH_PX = 288;
-const POPUP_MAX_HEIGHT_PX = 256;
-const POPUP_MARGIN_PX = 8;
-// Sit just below the click, nudged left so the pointer lands near the head.
-const POPUP_VERTICAL_OFFSET_PX = 14;
-const POPUP_HORIZONTAL_OFFSET_PX = 20;
-
+// The popup's box constants and the clamp math are the reading model's
+// (packages/reading-model, popup-anchor); the .lookup-* stylesheet in
+// style.css mirrors the box by hand. The anchoring clamps the popup inside
+// the viewport with plain arithmetic so it never needs layout reads.
 function anchoredStyle(point: ClickPoint): CSSProperties {
-  // Below ~19rem of viewport the CSS max-width shrinks the popup; the
-  // clamp must assume the smaller width or the right edge would overshoot.
-  const width = Math.min(
-    POPUP_WIDTH_PX,
-    window.innerWidth - 2 * POPUP_MARGIN_PX
-  );
-  const maxLeft = Math.max(
-    POPUP_MARGIN_PX,
-    window.innerWidth - width - POPUP_MARGIN_PX
-  );
-  const maxTop = Math.max(
-    POPUP_MARGIN_PX,
-    window.innerHeight - POPUP_MAX_HEIGHT_PX - POPUP_MARGIN_PX
-  );
-  return {
-    left: Math.min(
-      Math.max(point.x - POPUP_HORIZONTAL_OFFSET_PX, POPUP_MARGIN_PX),
-      maxLeft
-    ),
-    top: Math.min(
-      Math.max(point.y + POPUP_VERTICAL_OFFSET_PX, POPUP_MARGIN_PX),
-      maxTop
-    ),
-  };
+  return anchorPopup(point, {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
 }
 
 // The word-lookup popup (ticket 06): a small floating card anchored to the

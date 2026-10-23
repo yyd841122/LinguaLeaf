@@ -7,21 +7,24 @@
     "node": ">=22.12.0"
   },
   "workspaces": [
+    "packages/*",
     "apps/*"
   ],
   "scripts": {
     "dev": "node --env-file-if-exists=.env --import tsx --watch apps/server/src/main.ts --dev",
     "dict:import-ecdict": "npm run dict:import-ecdict --workspace @lingualeaf/server --",
     "dict:import-ipa-dict": "npm run dict:import-ipa-dict --workspace @lingualeaf/server --",
-    "build": "npm run typecheck && npm run build --workspace @lingualeaf/web && npm run build --workspace @lingualeaf/server",
+    "build": "npm run typecheck && npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/web && npm run build --workspace @lingualeaf/server",
     "start": "node --env-file-if-exists=.env .output/server/main.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspaces",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @lingualeaf/reading-model && npm run typecheck --workspace @lingualeaf/server && npm run typecheck --workspace @lingualeaf/web",
     "test": "vitest run",
     "verify": "npm run typecheck && npm test && npm run lint && npm run check:sql-locality && npm run build",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
     "check:sql-locality": "npm run check:sql-locality --workspace @lingualeaf/server",
-    "prepare": "husky"
+    "prepare": "husky",
+    "pretypecheck": "npm run build --workspace @lingualeaf/reading-model",
+    "pretest": "npm run build --workspace @lingualeaf/reading-model"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
