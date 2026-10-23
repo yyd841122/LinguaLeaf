@@ -170,3 +170,27 @@ field must be a stable machine token (code/enum), not display text; when
 a diff adds or renames a wire enum member, both tiers must compile
 against the shared union and the contract suite must pin it in the same
 change.
+
+## Committed generated artifacts pin freshness with a check gate
+
+A build artifact committed to the source tree — an inlined script, a
+generated module — is never hand-edited, and its freshness against the
+source that generates it is a test-owned gate: the generator carries a
+--check mode (rebuild in memory, compare bytes, exit 1 naming the
+regenerating command), a test runs it, and the artifact sits in the
+prettier and eslint ignore lists because byte-identity is the contract.
+
+Why: the annotated book file's script became real TypeScript compiled
+into a committed generated module
+(apps/server/src/export/file-script.generated.ts, reading-model ticket
+02). Two drift shapes appeared on day one: esbuild's source-path
+comments depend on the invocation cwd, so the build pinned
+absWorkingDir — without it the gate flaps with the call style; and a
+comment-only source edit does not trip the gate, which is correct — the
+freshness contract is over compiled output, not source text.
+
+At review: when a diff adds or touches a committed generated file, check
+the generator's check mode is wired into a test, the artifact is in the
+ignore lists, and any source edit that changes the artifact ran the
+generator in the same change — a stale artifact still passing typecheck
+is exactly the silent failure this rule exists for.
