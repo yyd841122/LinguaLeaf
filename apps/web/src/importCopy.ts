@@ -32,6 +32,10 @@ export function importStageLabel(
   return percent === null ? label : `${label} ${percent}%`;
 }
 
+// The size mentions in the first two copy lines mirror the server's
+// MAX_UPLOAD_BYTES cap (apps/server/src/books-router.ts) in prose only;
+// the contract test pins the server's message, so a cap change needs this
+// map's same edit. No machine logic reads these strings.
 export const IMPORT_ERROR_COPY: Record<ImportErrorCode, string> = {
   "unsupported-format":
     "导入失败：只接受 .epub、.md、.markdown 或 .pdf 文件（≤20MB）。",

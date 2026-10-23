@@ -119,7 +119,8 @@ export function BookshelfPage() {
       // Upload rejections carry a stable machine `code` beside their prose
       // (apps/server/src/wire.ts): this branch keys on the code, so server
       // copy edits cannot flip it — which the old 文案 comparison let
-      // happen. No known code (5xx, network, unknown) is worth a retry.
+      // happen. Anything without a known code — 5xx, network, an unknown
+      // code — lands on the retry copy.
       const code =
         error instanceof ApiError && typeof error.body?.code === "string"
           ? error.body.code

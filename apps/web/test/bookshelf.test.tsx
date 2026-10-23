@@ -127,6 +127,24 @@ describe("BookshelfPage import states (ticket 08)", () => {
     vi.useRealTimers();
   });
 
+  // A fetch mock whose POST /api/books answers one rejection body; GET
+  // keeps serving whatever the test last put in shelfState.
+  function mockUploadRejection(status: number, body: unknown): void {
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/api/books") && method === "POST") {
+          return jsonResponse(status, body);
+        }
+        if (url.endsWith("/api/books")) {
+          return jsonResponse(200, shelfState);
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }
+    );
+  }
+
   it("shows a book importing with stage and percent, then readable when ready", async () => {
     renderShelf();
     await uploadFile("held-book.md");
@@ -292,22 +310,10 @@ describe("BookshelfPage import states (ticket 08)", () => {
     ) as HTMLInputElement;
     expect(input.accept.split(",")).toContain(".pdf");
 
-    fetchMock.mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url.endsWith("/api/books") && method === "POST") {
-          return jsonResponse(422, {
-            code: "scanned-pdf",
-            error: "扫描件/图片型 PDF 暂不支持",
-          });
-        }
-        if (url.endsWith("/api/books")) {
-          return jsonResponse(200, shelfState);
-        }
-        throw new Error(`unexpected fetch: ${method} ${url}`);
-      }
-    );
+    mockUploadRejection(422, {
+      code: "scanned-pdf",
+      error: "扫描件/图片型 PDF 暂不支持",
+    });
     await uploadFile("scan.pdf");
 
     expect(
@@ -317,22 +323,10 @@ describe("BookshelfPage import states (ticket 08)", () => {
 
   it("shows the encrypted-PDF copy keyed on the stable code, not the 文案", async () => {
     renderShelf();
-    fetchMock.mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url.endsWith("/api/books") && method === "POST") {
-          return jsonResponse(400, {
-            code: "encrypted-pdf",
-            error: "加密 PDF 暂不支持",
-          });
-        }
-        if (url.endsWith("/api/books")) {
-          return jsonResponse(200, shelfState);
-        }
-        throw new Error(`unexpected fetch: ${method} ${url}`);
-      }
-    );
+    mockUploadRejection(400, {
+      code: "encrypted-pdf",
+      error: "加密 PDF 暂不支持",
+    });
     await uploadFile("encrypted.pdf");
 
     expect(screen.getByText("导入失败：加密 PDF 暂不支持。")).toBeTruthy();
@@ -340,22 +334,10 @@ describe("BookshelfPage import states (ticket 08)", () => {
 
   it("shows the over-limit copy on a coded 413 — retrying cannot help", async () => {
     renderShelf();
-    fetchMock.mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url.endsWith("/api/books") && method === "POST") {
-          return jsonResponse(413, {
-            code: "file-too-large",
-            error: "uploaded file exceeds the 20 MB limit",
-          });
-        }
-        if (url.endsWith("/api/books")) {
-          return jsonResponse(200, shelfState);
-        }
-        throw new Error(`unexpected fetch: ${method} ${url}`);
-      }
-    );
+    mockUploadRejection(413, {
+      code: "file-too-large",
+      error: "uploaded file exceeds the 20 MB limit",
+    });
     await uploadFile("huge.pdf");
 
     expect(screen.getByText("导入失败：文件超过 20MB 上限。")).toBeTruthy();
@@ -363,25 +345,12 @@ describe("BookshelfPage import states (ticket 08)", () => {
 
   it("falls back to the retry copy for a code the vocabulary does not know", async () => {
     renderShelf();
-    fetchMock.mockImplementation(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        const method = init?.method ?? "GET";
-        if (url.endsWith("/api/books") && method === "POST") {
-          // Unreachable per the shared union — a server newer than this
-          // build. Pinned, not endorsed: this test owns the retry
-          // fallback's flip.
-          return jsonResponse(400, {
-            code: "planet-x",
-            error: "a code from the future",
-          });
-        }
-        if (url.endsWith("/api/books")) {
-          return jsonResponse(200, shelfState);
-        }
-        throw new Error(`unexpected fetch: ${method} ${url}`);
-      }
-    );
+    // Unreachable per the shared union — a server newer than this build.
+    // Pinned, not endorsed: this test owns the retry fallback's flip.
+    mockUploadRejection(400, {
+      code: "planet-x",
+      error: "a code from the future",
+    });
     await uploadFile("future.pdf");
 
     expect(screen.getByText("导入失败，请重试。")).toBeTruthy();

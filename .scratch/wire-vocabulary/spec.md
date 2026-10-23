@@ -47,7 +47,10 @@ server 持值、web 持标签/文案映射;契约测试钉住「每个 stage 有
 4. **413 升格为 `file-too-large` code + 正确文案**(「文件超过 20MB 上限」),
    修掉误导性的「请重试」。这是唯一的行为增强,已在此声明。
 5. 行为微变:无 code 的 400/415(web 视角)从「文件无法解析」落到通用「请重试」
-   ——本 server 的 4xx 全带 code,仅部署错配可达,两侧同 build 发布。
+   ——本 server 的常规 4xx 全带 code(两侧同 build 发布,仅部署错配可达);
+   仍无 code 的例外是非尺寸类 multer 拒绝(如 LIMIT_UNEXPECTED_FILE,任何
+   multipart 字段名不对的非 web 客户端都能触发),web 侧落决策 3 的「请重试」
+   兜底。
 
 ## 门禁
 
