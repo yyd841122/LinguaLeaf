@@ -3,6 +3,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError, fetchJson } from "../src/api";
+import type { ChapterTranslationState } from "../src/chapterTranslation";
 import { ReadingPage } from "../src/ReadingPage";
 import { ReadingView, type Block } from "../src/ReadingView";
 import {
@@ -718,11 +719,11 @@ describe("ReadingPage's translate button through the component boundary", () => 
   // The three state fields mirror the real chapter payload's shape (the
   // stub stubs the wire, not a subset of it); no test scripts "failed"
   // yet — that display is ticket 04's.
-  type ChapterPayload = {
-    translationStatus: string;
-    translationPercent: number | null;
-    translationError: string | null;
-    translationAvailable: boolean;
+  // The stub payloads compile against the wire's own state shape (one
+  // source with the server), so the next payload field turns every
+  // un-migrated stub literal into a compile error instead of a review
+  // round (retro 2026-10-24).
+  type ChapterPayload = ChapterTranslationState & {
     blocks?: Block[];
   };
   type Call = { url: string; init: RequestInit };

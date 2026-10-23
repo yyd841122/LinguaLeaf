@@ -71,7 +71,10 @@ export const FIXTURE_INFLECTIONS: ReadonlyArray<readonly [string, string]> = [
 // American IPA rows in the shape the ipa-dict importer produces (slashes
 // stripped, first variant kept). The sample-book words let the API seam
 // tests pin exact IPA lines; everything else in the sample stays unknown,
-// which exercises the blank-slot contract.
+// which exercises the blank-slot contract. Words not listed here (Gupta,
+// morning, ...) render as bare `lookup-word` spans — no ipa-word unit —
+// in both the reading view and the exported file's HTML; assert against
+// that shape, not verbatim sentence text.
 export const FIXTURE_IPA_US = {
   book: "bʊk",
   books: "bʊks",
