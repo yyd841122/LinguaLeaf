@@ -1,6 +1,6 @@
 # 01 · wire.ts:导入 wire 词汇单一来源,错误体带稳定 code
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -25,3 +25,14 @@ Status: ready-for-agent
 `npm run typecheck && npm test && npm run lint` 绿;评审基线 = 本票第一个实现
 commit 之前的 HEAD。web 侧不动(BookshelfPage 仍按文案比较,server body 仍含
 原文案,单一 commit 内不破坏任何消费方)。
+
+## Comments
+
+Done in 81063ec. wire.ts is types-only (four `export type`, zero runtime
+exports); the two unions moved verbatim with their comments; all six codes
+landed; the ladder uses `satisfies ImportRejection`; UNSUPPORTED_FORMAT is
+annotation-typed as the ticket asked. 413 derives its MB figure from
+MAX_UPLOAD_BYTES. Contract suite + pdf-import.test.ts extended in the same
+commit. Review note (Standards axis): the four `instanceof` branches
+differ only in {class, status, code} — table-driven collapse is candidate
+5's deliverable (「错误梯塌缩成数据」), deliberately not done here.

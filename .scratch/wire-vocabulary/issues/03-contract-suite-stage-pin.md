@@ -1,6 +1,6 @@
 # 03 · 契约测试钉「每个 stage 有标签」
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -19,3 +19,10 @@ createImportingBook + 逐个 setImportProgress(字面量受 `ImportStage` 参数
 
 `npm run typecheck && npm test && npm run lint` 绿;随后全仓 `npm run verify`
 绿(看退出码)。
+
+## Comments
+
+Done in 609320a. Store-driven pin (literals type-checked by
+setImportProgress's parameter), read back through the real fetchJson
+client: wire round-trip + `toContain` + non-empty label, no casts.
+`npm run verify` green after the review-fix commit.

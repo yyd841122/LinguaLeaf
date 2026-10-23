@@ -1,6 +1,6 @@
 # 02 · web 消费契约:标签按共享 union、文案按 code
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -23,3 +23,12 @@ Status: ready-for-agent
 
 `npm run typecheck && npm test && npm run lint` 绿。全仓 grep 不应再有
 `body?.error ===` 形态的文案机判与 `Record<string, string>` 的 stage 标签 map。
+
+## Comments
+
+Done in 191ba64. Gate greps hold repo-wide: zero `body?.error ===`
+comparisons, no string-keyed stage map. The two fallbacks landed as
+pinned tests per spec 决策 3. Review fixes (f531109): the four coded
+rejection mocks collapsed into one `mockUploadRejection` helper; the 20MB
+copy lines now carry a comment tying them to MAX_UPLOAD_BYTES; the catch
+comment that said the opposite of the code was rewritten.

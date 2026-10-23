@@ -147,3 +147,26 @@ At review: when a diff both refactors and changes a guard or edge behavior,
 ask for the split. When a diff pins behavior, check the test says "pinned,
 not endorsed" and names its own flip condition — an unlabeled pin is just a
 test blessing whatever happens to exist.
+
+## Error bodies are a code plus copy; clients branch on the code
+
+A machine-read error body pairs a stable code (wire.ts's ImportErrorCode)
+with rewordable prose, and client branches key on the code — never on the
+message text. Display copy may be reworded on either side of the wire; a
+branch keyed on prose breaks the day someone fixes a typo. New wire enum
+members land in the shared union first (apps/server/src/wire.ts); the
+Record-typed label maps make a missing label or copy a compile error on
+the consuming side.
+
+Why: the shelf told encrypted PDFs from other 400s by comparing the
+body's Chinese message (`error.body?.error === "加密 PDF 暂不支持"`), so a
+server copy edit would have silently degraded every encrypted-PDF upload
+to the generic corrupt-file copy. The wire vocabulary module made the
+codes and unions one shared source
+(`.scratch/wire-vocabulary/issues/01-wire-contract-module.md`).
+
+At review: when a diff adds a client branch on a response field, the
+field must be a stable machine token (code/enum), not display text; when
+a diff adds or renames a wire enum member, both tiers must compile
+against the shared union and the contract suite must pin it in the same
+change.
