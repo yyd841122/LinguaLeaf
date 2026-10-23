@@ -14,6 +14,7 @@ import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 import { createEncryptedPdf, createScannedPdf } from "./fixtures/pdf.js";
+import { buildEpub } from "./fixtures/epub.js";
 import { ApiError, fetchJson } from "../../../apps/web/src/api";
 import { IMPORT_STAGE_LABELS } from "../../../apps/web/src/importCopy";
 import { fetchWordLookup } from "../../../apps/web/src/wordLookup";
@@ -88,19 +89,23 @@ async function startStack(
 
 // The upload client path exactly as BookshelfPage runs it: fetchJson with
 // a FormData body carrying one File.
-async function uploadBook(
-  path: string
+async function uploadBookBytes(
+  bytes: Buffer,
+  filename: string,
+  type: string
 ): Promise<{ id: number } & Record<string, unknown>> {
-  const bytes = await readFile(path);
   const form = new FormData();
-  form.append(
-    "file",
-    new File([bytes], basename(path), { type: "text/markdown" })
-  );
+  form.append("file", new File([bytes], filename, { type }));
   return fetchJson<{ id: number } & Record<string, unknown>>("/api/books", {
     method: "POST",
     body: form,
   });
+}
+
+async function uploadBook(
+  path: string
+): Promise<{ id: number } & Record<string, unknown>> {
+  return uploadBookBytes(await readFile(path), basename(path), "text/markdown");
 }
 
 async function uploadReadyBook(path: string): Promise<number> {
@@ -309,6 +314,109 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
     });
     releaseGate();
     await waitForShelfBook(app, created.id, "ready");
+  });
+});
+
+describe("the reading page's fetches over the real server (ReadingPage.tsx)", () => {
+  it("delivers the table of contents in the shape the web's TOC type declares", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const toc = await fetchJson<{
+      id: number;
+      title: string;
+      chapters: { position: number; title: string; level: number | null }[];
+    }>(`/api/books/${id}`);
+    expect(toc.id).toBe(id);
+    expect(toc.title).toBe("The Way of the Test");
+    expect(toc.chapters).toHaveLength(5);
+    // One entry at its exact key set: whatever else the route grows is the
+    // shelf's business — the reading page reads position, title, level.
+    expect(toc.chapters[3]).toEqual({
+      position: 4,
+      title: "Interlude: The Command",
+      level: 3,
+    });
+  });
+
+  it("delivers chapter blocks as the Block union the reader switches on", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const red = await fetchJson<{
+      position: number;
+      title: string;
+      blocks: Array<Record<string, unknown>>;
+    }>(`/api/books/${id}/chapters/2`);
+    expect(red.position).toBe(2);
+    expect(red.title).toBe("Chapter One: Red");
+    // Sentence arm: the annotation lines arrive decoded — ipaSlots an
+    // array (not the column's JSON text), the untranslated line null.
+    expect(red.blocks[0]).toEqual({
+      position: 1,
+      kind: "sentence",
+      originalText: "Mr. Gupta woke early.",
+      ipaSlots: expect.any(Array),
+      ipaText: expect.any(String),
+      translationText: null,
+    });
+    // Passthrough arms (the interlude chapter) carry exactly the three
+    // keys — no annotation fields.
+    const interlude = await fetchJson<{
+      blocks: Array<Record<string, unknown>>;
+    }>(`/api/books/${id}/chapters/4`);
+    expect(interlude.blocks[1]).toEqual({
+      position: 2,
+      kind: "code",
+      originalText: "npm test -- --filter core",
+    });
+    expect(interlude.blocks[2]).toEqual({
+      position: 3,
+      kind: "raw",
+      originalText: "Reading more: the official handbook. It is free.",
+    });
+  });
+
+  it("reads a heading-only chapter as an empty block list and an out-of-range one as a 404", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const green = await fetchJson<{ blocks: unknown[] }>(
+      `/api/books/${id}/chapters/3`
+    );
+    expect(green.blocks).toEqual([]);
+    await expect(
+      fetchJson(`/api/books/${id}/chapters/99`)
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { error: "chapter not found" },
+    });
+  });
+
+  it("delivers an image block's placeholder shape from an EPUB upload", async () => {
+    await startStack();
+    const epub = await buildEpub({
+      title: "Seam Image Book",
+      docs: [
+        {
+          href: "text/one.xhtml",
+          body: "<h1>One</h1><p>Before the picture.</p><img src='pix.png' alt='A red dot'/>",
+        },
+      ],
+      images: [{ href: "pix.png" }],
+    });
+    const created = await uploadBookBytes(
+      epub,
+      "seam-image-book.epub",
+      "application/epub+zip"
+    );
+    await waitForShelfBook(stack!.app, created.id, "ready");
+    const chapter = await fetchJson<{
+      blocks: Array<Record<string, unknown>>;
+    }>(`/api/books/${created.id}/chapters/1`);
+    expect(chapter.blocks).toHaveLength(2);
+    expect(chapter.blocks[1]).toEqual({
+      position: 2,
+      kind: "image",
+      originalText: "A red dot",
+    });
   });
 });
 
