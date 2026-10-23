@@ -4,10 +4,36 @@
 
 **Blocked by:** 02（整章无译文要先成为自然状态，语义才有真实观测点）
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 整章零译文：译文行不渲染 + 译文行开关置灰（新钉）
-- [ ] 个别句 NULL：空占位行照旧（既有渲染分支零改动，只钉不改）
-- [ ] 未配置翻译服务：按钮置灰 + 提示；配置后恢复可用
-- [ ] 未译书导出：译文行整体省略；若既有导出钉未盖住"整章零译文"情形则加盖，不改实现
-- [ ] 门禁同 01
+- [x] 整章零译文：译文行不渲染 + 译文行开关置灰（新钉）
+- [x] 个别句 NULL：空占位行照旧（既有渲染分支零改动，只钉不改）
+- [x] 未配置翻译服务：按钮置灰 + 提示；配置后恢复可用
+- [x] 未译书导出：译文行整体省略；若既有导出钉未盖住"整章零译文"情形则加盖，不改实现
+- [x] 门禁同 01
+
+## Comments
+
+Done in 3bc172c（基线 42ef468）。线缆层：wire.ts 一处声明
+ChapterTranslationState（status/percent/error 三件套加
+translationAvailable，双端同源编译，web 侧 re-export 消掉本地副本）；
+books-router 的 toChapterPayload 是唯一构造点——路由器持有装配好的
+翻译器、store 保持 translator-blind，章 GET 与触发 202 走同一函数，
+两路永不打架；未配服务的 409 背板保留并首次钉住（payload false +
+409 家族，契约套件纯追加）。阅读页：chapterHasTranslations 一处推导
+（至少一个句子块带非空译文，trim 语义与导出的"缺失"判定一致），
+同一布尔同时闸 ReadingView 的译文行渲染与设置面板「译文行」开关
+disabled（:has(input:disabled) 整行变灰）——既有逐块渲染分支零改动，
+个别句留空的空占位行原样钉住（2 行、第二行空文本、开关可用）。
+未配服务：按钮 disabled 加 role=status 提示段（置于工具栏下方，
+不隐藏），标志随载荷每请求计算，配置后自然恢复；组件测试桩全部补齐
+translationAvailable 与真实载荷同形。导出：实现零改动，整本无译文
+情形加盖钉（0 个 translation-line、词元照常、文件内 译文行 开关
+照常）。README 译文节改置灰语义（02 留下的待办）。
+
+双轴 review（3bc172c）：Standards 零硬违规，一处 judgement call——
+三份逐字相同的 renderReadingPage 与两份开关清理 beforeEach 提取为
+文件级共享 helper（882a0ba）；Spec 轴五项验收全覆盖、契约套件纯
+追加、无实现错误，三处小范围外（README 文案、wire 类型搬家、CSS
+置灰样式）均为票面/前票授权或直接服务置灰语义。门禁：typecheck/
+test/lint 全绿（277 tests，exit 0），verify 全绿（exit 0）。
