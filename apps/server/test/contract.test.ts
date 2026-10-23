@@ -428,6 +428,28 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
       error: "uploaded file exceeds the 20 MB limit",
     });
   });
+
+  it("echoes an uncoded multer reject as the bare 400 body", async () => {
+    await startStack();
+    const form = new FormData();
+    // A wrong multipart field name is multer's LIMIT_UNEXPECTED_FILE — the
+    // one reachable path into the uncoded else-branch. Pinned, not
+    // endorsed: this is the test that flips when the echo gains a wire
+    // code.
+    form.append("document", new File([Buffer.from("bytes")], "book.md"));
+    const error = await fetchJson("/api/books", {
+      method: "POST",
+      body: form,
+    }).then(
+      () => null,
+      (caught) => caught
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(400);
+    expect((error as ApiError).body).toEqual({
+      error: "LIMIT_UNEXPECTED_FILE",
+    });
+  });
 });
 
 describe("the shelf labels every stage the wire can carry (importCopy.ts)", () => {

@@ -20,7 +20,9 @@ export type ImportStage = "annotating" | "translating" | "saving";
 
 // Stable machine codes for the upload rejections the shelf branches on.
 // The body's `error` field stays reader-facing prose the server may reword;
-// the code is the contract, so client branches survive copy edits.
+// the code is the contract, so client branches survive copy edits. Each
+// reason's HTTP status lives in one table: REJECTION_STATUS
+// (apps/server/src/import/upload-rejection.ts).
 export type ImportErrorCode =
   | "unsupported-format" // 415 — extension not accepted
   | "invalid-epub" // 400 — EPUB unparseable

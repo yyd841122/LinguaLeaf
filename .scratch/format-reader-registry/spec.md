@@ -46,7 +46,9 @@ code + 文案)抛出;reason → status 一张表钉死;router 缩成数据驱动
 3. **响应体逐字节不变**:契约套件、pdf-import、epub-import 的既有断言
    是本次重构的测试信封;线上形状零变化,无 web 侧改动。
 4. 非尺寸类 multer 拒绝维持无 code 的原样(候选 4 评审已钉为既有行为,
-   不在本次收紧)。
+   不在本次收紧);本候选重构触及该分支,按 CODING_STANDARDS 的 pin
+   纪律补 characterization 测试(错误 multipart 字段名 →
+   LIMIT_UNEXPECTED_FILE 裸回显)。
 
 ## 门禁
 

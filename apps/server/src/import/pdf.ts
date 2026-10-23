@@ -244,7 +244,7 @@ const dropRunningHeads = (pages: string[][]): string[][] => {
 // One mapping for every unpdf failure: password-protected documents get
 // the 加密 文案, everything else (broken bytes, corrupt page tree) is a
 // broken upload in the 400 family — never a server fault.
-const asParseError = (error: unknown): UploadRejected =>
+const asUploadRejected = (error: unknown): UploadRejected =>
   (error as { name?: string } | null)?.name === "PasswordException"
     ? new UploadRejected("encrypted-pdf", "加密 PDF 暂不支持")
     : invalidPdf("not a valid PDF file");
@@ -262,7 +262,7 @@ export async function readPdfBook(
   try {
     pdf = await getDocumentProxy(new Uint8Array(content));
   } catch (error) {
-    throw asParseError(error);
+    throw asUploadRejected(error);
   }
   try {
     if (pdf.numPages > MAX_PDF_PAGES) {
@@ -275,7 +275,7 @@ export async function readPdfBook(
     } catch (error) {
       // A document that opens but fails mid-extraction (corrupt page tree,
       // unreadable xref) is still a broken upload, not a server fault.
-      throw asParseError(error);
+      throw asUploadRejected(error);
     }
     const pageTexts = dropRunningHeads(
       items.map((pageItems) => linesFromItems(pageItems))

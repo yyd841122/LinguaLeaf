@@ -14,7 +14,8 @@ Status: ready-for-agent
 4. `import/pdf.ts`:删三类,`invalidPdf` helper(前缀 `invalid PDF: ` 迁入),
    asParseError 返回 UploadRejected(encrypted 无前缀,与现状逐字节一致),
    扫描门直接抛 scanned-pdf;模块头注释重写(类梯队 → reason 词汇)。
-5. `books-router.ts`:删十个格式相关 import 与两个常量,catch 收成
+5. `books-router.ts`:删十个格式相关 import 与 UNSUPPORTED_FORMAT 常量
+   (MAX_UPLOAD_BYTES 留守——multer limits 与 413 文案都要用它),catch 收成
    respondRejection,multer LIMIT_FILE_SIZE 同路径;`!file` 用注册表信封。
 6. `test/format-readers.test.ts`:REJECTION_STATUS 全表 toEqual;
    readUpload 未知扩展名 → unsupported-format、坏 EPUB → invalid-epub、

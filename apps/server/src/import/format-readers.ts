@@ -31,10 +31,7 @@ export const UNSUPPORTED_FORMAT: ImportRejection = {
 // reading order. Markdown's reader takes text rather than bytes, hence
 // the one adapter.
 const READERS: FormatReader[] = [
-  {
-    accepts: isEpubFilename,
-    read: (content, filename) => readEpubBook(content, filename),
-  },
+  { accepts: isEpubFilename, read: readEpubBook },
   {
     accepts: isMarkdownFilename,
     read: async (content, filename) =>
