@@ -171,6 +171,27 @@ a diff adds or renames a wire enum member, both tiers must compile
 against the shared union and the contract suite must pin it in the same
 change.
 
+## Contract pins carry machine facts, not server copy
+
+A seam contract test asserts what the wire guarantees the client — the
+status family, body presence and key shape, stable codes, fixture-derived
+literals — and never pins the server's rewordable prose. A copy edit that
+breaks no client should break no contract test; a suite that repeats
+server copy turns every rewording into a seam failure.
+
+Why: the tier-seam-reading review (Standards + Spec axes, 2026-10-23)
+found the 500 hiccup pin and the chapter-404 pin asserting "internal
+server error" and "chapter not found" verbatim — envelope and route copy
+with no client branch on the text. The pins relaxed to status plus body
+presence; the value-level pins stay in api.test.ts
+(`.scratch/tier-seam-reading/issues/02-409-family-and-500-hiccup.md`).
+
+At review: when a diff adds a contract-suite assertion on an error body,
+check it carries the status and a machine token (or presence/shape), not
+display text. Fixture literals (titles, positions, IPA lines from a
+committed fixture book) are anchors, not copy — pinning them is fine
+where the fixture is the shared input.
+
 ## Committed generated artifacts pin freshness with a check gate
 
 A build artifact committed to the source tree — an inlined script, a

@@ -31,3 +31,8 @@ dictionary for real (instance close stubbed for afterEach; console.error
 spied) and holds fetchWordLookup to throwing ApiError 500 with the bare
 envelope body instead of returning null. Suite 29 tests green (255 total,
 exit 0).
+Review pass (Standards+Spec axes) in a3a05d2: the hiccup pin relaxed to
+body-presence (the envelope's prose is the server's to reword) and the
+test renamed to state the asymmetry it proves — "409s the guarded reading
+routes and lets the TOC answer the importing row".
+

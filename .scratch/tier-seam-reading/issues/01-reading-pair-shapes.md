@@ -41,3 +41,12 @@ api.test.ts / reading.test.tsx untouched; suite 28 tests green (254 total,
 exit 0). One mid-flight fix: the passthrough pins first sat on chapter 2 —
 all-sentence; they moved to the interlude (chapter 4), where code and raw
 actually live.
+Review pass (Standards+Spec axes) in a3a05d2: the chapter-404 pin relaxed
+to status-only (its copy is api.test.ts's; the client branches on the
+family), uploadBookBytes's params aligned with uploadRejection's, and the
+spec-level null-level arm closed — a headingless spine document in the
+same EPUB folds to chapter {title: "Cover", level: null}, the branch
+ReadingPage's `chapter.level ?? 1` codes for. The free-standing fixture
+literals (red.position, toc.title) stay: fixture anchors, not server
+copy.
+
