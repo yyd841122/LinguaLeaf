@@ -126,6 +126,22 @@ const BOOK_COLUMNS = [
 const bookColumnSql = (prefix: string) =>
   BOOK_COLUMNS.map((column) => `${prefix}${column}`).join(", ");
 
+// The chapters columns the translation-state readers fetch — the same
+// one-list discipline as BOOK_COLUMNS. listChapters is the deliberate
+// exception: the TOC's head-only SELECT serves a wire shape pinned to
+// exactly position/title/level, so it hand-picks its three columns.
+const CHAPTER_COLUMNS = [
+  "id",
+  "position",
+  "title",
+  "level",
+  "translation_status",
+  "translation_error",
+  "translation_percent",
+] as const;
+const chapterColumnSql = (prefix: string) =>
+  CHAPTER_COLUMNS.map((column) => `${prefix}${column}`).join(", ");
+
 // The ipa_slots codec: the column holds a JSON array with one transcription
 // per word token, written by persistBook and read back by both readers. A
 // row that is not valid JSON (or not an array) throws at the read — loud
@@ -426,9 +442,7 @@ export function findChapterRow(
 ): ChapterRow | undefined {
   return database
     .prepare(
-      `SELECT id, position, title, level, translation_status,
-              translation_error, translation_percent
-       FROM chapters WHERE book_id = ? AND position = ?`
+      `SELECT ${chapterColumnSql("")} FROM chapters WHERE book_id = ? AND position = ?`
     )
     .get(bookId, chapterPosition) as ChapterRow | undefined;
 }
@@ -531,16 +545,16 @@ export function loadChapter(
 // The whole book in one joined pass (the export is the only consumer that
 // needs every chapter at once): chapters LEFT JOIN blocks so a
 // heading-only chapter still renders (its section just has no blocks).
+// The chapters side rides the shared column list unaliased — no block
+// column shares a name with a chapter column — so the row keys match
+// findChapterRow's.
 export function loadWholeBook(
   database: Database.Database,
   bookId: number
 ): ChapterData[] {
   const rows = database
     .prepare(
-      `SELECT c.position AS chapter_position, c.title AS chapter_title, c.level AS chapter_level,
-              c.translation_status AS chapter_translation_status,
-              c.translation_percent AS chapter_translation_percent,
-              c.translation_error AS chapter_translation_error,
+      `SELECT ${chapterColumnSql("c.")},
               b.position AS block_position, b.kind, b.original_text,
               b.ipa_slots, b.ipa_text, b.translation_text
        FROM chapters c
@@ -549,12 +563,13 @@ export function loadWholeBook(
        ORDER BY c.position, b.position`
     )
     .all(bookId) as {
-    chapter_position: number;
-    chapter_title: string;
-    chapter_level: number | null;
-    chapter_translation_status: TranslationStatus;
-    chapter_translation_percent: number | null;
-    chapter_translation_error: string | null;
+    id: number;
+    position: number;
+    title: string;
+    level: number | null;
+    translation_status: TranslationStatus;
+    translation_error: string | null;
+    translation_percent: number | null;
     block_position: number | null;
     kind: string | null;
     original_text: string | null;
@@ -566,14 +581,14 @@ export function loadWholeBook(
   const chapters: ChapterData[] = [];
   for (const row of rows) {
     let chapter = chapters.at(-1);
-    if (!chapter || chapter.position !== row.chapter_position) {
+    if (!chapter || chapter.position !== row.position) {
       chapter = {
-        position: row.chapter_position,
-        title: row.chapter_title,
-        level: row.chapter_level,
-        translationStatus: row.chapter_translation_status,
-        translationPercent: row.chapter_translation_percent,
-        translationError: row.chapter_translation_error,
+        position: row.position,
+        title: row.title,
+        level: row.level,
+        translationStatus: row.translation_status,
+        translationPercent: row.translation_percent,
+        translationError: row.translation_error,
         blocks: [],
       };
       chapters.push(chapter);

@@ -4,6 +4,7 @@ import type { Translator } from "../translate/translator.js";
 import { translateChapters } from "../translate/batch.js";
 import { buildChapterBlocks, type PreparedBook } from "./pipeline.js";
 import { persistBook, setImportProgress, settleImport } from "../book-store.js";
+import { createTaskTracker } from "../task-tracker.js";
 
 // Stored on books.import_error. The synchronous POST already reports
 // specific parse problems (400/415); everything that can still fail after
@@ -11,27 +12,14 @@ import { persistBook, setImportProgress, settleImport } from "../book-store.js";
 // hint while the details go to the server log.
 const TASK_FAILURE_MESSAGE = "导入过程中出错，请重试";
 
-// The in-flight tasks, so shutdown can give running imports a grace
-// window before SQLite closes instead of snapping writes mid-batch
-// (audit 2026-10-23).
-const inFlight = new Set<Promise<void>>();
+// The in-flight imports, so shutdown can give running imports a grace
+// window before SQLite closes (see task-tracker.ts for the shared shape).
+const importTasks = createTaskTracker();
 
 // Resolves when no import task is running, or after the grace deadline —
 // whichever comes first. Shutdown awaits this before closing the database.
 export function drainImportTasks(graceMs: number): Promise<void> {
-  const running = [...inFlight];
-  if (running.length === 0) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    let waiting = running.length;
-    const settled = (): void => {
-      waiting -= 1;
-      if (waiting === 0) resolve();
-    };
-    for (const task of running) {
-      task.then(settled, settled);
-    }
-    setTimeout(resolve, graceMs).unref();
-  });
+  return importTasks.drain(graceMs);
 }
 
 // Runs one book's annotation pass to completion. The Translator contract is
@@ -41,7 +29,7 @@ export function drainImportTasks(graceMs: number): Promise<void> {
 // function never throws — the router fires it without awaiting. All writes
 // go through the book store, whose guards keep a deleted (or already
 // settled) book from being resurrected by a late tick.
-export async function runImportTask(
+export function runImportTask(
   deps: {
     database: Database.Database;
     dictionary: Dictionary;
@@ -50,13 +38,7 @@ export async function runImportTask(
   bookId: number,
   book: PreparedBook
 ): Promise<void> {
-  const task = runImportTaskInner(deps, bookId, book);
-  inFlight.add(task);
-  try {
-    await task;
-  } finally {
-    inFlight.delete(task);
-  }
+  return importTasks.run(runImportTaskInner(deps, bookId, book));
 }
 
 async function runImportTaskInner(

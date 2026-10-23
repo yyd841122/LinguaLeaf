@@ -235,25 +235,20 @@ export function ReadingPage() {
   const startTranslation = () => {
     setStartFailed(false);
     const route = { bookId, chapterNumber };
+    // A navigation since the click makes the response stale: the page is
+    // another chapter's now, and its own state must not be patched.
+    const stale = () =>
+      currentRouteRef.current.bookId !== route.bookId ||
+      currentRouteRef.current.chapterNumber !== route.chapterNumber;
     translateChapter(bookId, chapterNumber)
       .then((state) => {
-        if (
-          currentRouteRef.current.bookId !== route.bookId ||
-          currentRouteRef.current.chapterNumber !== route.chapterNumber
-        ) {
-          return;
-        }
+        if (stale()) return;
         setContent((current) => (current ? { ...current, ...state } : current));
       })
       .catch(() => {
         // The endpoint's 409s (already translating / no service) and every
         // other failure land here: a catchable notice, not a white screen.
-        if (
-          currentRouteRef.current.bookId !== route.bookId ||
-          currentRouteRef.current.chapterNumber !== route.chapterNumber
-        ) {
-          return;
-        }
+        if (stale()) return;
         setStartFailed(true);
       });
   };

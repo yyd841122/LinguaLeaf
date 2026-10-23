@@ -6,6 +6,7 @@ import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
 import { failInterruptedImports } from "./book-store.js";
 import { drainImportTasks } from "./import/import-task.js";
+import { drainChapterTranslationTasks } from "./translate/chapter-task.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
 import {
   createDeepSeekTranslator,
@@ -124,10 +125,14 @@ try {
       console.error(error);
       process.exitCode = 1;
     } finally {
-      // Running imports get a grace window to land their writes before the
-      // database closes; whatever misses settles as interrupted on the next
-      // startup sweep (audit 2026-10-23).
-      await drainImportTasks(3000);
+      // Running background tasks (imports, chapter translations) get a
+      // grace window to land their writes before the database closes;
+      // whatever misses settles as interrupted on the next startup sweep
+      // (audit 2026-10-23).
+      await Promise.all([
+        drainImportTasks(3000),
+        drainChapterTranslationTasks(3000),
+      ]);
       database.close();
       dictionary.close();
       clearTimeout(timeout);

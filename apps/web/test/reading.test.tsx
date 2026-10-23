@@ -680,9 +680,13 @@ describe("ReadingPage's translate button through the component boundary", () => 
     );
   }
 
+  // The three state fields mirror the real chapter payload's shape (the
+  // stub stubs the wire, not a subset of it); no test scripts "failed"
+  // yet — that display is ticket 04's.
   type ChapterPayload = {
     translationStatus: string;
     translationPercent: number | null;
+    translationError: string | null;
     blocks?: Block[];
   };
   type Call = { url: string; init: RequestInit };
@@ -743,10 +747,12 @@ describe("ReadingPage's translate button through the component boundary", () => 
       const translating: ChapterPayload = {
         translationStatus: "translating",
         translationPercent: 44,
+        translationError: null,
       };
       const translated: ChapterPayload = {
         translationStatus: "translated",
         translationPercent: null,
+        translationError: null,
         blocks: [
           {
             position: 1,
@@ -763,6 +769,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
           {
             translationStatus: "untranslated",
             translationPercent: null,
+            translationError: null,
             blocks: chapterBlocks,
           },
           { ...translating, blocks: chapterBlocks },
@@ -771,6 +778,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
         postBody: {
           translationStatus: "translating",
           translationPercent: 0,
+          translationError: null,
         },
       });
       renderReadingPage();
@@ -843,10 +851,15 @@ describe("ReadingPage's translate button through the component boundary", () => 
           {
             translationStatus: "translating",
             translationPercent: 7,
+            translationError: null,
             blocks: chapterBlocks,
           },
         ],
-        postBody: { translationStatus: "translating", translationPercent: 7 },
+        postBody: {
+          translationStatus: "translating",
+          translationPercent: 7,
+          translationError: null,
+        },
       });
       renderReadingPage();
       await act(async () => {
@@ -884,6 +897,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
                 JSON.stringify({
                   translationStatus: "translating",
                   translationPercent: 30,
+                  translationError: null,
                   blocks: chapterBlocks,
                 })
               );
@@ -893,6 +907,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
               JSON.stringify({
                 translationStatus: "translated",
                 translationPercent: null,
+                translationError: null,
                 blocks: chapterBlocks,
               })
             );

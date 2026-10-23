@@ -7,6 +7,7 @@ import {
   setChapterTranslationProgress,
   settleChapterTranslation,
 } from "../book-store.js";
+import { createTaskTracker } from "../task-tracker.js";
 
 // Stored on chapters.translation_error when a chapter task dies of an
 // unexpected fault. The Translator contract is total (failures come back
@@ -14,6 +15,16 @@ import {
 // reaching this is a genuine server fault: the reason names the retry,
 // the details go to the server log.
 export const CHAPTER_TRANSLATION_FAILURE_MESSAGE = "章节翻译出错，请重试";
+
+// The in-flight chapter translations, so shutdown gives their writes the
+// same grace window imports get before SQLite closes (task-tracker.ts).
+const chapterTasks = createTaskTracker();
+
+// Resolves when no chapter translation is running, or after the grace
+// deadline. Shutdown awaits this beside drainImportTasks.
+export function drainChapterTranslationTasks(graceMs: number): Promise<void> {
+  return chapterTasks.drain(graceMs);
+}
 
 // Runs one chapter's on-demand translation to completion (ADR-0004). The
 // sentence blocks are held as references once: their texts walk into
@@ -23,7 +34,14 @@ export const CHAPTER_TRANSLATION_FAILURE_MESSAGE = "章节翻译出错，请重�
 // the pairing cannot realign. This function never throws — the router
 // fires it without awaiting; every write is guarded on 'translating', so
 // a chapter deleted or settled mid-task stays as it is.
-export async function runChapterTranslationTask(
+export function runChapterTranslationTask(
+  deps: { database: Database.Database; translator: Translator },
+  chapterId: number
+): Promise<void> {
+  return chapterTasks.run(runChapterTranslationTaskInner(deps, chapterId));
+}
+
+async function runChapterTranslationTaskInner(
   deps: { database: Database.Database; translator: Translator },
   chapterId: number
 ): Promise<void> {
