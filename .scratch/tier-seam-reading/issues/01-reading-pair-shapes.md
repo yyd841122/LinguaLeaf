@@ -1,6 +1,6 @@
 # 01 · 阅读对的契约面:目录与章内容过真 wire
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -30,4 +30,14 @@ Status: ready-for-agent
 既有断言零删改;评审基线 = 本票第一个实现 commit 之前的 HEAD。
 
 ## Comments
-
+Done in 7a76d37. contract.test.ts gained the reading page's describe: the
+TOC pinned at the web type's key set (id/title, one chapters entry at
+exactly {position, title, level}), chapter blocks as the Block union —
+sentence arm with a decoded ipaSlots array and null translationText, the
+interlude chapter pinning code and raw at exactly three keys, the image
+placeholder (alt text) from a real EPUB upload through uploadBookBytes,
+heading-only empty blocks, and the out-of-range 404 through the client.
+api.test.ts / reading.test.tsx untouched; suite 28 tests green (254 total,
+exit 0). One mid-flight fix: the passthrough pins first sat on chapter 2 —
+all-sentence; they moved to the interlude (chapter 4), where code and raw
+actually live.
