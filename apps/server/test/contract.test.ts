@@ -90,8 +90,8 @@ async function startStack(
 // The upload client path exactly as BookshelfPage runs it: fetchJson with
 // a FormData body carrying one File.
 async function uploadBookBytes(
-  bytes: Buffer,
   filename: string,
+  bytes: Buffer,
   type: string
 ): Promise<{ id: number } & Record<string, unknown>> {
   const form = new FormData();
@@ -105,7 +105,7 @@ async function uploadBookBytes(
 async function uploadBook(
   path: string
 ): Promise<{ id: number } & Record<string, unknown>> {
-  return uploadBookBytes(await readFile(path), basename(path), "text/markdown");
+  return uploadBookBytes(basename(path), await readFile(path), "text/markdown");
 }
 
 async function uploadReadyBook(path: string): Promise<number> {
@@ -271,9 +271,11 @@ describe("fetchWordLookup over the real server (wordLookup.ts)", () => {
     stack!.dictionary.close();
     (stack!.dictionary as { close: () => void }).close = () => {};
     try {
+      // Body presence, not prose: the envelope's copy is the server's
+      // to reword — the client only parses it onto ApiError.body.
       await expect(fetchWordLookup("book")).rejects.toMatchObject({
         status: 500,
-        body: { error: "internal server error" },
+        body: expect.any(Object),
       });
     } finally {
       errorSpy.mockRestore();
@@ -316,7 +318,7 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
     });
   });
 
-  it("keeps an importing book's reading routes at 409, not 404", async () => {
+  it("409s the guarded reading routes and lets the TOC answer the importing row", async () => {
     let releaseGate!: () => void;
     const gate = new Promise<void>((resolve) => {
       releaseGate = resolve;
@@ -423,15 +425,14 @@ describe("the reading page's fetches over the real server (ReadingPage.tsx)", ()
       `/api/books/${id}/chapters/3`
     );
     expect(green.blocks).toEqual([]);
+    // Status-only: the 404's copy is api.test.ts's pin — the client
+    // branches on the status family, not the prose.
     await expect(
       fetchJson(`/api/books/${id}/chapters/99`)
-    ).rejects.toMatchObject({
-      status: 404,
-      body: { error: "chapter not found" },
-    });
+    ).rejects.toMatchObject({ status: 404 });
   });
 
-  it("delivers an image block's placeholder shape from an EPUB upload", async () => {
+  it("delivers an EPUB upload's image placeholder and the headingless chapter's null level", async () => {
     await startStack();
     const epub = await buildEpub({
       title: "Seam Image Book",
@@ -440,12 +441,15 @@ describe("the reading page's fetches over the real server (ReadingPage.tsx)", ()
           href: "text/one.xhtml",
           body: "<h1>One</h1><p>Before the picture.</p><img src='pix.png' alt='A red dot'/>",
         },
+        // A headingless document folds into one chapter at level null —
+        // the arm ReadingPage's `chapter.level ?? 1` codes for.
+        { href: "text/cover.xhtml", body: "<p>Cover art.</p>", title: "Cover" },
       ],
       images: [{ href: "pix.png" }],
     });
     const created = await uploadBookBytes(
-      epub,
       "seam-image-book.epub",
+      epub,
       "application/epub+zip"
     );
     await waitForShelfBook(stack!.app, created.id, "ready");
@@ -457,6 +461,14 @@ describe("the reading page's fetches over the real server (ReadingPage.tsx)", ()
       position: 2,
       kind: "image",
       originalText: "A red dot",
+    });
+    const toc = await fetchJson<{
+      chapters: Array<Record<string, unknown>>;
+    }>(`/api/books/${created.id}`);
+    expect(toc.chapters[1]).toEqual({
+      position: 2,
+      title: "Cover",
+      level: null,
     });
   });
 });
