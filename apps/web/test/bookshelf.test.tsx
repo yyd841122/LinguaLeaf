@@ -164,8 +164,10 @@ describe("BookshelfPage import states (ticket 08)", () => {
     await uploadFile("held-book.md");
     expect(screen.getByText(/导入中 · 翻译译文 40%/)).toBeTruthy();
 
-    // annotating carries no percent; an unknown stage (server newer than
-    // this page) shows a neutral label, not a raw enum value.
+    // annotating carries no percent; an unknown stage — unreachable per
+    // the shared union, but the books.import_stage TEXT column cannot rule
+    // it out — shows a neutral label. Pinned, not endorsed: this is the
+    // test that flips if the neutral-label guard is deliberately removed.
     shelfState.books = [
       { ...importingBook, importStage: "annotating", importPercent: null },
     ];
@@ -295,7 +297,10 @@ describe("BookshelfPage import states (ticket 08)", () => {
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.endsWith("/api/books") && method === "POST") {
-          return jsonResponse(422, { error: "扫描件/图片型 PDF 暂不支持" });
+          return jsonResponse(422, {
+            code: "scanned-pdf",
+            error: "扫描件/图片型 PDF 暂不支持",
+          });
         }
         if (url.endsWith("/api/books")) {
           return jsonResponse(200, shelfState);
@@ -310,14 +315,17 @@ describe("BookshelfPage import states (ticket 08)", () => {
     ).toBeTruthy();
   });
 
-  it("shows the encrypted-PDF copy when the server's 400 body carries it", async () => {
+  it("shows the encrypted-PDF copy keyed on the stable code, not the 文案", async () => {
     renderShelf();
     fetchMock.mockImplementation(
       async (input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.endsWith("/api/books") && method === "POST") {
-          return jsonResponse(400, { error: "加密 PDF 暂不支持" });
+          return jsonResponse(400, {
+            code: "encrypted-pdf",
+            error: "加密 PDF 暂不支持",
+          });
         }
         if (url.endsWith("/api/books")) {
           return jsonResponse(200, shelfState);
@@ -328,6 +336,55 @@ describe("BookshelfPage import states (ticket 08)", () => {
     await uploadFile("encrypted.pdf");
 
     expect(screen.getByText("导入失败：加密 PDF 暂不支持。")).toBeTruthy();
+  });
+
+  it("shows the over-limit copy on a coded 413 — retrying cannot help", async () => {
+    renderShelf();
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/api/books") && method === "POST") {
+          return jsonResponse(413, {
+            code: "file-too-large",
+            error: "uploaded file exceeds the 20 MB limit",
+          });
+        }
+        if (url.endsWith("/api/books")) {
+          return jsonResponse(200, shelfState);
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }
+    );
+    await uploadFile("huge.pdf");
+
+    expect(screen.getByText("导入失败：文件超过 20MB 上限。")).toBeTruthy();
+  });
+
+  it("falls back to the retry copy for a code the vocabulary does not know", async () => {
+    renderShelf();
+    fetchMock.mockImplementation(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/api/books") && method === "POST") {
+          // Unreachable per the shared union — a server newer than this
+          // build. Pinned, not endorsed: this test owns the retry
+          // fallback's flip.
+          return jsonResponse(400, {
+            code: "planet-x",
+            error: "a code from the future",
+          });
+        }
+        if (url.endsWith("/api/books")) {
+          return jsonResponse(200, shelfState);
+        }
+        throw new Error(`unexpected fetch: ${method} ${url}`);
+      }
+    );
+    await uploadFile("future.pdf");
+
+    expect(screen.getByText("导入失败，请重试。")).toBeTruthy();
   });
 });
 

@@ -3,8 +3,10 @@ import { Link } from "react-router";
 import { ApiError, fetchJson } from "./api";
 import { downloadAttachment } from "./download";
 import type { ReadingProgress } from "./readingProgress";
-
-type BookStatus = "importing" | "ready" | "failed";
+// The wire vocabulary is the server's contract module — type-only, so the
+// bundle carries no server code.
+import type { BookStatus, ImportStage } from "../../server/src/wire";
+import { importErrorCopy, importStageLabel } from "./importCopy";
 
 type BookSummary = {
   id: number;
@@ -15,7 +17,7 @@ type BookSummary = {
   // progress on the shelf, 'failed' books show the reason, 'ready' books
   // are the readable links.
   status: BookStatus;
-  importStage: string | null;
+  importStage: ImportStage | null;
   importPercent: number | null;
   importError: string | null;
   // PDF only (null for the other formats): drives the long-book hint on
@@ -29,16 +31,6 @@ type BookSummary = {
 // only needs to feel live, not be instant.
 const IMPORT_POLL_MS = 1500;
 
-// Server-side import stages (import-task.ts) as shelf copy; only
-// 'translating' lasts long enough to carry a percent. An unknown stage
-// (server newer than this page) falls back to a neutral label rather than
-// a raw enum value.
-const IMPORT_STAGE_LABELS: Record<string, string> = {
-  annotating: "标注生成中",
-  translating: "翻译译文",
-  saving: "保存书籍",
-};
-
 // A PDF longer than this gets the 「预计耗时较长」 hint on its importing
 // row (spec: 页数多的书导入时看到预计耗时较长的提示). Strictly more — a
 // 300-page book sits just under the threshold.
@@ -50,15 +42,6 @@ function isLongPdf(book: BookSummary): boolean {
     book.pageCount !== null &&
     book.pageCount > LONG_PDF_PAGES
   );
-}
-
-function importStageLabel(book: BookSummary): string {
-  const label = book.importStage
-    ? (IMPORT_STAGE_LABELS[book.importStage] ?? "处理中")
-    : "";
-  return book.importPercent !== null
-    ? `${label} ${book.importPercent}%`
-    : label;
 }
 
 function formatImportedAt(iso: string): string {
@@ -133,22 +116,18 @@ export function BookshelfPage() {
       );
       setBooks(refreshed);
     } catch (error) {
-      // The server's status families: 415 unknown extension (pick another
-      // file), 422 scan-detected PDF (the file can never import), 400
-      // unparseable EPUB/PDF (retrying cannot fix the file), others
-      // genuinely worth a retry.
+      // Upload rejections carry a stable machine `code` beside their prose
+      // (apps/server/src/wire.ts): this branch keys on the code, so server
+      // copy edits cannot flip it — which the old 文案 comparison let
+      // happen. No known code (5xx, network, unknown) is worth a retry.
+      const code =
+        error instanceof ApiError && typeof error.body?.code === "string"
+          ? error.body.code
+          : null;
       setError(
-        error instanceof ApiError && error.status === 422
-          ? "导入失败：扫描件/图片型 PDF 暂不支持。"
-          : error instanceof ApiError && error.status === 415
-            ? "导入失败：只接受 .epub、.md、.markdown 或 .pdf 文件（≤20MB）。"
-            : error instanceof ApiError && error.status === 400
-              ? // The server's 400 body is the contract for this branch:
-                // encrypted PDFs carry their own reader-facing 文案.
-                error.body?.error === "加密 PDF 暂不支持"
-                ? "导入失败：加密 PDF 暂不支持。"
-                : "导入失败：文件无法解析，可能已损坏。"
-              : "导入失败，请重试。"
+        code === null
+          ? "导入失败，请重试。"
+          : (importErrorCopy(code) ?? "导入失败，请重试。")
       );
     } finally {
       setImporting(false);
@@ -259,9 +238,10 @@ export function BookshelfPage() {
                 )}
                 <span className="meta">
                   {book.status === "importing"
-                    ? `导入中 · ${importStageLabel(book)}${
-                        isLongPdf(book) ? " · 预计耗时较长" : ""
-                      }`
+                    ? `导入中 · ${importStageLabel(
+                        book.importStage,
+                        book.importPercent
+                      )}${isLongPdf(book) ? " · 预计耗时较长" : ""}`
                     : book.status === "failed"
                       ? `导入失败：${book.importError ?? "未知错误"}`
                       : `${book.format} · 导入于 ${formatImportedAt(book.createdAt)}${
