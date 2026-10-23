@@ -1,6 +1,6 @@
 # 01 · 注册表落地:错误梯与 if 链塌缩成数据
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -25,3 +25,14 @@ Status: ready-for-agent
 
 `npm run typecheck && npm test && npm run lint` 绿,且既有契约 / epub /
 pdf 测试断言零改动通过(响应体逐字节不变的证明)。
+
+## Comments
+
+Done in 6d1aae9. Gate held as written: the contract, epub, and pdf
+suites passed with zero assertion changes — the wire bodies are
+byte-identical. Review fixes (refactor commit on top): the uncoded
+multer echo is now pinned by its own characterization test (wrong
+multipart field → LIMIT_UNEXPECTED_FILE 400, "pinned, not endorsed");
+readEpubBook registers directly; asParseError → asUploadRejected;
+wire.ts's code comments point at REJECTION_STATUS; the ticket's
+"两个常量" miscount corrected — MAX_UPLOAD_BYTES stays on purpose.
