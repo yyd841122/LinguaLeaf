@@ -261,6 +261,7 @@ it("settings panel drives both toggles and both font sizes", () => {
       onShowIpaChange={onShowIpaChange}
       showTranslation={false}
       onShowTranslationChange={onShowTranslationChange}
+      translationLinesAvailable={true}
       ipaSize={12}
       onIpaSizeChange={onIpaSizeChange}
       originalSize={18}
@@ -292,6 +293,35 @@ it("settings panel drives both toggles and both font sizes", () => {
   expect(onTranslationSizeChange).toHaveBeenCalledWith(15);
 });
 
+it("grays the 译文行 toggle when the chapter has no translation lines", () => {
+  // Ticket 03: a wholly untranslated chapter has no line to show and no
+  // toggle to offer; the 音标行 toggle is untouched.
+  render(
+    <ReadingSettings
+      showIpa={true}
+      onShowIpaChange={vi.fn()}
+      showTranslation={true}
+      onShowTranslationChange={vi.fn()}
+      translationLinesAvailable={false}
+      ipaSize={12}
+      onIpaSizeChange={vi.fn()}
+      originalSize={18}
+      onOriginalSizeChange={vi.fn()}
+      translationSize={14}
+      onTranslationSizeChange={vi.fn()}
+    />
+  );
+
+  const translationBox = screen.getByRole("checkbox", {
+    name: "译文行",
+  }) as HTMLInputElement;
+  expect(translationBox.disabled).toBe(true);
+  const ipaBox = screen.getByRole("checkbox", {
+    name: "音标行",
+  }) as HTMLInputElement;
+  expect(ipaBox.disabled).toBe(false);
+});
+
 it("clamps the original and translation size steppers at their bounds", () => {
   const onOriginalSizeChange = vi.fn();
   const onTranslationSizeChange = vi.fn();
@@ -300,6 +330,7 @@ it("clamps the original and translation size steppers at their bounds", () => {
     onShowIpaChange: vi.fn(),
     showTranslation: true,
     onShowTranslationChange: vi.fn(),
+    translationLinesAvailable: true,
     ipaSize: 12,
     onIpaSizeChange: vi.fn(),
     onOriginalSizeChange,
@@ -523,6 +554,10 @@ describe("ReadingPage through the component boundary", () => {
             JSON.stringify({
               position: 2,
               title: "Chapter Two",
+              translationStatus: "untranslated",
+              translationPercent: null,
+              translationError: null,
+              translationAvailable: true,
               blocks: chapterBlocks,
             })
           );
@@ -563,6 +598,10 @@ describe("ReadingPage through the component boundary", () => {
             JSON.stringify({
               position: 2,
               title: "Chapter Two",
+              translationStatus: "untranslated",
+              translationPercent: null,
+              translationError: null,
+              translationAvailable: true,
               blocks: chapterBlocks,
             })
           );
@@ -687,6 +726,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
     translationStatus: string;
     translationPercent: number | null;
     translationError: string | null;
+    translationAvailable: boolean;
     blocks?: Block[];
   };
   type Call = { url: string; init: RequestInit };
@@ -748,11 +788,13 @@ describe("ReadingPage's translate button through the component boundary", () => 
         translationStatus: "translating",
         translationPercent: 44,
         translationError: null,
+        translationAvailable: true,
       };
       const translated: ChapterPayload = {
         translationStatus: "translated",
         translationPercent: null,
         translationError: null,
+        translationAvailable: true,
         blocks: [
           {
             position: 1,
@@ -770,6 +812,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
             translationStatus: "untranslated",
             translationPercent: null,
             translationError: null,
+            translationAvailable: true,
             blocks: chapterBlocks,
           },
           { ...translating, blocks: chapterBlocks },
@@ -779,6 +822,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
           translationStatus: "translating",
           translationPercent: 0,
           translationError: null,
+          translationAvailable: true,
         },
       });
       renderReadingPage();
@@ -852,6 +896,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
             translationStatus: "translating",
             translationPercent: 7,
             translationError: null,
+            translationAvailable: true,
             blocks: chapterBlocks,
           },
         ],
@@ -859,6 +904,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
           translationStatus: "translating",
           translationPercent: 7,
           translationError: null,
+          translationAvailable: true,
         },
       });
       renderReadingPage();
@@ -898,6 +944,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
                   translationStatus: "translating",
                   translationPercent: 30,
                   translationError: null,
+                  translationAvailable: true,
                   blocks: chapterBlocks,
                 })
               );
@@ -908,6 +955,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
                 translationStatus: "translated",
                 translationPercent: null,
                 translationError: null,
+                translationAvailable: true,
                 blocks: chapterBlocks,
               })
             );
@@ -950,5 +998,183 @@ describe("ReadingPage's translate button through the component boundary", () => 
       vi.useRealTimers();
       vi.unstubAllGlobals();
     }
+  });
+});
+
+// The untranslated-chapter semantics (on-demand-translation ticket 03): a
+// wholly untranslated chapter renders no translation lines and greys the
+// 译文行 toggle; a chapter with individual holes keeps the pinned
+// placeholder shape and a live toggle; an unconfigured service greys the
+// translate button behind a visible hint instead of a 409 surprise.
+describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
+  const untranslatedBlocks: Block[] = [
+    {
+      position: 1,
+      kind: "sentence",
+      originalText: "Mr. Gupta woke early.",
+      ipaSlots: null,
+      ipaText: null,
+      translationText: null,
+    },
+    {
+      position: 2,
+      kind: "sentence",
+      originalText: "The morning was quiet.",
+      ipaSlots: null,
+      ipaText: null,
+      translationText: null,
+    },
+  ];
+  // The individual-hole shape: one sentence translated, the next failed
+  // and left empty (the chapter task's retry-exhausted 留空).
+  const holeBlocks: Block[] = [
+    {
+      position: 1,
+      kind: "sentence",
+      originalText: "Mr. Gupta woke early.",
+      ipaSlots: null,
+      ipaText: null,
+      translationText: "古普塔先生醒得很早。",
+    },
+    {
+      position: 2,
+      kind: "sentence",
+      originalText: "The morning was quiet.",
+      ipaSlots: null,
+      ipaText: null,
+      translationText: null,
+    },
+  ];
+
+  beforeEach(() => {
+    window.localStorage.removeItem("lingualeaf.showIpa");
+    window.localStorage.removeItem("lingualeaf.showTranslation");
+  });
+
+  function renderReadingPage() {
+    return render(
+      <MemoryRouter initialEntries={["/book/7/2"]}>
+        <Routes>
+          <Route path="/book/:id/:chapter" element={<ReadingPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+  }
+
+  function stubChapterFetch(payload: Record<string, unknown>): void {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.endsWith("/chapters/2")) {
+          return new Response(JSON.stringify(payload));
+        }
+        if (url.endsWith("/progress")) {
+          return new Response(JSON.stringify({ chapter: 2, block: 1 }));
+        }
+        if (url.endsWith("/api/books/7")) {
+          return new Response(
+            JSON.stringify({
+              id: 7,
+              title: "Probe Book",
+              chapters: [{ position: 2, title: "Two", level: 2 }],
+            })
+          );
+        }
+        return new Response(null, { status: 404 });
+      })
+    );
+  }
+
+  function chapterPayload(options: {
+    translationAvailable?: boolean;
+    blocks: Block[];
+  }): Record<string, unknown> {
+    return {
+      position: 2,
+      title: "Chapter Two",
+      translationStatus: "untranslated",
+      translationPercent: null,
+      translationError: null,
+      translationAvailable: options.translationAvailable ?? true,
+      blocks: options.blocks,
+    };
+  }
+
+  it("renders no translation lines and grays the 译文行 toggle on a wholly untranslated chapter", async () => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    stubChapterFetch(chapterPayload({ blocks: untranslatedBlocks }));
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByText("Chapter Two")).toBeTruthy();
+
+    // Not one translation-line element anywhere — not even the empty
+    // placeholders.
+    expect(document.querySelectorAll(".translation-line")).toHaveLength(0);
+    // The original lines are untouched.
+    expect(document.querySelectorAll(".original-line")).toHaveLength(2);
+
+    // The toggle grays: visible in the settings panel, but not operable.
+    fireEvent.click(screen.getByRole("button", { name: "显示设置" }));
+    const translationBox = screen.getByRole("checkbox", {
+      name: "译文行",
+    }) as HTMLInputElement;
+    expect(translationBox.disabled).toBe(true);
+    // The button stays live — the service is configured, the chapter is
+    // simply not translated yet.
+    const button = screen.getByRole("button", { name: "翻译本章" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("keeps the placeholder line for an individual hole and the toggle usable", async () => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    stubChapterFetch(chapterPayload({ blocks: holeBlocks }));
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Both sentence blocks render their three lines; the hole's
+    // translation line is the empty placeholder (既有渲染分支，只钉不改).
+    const lines = document.querySelectorAll(
+      ".sentence-block .translation-line"
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines[0]!.textContent).toBe("古普塔先生醒得很早。");
+    expect(lines[1]!.textContent).toBe("");
+
+    // A hole is not a whole-chapter zero: the toggle stays operable.
+    fireEvent.click(screen.getByRole("button", { name: "显示设置" }));
+    const translationBox = screen.getByRole("checkbox", {
+      name: "译文行",
+    }) as HTMLInputElement;
+    expect(translationBox.disabled).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it("grays the translate button with a visible hint while no service is configured", async () => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    stubChapterFetch(
+      chapterPayload({
+        translationAvailable: false,
+        blocks: untranslatedBlocks,
+      })
+    );
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // Grayed, not hidden: the button keeps its label and carries the
+    // disabled state; the hint says why.
+    const button = screen.getByRole("button", {
+      name: "翻译本章",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText(/未配置翻译服务/)).toBeTruthy();
+    vi.unstubAllGlobals();
   });
 });

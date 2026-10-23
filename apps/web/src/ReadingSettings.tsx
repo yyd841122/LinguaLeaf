@@ -115,6 +115,7 @@ export function ReadingSettings({
   onShowIpaChange,
   showTranslation,
   onShowTranslationChange,
+  translationLinesAvailable,
   ipaSize,
   onIpaSizeChange,
   originalSize,
@@ -126,6 +127,11 @@ export function ReadingSettings({
   onShowIpaChange: (value: boolean) => void;
   showTranslation: boolean;
   onShowTranslationChange: (value: boolean) => void;
+  // The chapter-level gate (ticket 03): with no translation line in the
+  // chapter to show, the 译文行 toggle grays — there is nothing it could
+  // toggle. The preference itself is untouched; it applies again the
+  // moment the chapter gains translations.
+  translationLinesAvailable: boolean;
   ipaSize: number;
   onIpaSizeChange: (size: number) => void;
   originalSize: number;
@@ -147,6 +153,7 @@ export function ReadingSettings({
         <input
           type="checkbox"
           checked={showTranslation}
+          disabled={!translationLinesAvailable}
           onChange={(event) => onShowTranslationChange(event.target.checked)}
         />
         译文行

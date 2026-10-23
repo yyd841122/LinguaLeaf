@@ -17,6 +17,7 @@ import {
   deleteBook,
   findBookRow,
   findChapterRow,
+  type ChapterData,
   getProgress,
   listChapters,
   listShelf,
@@ -26,7 +27,7 @@ import {
   type BookRow,
   type ShelfEntry,
 } from "./book-store.js";
-import type { ImportRejection } from "./wire.js";
+import type { ChapterTranslationState, ImportRejection } from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -68,6 +69,18 @@ export function createBooksRouter(
   translator?: Translator | null
 ): Router {
   const router = Router();
+
+  // The chapter payload as the wire carries it: the store's ChapterData
+  // plus the service-availability flag (ticket 03). The store stays
+  // translator-blind; the router is where the assembled translator is
+  // known, so the flag is decided here and every chapter response goes
+  // through this one construction — the GET and the trigger's 202 cannot
+  // disagree.
+  type ChapterPayload = ChapterData & ChapterTranslationState;
+  const toChapterPayload = (chapter: ChapterData): ChapterPayload => ({
+    ...chapter,
+    translationAvailable: translator != null,
+  });
   const upload = multer({
     storage: multer.memoryStorage(),
     // Only the "file" part carries data this route reads; field bytes,
@@ -285,7 +298,7 @@ export function createBooksRouter(
       response.status(404).json({ error: "chapter not found" });
       return;
     }
-    response.json(chapter);
+    response.json(toChapterPayload(chapter));
   });
 
   // The on-demand translation trigger (ADR-0004): same guard family as the
@@ -336,7 +349,7 @@ export function createBooksRouter(
       response.status(500).json({ error: "translation could not start" });
       return;
     }
-    response.status(202).json(payload);
+    response.status(202).json(toChapterPayload(payload));
   });
 
   return router;

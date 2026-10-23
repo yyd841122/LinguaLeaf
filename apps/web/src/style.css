@@ -193,6 +193,21 @@ main {
   cursor: pointer;
 }
 
+/* A grayed toggle (ticket 03): the native disabled checkbox alone does not
+   dim the label, so the whole row dims to read as 置灰. */
+.setting-toggle:has(input:disabled) {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/* The unconfigured-service hint (ticket 03): informational, not an error —
+   the dim annotation tone, sitting under the toolbar it explains. */
+.translation-hint {
+  color: #5c6f64;
+  font-size: 0.85rem;
+  margin: 0 1.25rem 0.75rem;
+}
+
 .sentence-block {
   margin: 0 0 1.25rem;
 }

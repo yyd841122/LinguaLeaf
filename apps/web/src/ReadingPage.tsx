@@ -302,6 +302,17 @@ export function ReadingPage() {
   }
 
   const chapterCount = toc.chapters.length;
+  // The chapter-level fact the two gates below key on (ticket 03): at
+  // least one sentence block carries a non-empty translation. A wholly
+  // untranslated chapter has no line to render and no toggle to offer;
+  // individual holes — a failed sentence's null among translated
+  // siblings — keep both alive with the pinned empty placeholder.
+  const chapterHasTranslations = content.blocks.some(
+    (block) =>
+      block.kind === "sentence" &&
+      block.translationText !== null &&
+      block.translationText.trim().length > 0
+  );
   return (
     <main className="reading-page">
       <div className="reading-top">
@@ -336,7 +347,10 @@ export function ReadingPage() {
                 the recovery (its reason display is ticket 04's). */}
             <button
               type="button"
-              disabled={content.translationStatus === "translating"}
+              disabled={
+                content.translationStatus === "translating" ||
+                !content.translationAvailable
+              }
               onClick={startTranslation}
             >
               {content.translationStatus === "translating"
@@ -376,6 +390,7 @@ export function ReadingPage() {
               onShowIpaChange={setShowIpa}
               showTranslation={showTranslation}
               onShowTranslationChange={setShowTranslation}
+              translationLinesAvailable={chapterHasTranslations}
               ipaSize={ipaSize}
               onIpaSizeChange={setIpaSize}
               originalSize={originalSize}
@@ -386,13 +401,18 @@ export function ReadingPage() {
           </div>
         )}
       </div>
+      {content.translationAvailable ? null : (
+        <p role="status" className="translation-hint">
+          未配置翻译服务，暂时无法翻译；配置后此按钮恢复可用。
+        </p>
+      )}
       <ReadingView
         chapter={content}
         ipaSize={ipaSize}
         originalSize={originalSize}
         translationSize={translationSize}
         showIpa={showIpa}
-        showTranslation={showTranslation}
+        showTranslation={showTranslation && chapterHasTranslations}
         onWordClick={setLookup}
       />
       {lookup ? (

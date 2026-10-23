@@ -168,6 +168,28 @@ describe("GET /api/books/:id/export", () => {
     );
   });
 
+  it("omits every translation line when the book is entirely untranslated", async () => {
+    // The whole-chapter-zero case (on-demand-translation ticket 03): since
+    // ticket 02 a fresh import rests at untranslated, so the book exports
+    // exactly as imported — no writeTranslations call, not one
+    // translation-line element anywhere, every sentence block still
+    // rendered. Pinned status quo (ADR-0004: no "translate before export"
+    // gate); the test that flips is the one that deliberately adds such a
+    // line to the untranslated export.
+    const bookId = await importSampleBookReady(app);
+
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+    expect(response.text.match(/class="translation-line"/g)).toBeNull();
+    // The blocks themselves are all there (sentence blocks render their
+    // word units as always), and the file's 译文行 toggle ships untouched —
+    // the omission is per-missing-line, not a hidden control.
+    expect(response.text).toContain(
+      '<span class="lookup-word" data-word="Gupta">'
+    );
+    expect(response.text).toContain('data-annotation="translation"');
+  });
+
   it("embeds the book's sentence-block vocabulary, folded and deduplicated, with lookup results or null", async () => {
     const bookId = await importSampleBookReady(app);
 

@@ -22,6 +22,20 @@ export type BookStatus = "importing" | "ready" | "failed";
 export type TranslationStatus =
   "untranslated" | "translating" | "translated" | "failed";
 
+// The on-demand translation half of the chapter payload (ADR-0004): what
+// the reading page's button and poll key on. translationAvailable (ticket
+// 03) is the server's answer to "is a translation service configured",
+// riding the same payload — the chapter GET and the trigger's 202 — so the
+// button greys without a config endpoint of its own. The store's ChapterData
+// stays translator-blind; the router, which holds the assembled translator,
+// augments the payload with the flag.
+export type ChapterTranslationState = {
+  translationStatus: TranslationStatus;
+  translationPercent: number | null;
+  translationError: string | null;
+  translationAvailable: boolean;
+};
+
 // The stages the bookshelf shows while importing. The translating stage
 // left the pipeline with on-demand translation (ADR-0004, ticket 02) — an
 // import is IPA lookups plus the block insert, effectively instant, so no

@@ -657,11 +657,17 @@ describe("chapter translation over the real server (chapterTranslation.ts)", () 
       translationStatus: "untranslated",
       translationPercent: null,
       translationError: null,
+      // Ticket 03: the configured assembly answers true, so the reading
+      // page's button stays live.
+      translationAvailable: true,
     });
     const triggered = await translateChapter(id, 2);
     expect(triggered).toMatchObject({
       translationStatus: "translating",
       translationError: null,
+      // The 202 body rides the same flag: the state the button patches in
+      // never contradicts the payload the page loaded.
+      translationAvailable: true,
     });
     // The task settles in the background; the poll reads the same payload
     // and finds the fresh lines beside the settled state.
@@ -703,6 +709,26 @@ describe("chapter translation over the real server (chapterTranslation.ts)", () 
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(409);
     releaseGate();
+  });
+
+  it("reports an unconfigured service through the chapter payload, and the trigger stays a 409", async () => {
+    // No translate option: the stack assembles without a translator, the
+    // shape a deployment without DEEPSEEK_API_KEY runs (ticket 03). The
+    // payload is what the reading page greys its button on; the 409 stays
+    // the route's honest backstop for a client that missed the flag — its
+    // first pin.
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const chapter = await fetchJson<{ translationAvailable: boolean }>(
+      `/api/books/${id}/chapters/2`
+    );
+    expect(chapter.translationAvailable).toBe(false);
+    const error = await translateChapter(id, 2).then(
+      () => null,
+      (caught) => caught
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(409);
   });
 });
 
