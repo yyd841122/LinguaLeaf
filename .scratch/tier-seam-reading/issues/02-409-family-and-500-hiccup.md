@@ -1,6 +1,6 @@
 # 02 · 409 家族加盖与 500 打嗝钉
 
-Status: ready-for-agent
+Status: done
 
 ## Scope
 
@@ -22,4 +22,12 @@ Status: ready-for-agent
 全绿(看退出码)。
 
 ## Comments
-
+Done in 307e9ae. The gated 409 pin now covers the guarded family — chapter
+content and the export's catchable failure — plus the asymmetry the gate
+itself exposed: the TOC route has no not-ready guard and answers 200 with
+an empty chapters list while importing; pinned, not endorsed, with the
+flip condition named in the comment. wordLookup's hiccup pin closes the
+dictionary for real (instance close stubbed for afterEach; console.error
+spied) and holds fetchWordLookup to throwing ApiError 500 with the bare
+envelope body instead of returning null. Suite 29 tests green (255 total,
+exit 0).
