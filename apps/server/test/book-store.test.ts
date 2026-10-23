@@ -3,18 +3,24 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database.js";
 import {
   INTERRUPTED_MESSAGE,
+  beginChapterTranslation,
   createImportingBook,
   deleteBook,
   failInterruptedImports,
   findBookRow,
+  findChapterRow,
   getProgress,
   listChapters,
+  listSentenceBlocks,
   listShelf,
   loadChapter,
   loadWholeBook,
   persistBook,
   saveProgress,
+  saveSentenceTranslations,
+  setChapterTranslationProgress,
   setImportProgress,
+  settleChapterTranslation,
   settleImport,
   type BlockRow,
 } from "../src/book-store.js";
@@ -97,6 +103,9 @@ describe("book-store", () => {
       position: 1,
       title: "One",
       level: 1,
+      translationStatus: "translated",
+      translationPercent: null,
+      translationError: null,
       blocks: [
         {
           position: 1,
@@ -123,6 +132,9 @@ describe("book-store", () => {
       position: 2,
       title: "Two",
       level: null,
+      translationStatus: "untranslated",
+      translationPercent: null,
+      translationError: null,
       blocks: [],
     });
     expect(loadChapter(database, id, 3)).toBeUndefined();
@@ -136,6 +148,9 @@ describe("book-store", () => {
       position: 2,
       title: "Two",
       level: null,
+      translationStatus: "untranslated",
+      translationPercent: null,
+      translationError: null,
       blocks: [],
     });
 
@@ -298,6 +313,169 @@ describe("book-store", () => {
         progress_chapter: 2,
         progress_block: 5,
       }),
+    ]);
+  });
+});
+
+// The on-demand translation state machine (on-demand-translation ticket 01,
+// ADR-0004): each chapter carries its own translating lifecycle, mirroring
+// the books.import_* pattern one level down. The route and task tests pin
+// the HTTP shape; these pin what only the store can prove — the atomic
+// claim, the guards that keep late task ticks from resurrecting a settled
+// or deleted chapter, and the reference-held translation write-back.
+describe("chapter translation state machine", () => {
+  let database: Database.Database;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+  });
+
+  afterEach(() => {
+    database.close();
+  });
+
+  // One book: chapter 1 holds sentences, chapter 2 is heading-only.
+  function bookWithChapters(): number {
+    const id = createImportingBook(database, "A Title", "markdown", null);
+    persistBook(database, id, [
+      {
+        title: "One",
+        level: 1,
+        blocks: [sentence("First."), raw("<p>x</p>"), sentence("Second.")],
+      },
+      { title: "Two", level: null, blocks: [] },
+    ]);
+    return id;
+  }
+
+  it("persistBook derives each chapter's initial status from its blocks", () => {
+    const id = bookWithChapters();
+    // The derivation mirrors the migration's block-presence rule (spec
+    // decision 5): sentence blocks mean the import translation ran.
+    expect(loadChapter(database, id, 1)?.translationStatus).toBe("translated");
+    expect(loadChapter(database, id, 2)?.translationStatus).toBe(
+      "untranslated"
+    );
+  });
+
+  it("findChapterRow reads the chapter head with its translation state", () => {
+    const id = bookWithChapters();
+    const row = findChapterRow(database, id, 1);
+    expect(row).toEqual({
+      id: expect.any(Number),
+      position: 1,
+      title: "One",
+      level: 1,
+      translation_status: "translated",
+      translation_error: null,
+      translation_percent: null,
+    });
+    expect(findChapterRow(database, id, 3)).toBeUndefined();
+  });
+
+  it("beginChapterTranslation claims a chapter atomically and re-arms a failed one", () => {
+    const id = bookWithChapters();
+    const chapter = findChapterRow(database, id, 2)!;
+    expect(beginChapterTranslation(database, chapter.id)).toBe(true);
+    expect(findChapterRow(database, id, 2)).toMatchObject({
+      translation_status: "translating",
+      translation_percent: 0,
+      translation_error: null,
+    });
+    // The claim is the 409's other half: a second trigger cannot begin.
+    expect(beginChapterTranslation(database, chapter.id)).toBe(false);
+    // A chapter id that is not there cannot begin either.
+    expect(beginChapterTranslation(database, chapter.id + 999)).toBe(false);
+
+    // A failed chapter may try again — the claim bars only 'translating'.
+    settleChapterTranslation(database, chapter.id, "failed", "boom");
+    expect(beginChapterTranslation(database, chapter.id)).toBe(true);
+  });
+
+  it("setChapterTranslationProgress writes only while translating", () => {
+    const id = bookWithChapters();
+    const chapter = findChapterRow(database, id, 2)!;
+    beginChapterTranslation(database, chapter.id);
+    setChapterTranslationProgress(database, chapter.id, 40);
+    expect(findChapterRow(database, id, 2)?.translation_percent).toBe(40);
+
+    // A settled chapter is past progress: a late tick must not put a
+    // percent back on it (mirrors the import writes' settled guard).
+    settleChapterTranslation(database, chapter.id, "translated", null);
+    setChapterTranslationProgress(database, chapter.id, 90);
+    expect(findChapterRow(database, id, 2)?.translation_percent).toBeNull();
+
+    // A deleted chapter is never resurrected by a late tick.
+    const doomed = findChapterRow(database, id, 1)!;
+    beginChapterTranslation(database, doomed.id);
+    deleteBook(database, id);
+    expect(() =>
+      setChapterTranslationProgress(database, doomed.id, 10)
+    ).not.toThrow();
+    expect(findChapterRow(database, id, 1)).toBeUndefined();
+  });
+
+  it("settleChapterTranslation records the verdict once and clears the percent", () => {
+    const id = bookWithChapters();
+    const chapter = findChapterRow(database, id, 2)!;
+    beginChapterTranslation(database, chapter.id);
+    setChapterTranslationProgress(database, chapter.id, 40);
+    settleChapterTranslation(database, chapter.id, "translated", null);
+    expect(findChapterRow(database, id, 2)).toMatchObject({
+      translation_status: "translated",
+      translation_percent: null,
+      translation_error: null,
+    });
+    // The guard: a second settle cannot overwrite the first verdict (a
+    // late failure tick must not mark a finished chapter failed).
+    settleChapterTranslation(database, chapter.id, "failed", "late boom");
+    expect(findChapterRow(database, id, 2)?.translation_status).toBe(
+      "translated"
+    );
+
+    // The failure verdict carries its reason.
+    const other = findChapterRow(database, id, 1)!;
+    beginChapterTranslation(database, other.id);
+    settleChapterTranslation(database, other.id, "failed", "翻译出错");
+    expect(findChapterRow(database, id, 1)).toMatchObject({
+      translation_status: "failed",
+      translation_error: "翻译出错",
+    });
+  });
+
+  it("listSentenceBlocks holds the sentence-block references, and translations write back through them", () => {
+    const id = bookWithChapters();
+    const refs = listSentenceBlocks(
+      database,
+      findChapterRow(database, id, 1)!.id
+    );
+    // Only sentence blocks, in position order, each carrying its row id.
+    expect(refs.map((block) => block.text)).toEqual(["First.", "Second."]);
+    expect(new Set(refs.map((block) => block.id)).size).toBe(2);
+
+    saveSentenceTranslations(database, [
+      { id: refs[0]!.id, translation: "译一" },
+      { id: refs[1]!.id, translation: null },
+    ]);
+    const blocks = loadChapter(database, id, 1)?.blocks.filter(
+      (block) => block.kind === "sentence"
+    );
+    expect(blocks?.map((block) => block.translationText)).toEqual([
+      "译一",
+      null,
+    ]);
+
+    // All-or-nothing: an unsupported bind throws and rolls the whole call
+    // back, leaving the earlier update of the same call unapplied.
+    expect(() =>
+      saveSentenceTranslations(database, [
+        { id: refs[0]!.id, translation: "不该落库" },
+        { id: refs[1]!.id, translation: { broken: true } as never },
+      ])
+    ).toThrow();
+    expect(blocks?.map((block) => block.translationText)).toEqual([
+      "译一",
+      null,
     ]);
   });
 });

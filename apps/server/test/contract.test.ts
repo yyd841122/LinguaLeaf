@@ -23,6 +23,7 @@ import {
   saveReadingProgress,
 } from "../../../apps/web/src/readingProgress";
 import { downloadAttachment } from "../../../apps/web/src/download";
+import { translateChapter } from "../../../apps/web/src/chapterTranslation";
 
 // The tier seam's test surface: the real web fetch clients (apps/web/src)
 // driving the real Express app over a real socket. This is the executable
@@ -633,6 +634,71 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     expect((error as ApiError).body).toEqual({
       error: "LIMIT_UNEXPECTED_FILE",
     });
+  });
+});
+
+describe("chapter translation over the real server (chapterTranslation.ts)", () => {
+  it("triggers through the client path, and the chapter payload carries the translation state", async () => {
+    await startStack({
+      translate: async (sentences) => sentences.map((s) => `译:${s}`),
+    });
+    const id = await uploadReadyBook(sampleBookPath);
+    // The chapter payload's appended state fields — the wire contract the
+    // reading page's button and poll key on (appended to the existing
+    // chapter envelope; the blocks' exact key sets keep their own pins).
+    const before = await fetchJson<Record<string, unknown>>(
+      `/api/books/${id}/chapters/2`
+    );
+    expect(before).toMatchObject({
+      translationStatus: "translated",
+      translationPercent: null,
+      translationError: null,
+    });
+    const triggered = await translateChapter(id, 2);
+    expect(triggered).toMatchObject({
+      translationStatus: "translating",
+      translationError: null,
+    });
+    // The task settles in the background; the poll reads the same payload
+    // and finds the fresh lines beside the settled state.
+    await vi.waitFor(async () => {
+      const chapter = await fetchJson<{ translationStatus: string }>(
+        `/api/books/${id}/chapters/2`
+      );
+      expect(chapter.translationStatus).toBe("translated");
+    });
+    const refreshed = await fetchJson<{
+      blocks: { translationText: string | null }[];
+    }>(`/api/books/${id}/chapters/2`);
+    expect(refreshed.blocks[0]).toMatchObject({
+      translationText: "译:Mr. Gupta woke early.",
+    });
+  });
+
+  it("surfaces the double-trigger 409 as a catchable ApiError", async () => {
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseGate = resolve;
+    });
+    let armed = false;
+    await startStack({
+      translate: async (sentences) => {
+        if (armed) await gate;
+        return sentences.map((s) => `译:${s}`);
+      },
+    });
+    const id = await uploadReadyBook(sampleBookPath);
+    // Arm only after the import settled: the chapter task parks, the claim
+    // is held, and the second trigger meets the 409.
+    armed = true;
+    await translateChapter(id, 2);
+    const error = await translateChapter(id, 2).then(
+      () => null,
+      (caught) => caught
+    );
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(409);
+    releaseGate();
   });
 });
 

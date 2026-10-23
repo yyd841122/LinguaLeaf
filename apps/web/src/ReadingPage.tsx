@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { fetchJson } from "./api";
+import {
+  translateChapter,
+  type ChapterTranslationState,
+} from "./chapterTranslation";
 import { useIpaSize } from "./IpaSizeControl";
 import {
   ReadingSettings,
@@ -24,13 +28,17 @@ type TableOfContents = {
   chapters: { position: number; title: string; level: number | null }[];
 };
 
-type ChapterContent = {
+type ChapterContent = ChapterTranslationState & {
   position: number;
   title: string;
   blocks: Block[];
 };
 
 const SAVE_DEBOUNCE_MS = 500;
+// How often the chapter re-asks for its payload while a translation runs;
+// mirrors the shelf's import poll (the task updates the percent per batch,
+// so this needs to feel live, not be instant).
+const TRANSLATION_POLL_MS = 1500;
 // How long after the restore jump scroll events stay ignored: they are the
 // jump's own events, not the reader moving on. A reader physically
 // scrolling within this window of a chapter render is not a thing.
@@ -67,6 +75,17 @@ export function ReadingPage() {
   // The word-lookup popup (ticket 06): which word was clicked, and where to
   // anchor it. Clicking another word re-anchors; leaving the chapter closes.
   const [lookup, setLookup] = useState<WordClick | null>(null);
+  // The on-demand translation flow (ADR-0004): `startFailed` says the
+  // trigger POST did not land; `pollFailed` says the running poll has
+  // stopped answering. Both clear on their own recovery (a retry or a
+  // landing tick) — a loop's last state must not outlive its credibility
+  // (CODING_STANDARDS).
+  const [startFailed, setStartFailed] = useState(false);
+  const [pollFailed, setPollFailed] = useState(false);
+  // The route as of the latest render: a trigger's 202 that resolves after
+  // a navigation is stale and must not patch the new chapter's state.
+  const currentRouteRef = useRef({ bookId, chapterNumber });
+  currentRouteRef.current = { bookId, chapterNumber };
 
   useEffect(() => {
     setLookup(null);
@@ -79,6 +98,8 @@ export function ReadingPage() {
     }
     let cancelled = false;
     setError(null);
+    setStartFailed(false);
+    setPollFailed(false);
     setToc(null);
     setContent(null);
     setProgress(null);
@@ -205,6 +226,68 @@ export function ReadingPage() {
     };
   }, [content, chapterNumber, loadedRoute, bookId]);
 
+  // The translate trigger: the POST's 202 body is the chapter in its
+  // brand-new translating state, patched in immediately (the shelf's
+  // "202 body joins first" precedent — a failed refresh cannot masquerade
+  // as a failed trigger). From there the poll below follows the lifecycle;
+  // the button's disabled state keys on the server's status, never on the
+  // POST having returned.
+  const startTranslation = () => {
+    setStartFailed(false);
+    const route = { bookId, chapterNumber };
+    translateChapter(bookId, chapterNumber)
+      .then((state) => {
+        if (
+          currentRouteRef.current.bookId !== route.bookId ||
+          currentRouteRef.current.chapterNumber !== route.chapterNumber
+        ) {
+          return;
+        }
+        setContent((current) => (current ? { ...current, ...state } : current));
+      })
+      .catch(() => {
+        // The endpoint's 409s (already translating / no service) and every
+        // other failure land here: a catchable notice, not a white screen.
+        if (
+          currentRouteRef.current.bookId !== route.bookId ||
+          currentRouteRef.current.chapterNumber !== route.chapterNumber
+        ) {
+          return;
+        }
+        setStartFailed(true);
+      });
+  };
+
+  // While this chapter translates, re-ask for the payload on an interval:
+  // the percent moves the disabled button's label, and the response that
+  // leaves 'translating' carries the fresh lines with it. Route changes
+  // and settle both tear the interval down.
+  const translating = content?.translationStatus === "translating";
+  useEffect(() => {
+    if (!translating) return;
+    let cancelled = false;
+    const interval = window.setInterval(() => {
+      fetchJson<ChapterContent>(
+        `/api/books/${bookId}/chapters/${chapterNumber}`
+      )
+        .then((chapterData) => {
+          if (cancelled) return;
+          setContent(chapterData);
+          setPollFailed(false);
+        })
+        .catch(() => {
+          // Keep the chapter as-is; the next tick retries. But say the
+          // connection is gone — a frozen 「翻译中」 alone would hide the
+          // outage (CODING_STANDARDS: retry loops escalate).
+          if (!cancelled) setPollFailed(true);
+        });
+    }, TRANSLATION_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [translating, bookId, chapterNumber]);
+
   if (error) {
     return (
       <main className="reading-page">
@@ -250,6 +333,22 @@ export function ReadingPage() {
               }}
             >
               显示设置
+            </button>
+            {/* The third toolbar button, acting on the current chapter
+                (ADR-0004): the shape keys on the payload's
+                translationStatus — 翻译本章 / 翻译中 N% (disabled) /
+                重新翻译. A failed chapter keeps 重新翻译: re-running is
+                the recovery (its reason display is ticket 04's). */}
+            <button
+              type="button"
+              disabled={content.translationStatus === "translating"}
+              onClick={startTranslation}
+            >
+              {content.translationStatus === "translating"
+                ? `翻译中 ${content.translationPercent ?? 0}%`
+                : content.translationStatus === "untranslated"
+                  ? "翻译本章"
+                  : "重新翻译"}
             </button>
           </div>
         </header>
@@ -307,6 +406,16 @@ export function ReadingPage() {
       {saveFailed ? (
         <p role="status" className="save-warning">
           阅读进度保存失败，位置可能没有同步。
+        </p>
+      ) : null}
+      {startFailed ? (
+        <p role="alert" className="error">
+          翻译启动失败，请重试。
+        </p>
+      ) : null}
+      {translating && pollFailed ? (
+        <p role="alert" className="error">
+          无法连接服务端，翻译进度可能已过期——请确认服务端正在运行。
         </p>
       ) : null}
       <nav className="chapter-nav" aria-label="章节导航">

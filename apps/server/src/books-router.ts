@@ -9,11 +9,14 @@ import {
   renderAnnotatedBook,
 } from "./export/annotated-book.js";
 import type { Translator } from "./translate/translator.js";
+import { runChapterTranslationTask } from "./translate/chapter-task.js";
 import { runImportTask } from "./import/import-task.js";
 import {
+  beginChapterTranslation,
   createImportingBook,
   deleteBook,
   findBookRow,
+  findChapterRow,
   getProgress,
   listChapters,
   listShelf,
@@ -285,6 +288,57 @@ export function createBooksRouter(
       return;
     }
     response.json(chapter);
+  });
+
+  // The on-demand translation trigger (ADR-0004): same guard family as the
+  // reading routes above, then the chapter's own state machine — an atomic
+  // claim that answers 409 while the chapter is translating, after which
+  // the task runs in the background. 202 carries the chapter payload in
+  // its brand-new translating state: the reading page's poll reads the
+  // same shape and refreshes the lines when the state leaves translating.
+  router.post("/:id/chapters/:chapter/translate", (request, response) => {
+    const bookId = Number(request.params.id);
+    const chapterPosition = Number(request.params.chapter);
+    if (!Number.isInteger(bookId) || !Number.isInteger(chapterPosition)) {
+      response.status(404).json({ error: "chapter not found" });
+      return;
+    }
+    const book = bookFromParams(request);
+    if (!book) {
+      response.status(404).json({ error: "book not found" });
+      return;
+    }
+    if (respondIfNotReady(book, response)) return;
+    const chapter = findChapterRow(database, book.id, chapterPosition);
+    if (!chapter) {
+      response.status(404).json({ error: "chapter not found" });
+      return;
+    }
+    if (!translator) {
+      // Ticket 03 greys the button off this condition; until then the
+      // route stays honest on its own: no service, no claim, nothing to
+      // poll — a 409 with the reason beside it.
+      response
+        .status(409)
+        .json({ error: "translation service is not configured" });
+      return;
+    }
+    // The claim is the concurrency guard: one UPDATE, so a second trigger
+    // while this chapter translates cannot slip through. Different
+    // chapters claim independently — no serial queue (spec decision 2).
+    if (!beginChapterTranslation(database, chapter.id)) {
+      response.status(409).json({ error: "chapter is already translating" });
+      return;
+    }
+    void runChapterTranslationTask({ database, translator }, chapter.id);
+    const payload = loadChapter(database, book.id, chapterPosition);
+    if (!payload) {
+      // Unreachable in practice — the chapter was just claimed — but keeps
+      // the handler total without asserting.
+      response.status(500).json({ error: "translation could not start" });
+      return;
+    }
+    response.status(202).json(payload);
   });
 
   return router;

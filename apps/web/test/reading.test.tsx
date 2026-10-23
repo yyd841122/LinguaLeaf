@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError, fetchJson } from "../src/api";
 import { ReadingPage } from "../src/ReadingPage";
@@ -640,6 +640,297 @@ describe("ReadingPage through the component boundary", () => {
       expect(
         screen.getByText(/阅读进度保存失败，位置可能没有同步。/)
       ).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+});
+
+// The on-demand translation button (on-demand-translation ticket 01): the
+// toolbar's third button keys its three shapes on the chapter payload's
+// translationStatus, the trigger POST patches the state in from the 202
+// body, and the 1.5s poll follows the lifecycle until the chapter settles.
+describe("ReadingPage's translate button through the component boundary", () => {
+  const chapterBlocks: Block[] = [
+    {
+      position: 1,
+      kind: "sentence",
+      originalText: "Mr. Gupta woke early.",
+      ipaSlots: null,
+      ipaText: null,
+      translationText: null,
+    },
+  ];
+
+  // Earlier tests in this file persist both toggles as false; these assert
+  // on the rendered lines, so each starts from the visible defaults.
+  beforeEach(() => {
+    window.localStorage.removeItem("lingualeaf.showIpa");
+    window.localStorage.removeItem("lingualeaf.showTranslation");
+  });
+
+  function renderReadingPage() {
+    return render(
+      <MemoryRouter initialEntries={["/book/7/2"]}>
+        <Routes>
+          <Route path="/book/:id/:chapter" element={<ReadingPage />} />
+        </Routes>
+      </MemoryRouter>
+    );
+  }
+
+  type ChapterPayload = {
+    translationStatus: string;
+    translationPercent: number | null;
+    blocks?: Block[];
+  };
+  type Call = { url: string; init: RequestInit };
+
+  // The scripted server: the chapter answers with each payload in order
+  // (staying on the last one), the trigger POST answers with `postBody`,
+  // and `pollBehavior` fails the poll GETs when set.
+  function stubTranslateFetch(options: {
+    chapterPayloads: ChapterPayload[];
+    postBody: ChapterPayload;
+    pollBehavior?: "fail";
+  }): { calls: Call[] } {
+    const calls: Call[] = [];
+    let payloadIndex = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown, init?: RequestInit) => {
+        const url = String(input);
+        calls.push({ url, init: init ?? {} });
+        if (url.endsWith("/chapters/2/translate")) {
+          return new Response(JSON.stringify(options.postBody), {
+            status: 202,
+          });
+        }
+        if (url.endsWith("/chapters/2")) {
+          if (options.pollBehavior === "fail") {
+            return new Response(null, { status: 503 });
+          }
+          const payload =
+            options.chapterPayloads[
+              Math.min(payloadIndex, options.chapterPayloads.length - 1)
+            ];
+          payloadIndex += 1;
+          return new Response(JSON.stringify(payload));
+        }
+        if (url.endsWith("/progress")) {
+          return new Response(JSON.stringify({ chapter: 2, block: 1 }));
+        }
+        if (url.endsWith("/api/books/7")) {
+          return new Response(
+            JSON.stringify({
+              id: 7,
+              title: "Probe Book",
+              chapters: [{ position: 2, title: "Two", level: 2 }],
+            })
+          );
+        }
+        return new Response(null, { status: 404 });
+      })
+    );
+    return { calls };
+  }
+
+  it("offers 翻译本章 on an untranslated chapter, then polls to 重新翻译 with fresh lines", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      const translating: ChapterPayload = {
+        translationStatus: "translating",
+        translationPercent: 44,
+      };
+      const translated: ChapterPayload = {
+        translationStatus: "translated",
+        translationPercent: null,
+        blocks: [
+          {
+            position: 1,
+            kind: "sentence",
+            originalText: "Mr. Gupta woke early.",
+            ipaSlots: null,
+            ipaText: null,
+            translationText: "古普塔先生醒得很早。",
+          },
+        ],
+      };
+      const { calls } = stubTranslateFetch({
+        chapterPayloads: [
+          {
+            translationStatus: "untranslated",
+            translationPercent: null,
+            blocks: chapterBlocks,
+          },
+          { ...translating, blocks: chapterBlocks },
+          translated,
+        ],
+        postBody: {
+          translationStatus: "translating",
+          translationPercent: 0,
+        },
+      });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // State one: the chapter has no translation yet.
+      const button = screen.getByRole("button", { name: "翻译本章" });
+      expect(button).toBeTruthy();
+
+      fireEvent.click(button);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // The 202 body moves the button into its translating shape before
+      // the first poll; the POST rode the same client path the contract
+      // suite pins.
+      expect(screen.getByRole("button", { name: "翻译中 0%" })).toBeTruthy();
+      expect(
+        (screen.getByRole("button", { name: "翻译中 0%" }) as HTMLButtonElement)
+          .disabled
+      ).toBe(true);
+      expect(
+        calls.filter((call) => call.url.endsWith("/translate"))
+      ).toHaveLength(1);
+
+      // Poll one: the percent moved.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(screen.getByRole("button", { name: "翻译中 44%" })).toBeTruthy();
+
+      // Poll two: the chapter settled — the button is back, and the fresh
+      // translation line rides the same response.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      const again = screen.getByRole("button", { name: "重新翻译" });
+      expect(again).toBeTruthy();
+      expect((again as HTMLButtonElement).disabled).toBe(false);
+      expect(screen.getByText("古普塔先生醒得很早。")).toBeTruthy();
+      // The poll stops with the lifecycle: no further chapter GETs.
+      const chapterGets = calls.filter(
+        (call) =>
+          call.url.endsWith("/chapters/2") && call.init.method === undefined
+      );
+      const getsAfterSettle = chapterGets.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4500);
+      });
+      expect(
+        calls.filter(
+          (call) =>
+            call.url.endsWith("/chapters/2") && call.init.method === undefined
+        )
+      ).toHaveLength(getsAfterSettle);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("shows 重新翻译 on a translated chapter and disables the button while the payload says translating", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      stubTranslateFetch({
+        chapterPayloads: [
+          {
+            translationStatus: "translating",
+            translationPercent: 7,
+            blocks: chapterBlocks,
+          },
+        ],
+        postBody: { translationStatus: "translating", translationPercent: 7 },
+      });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // Opening a chapter that is already translating (another tab started
+      // it) shows the disabled progress shape straight from the payload.
+      const button = screen.getByRole("button", {
+        name: "翻译中 7%",
+      }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("surfaces a persistently failing poll and clears the notice when a tick lands", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      // The initial load answers; only the poll ticks that follow fail
+      // until the test lets one land.
+      let chapterGets = 0;
+      const calls: Call[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: unknown, init?: RequestInit) => {
+          const url = String(input);
+          calls.push({ url, init: init ?? {} });
+          if (url.endsWith("/chapters/2")) {
+            chapterGets += 1;
+            if (chapterGets === 1) {
+              return new Response(
+                JSON.stringify({
+                  translationStatus: "translating",
+                  translationPercent: 30,
+                  blocks: chapterBlocks,
+                })
+              );
+            }
+            if (chapterGets < 4) return new Response(null, { status: 503 });
+            return new Response(
+              JSON.stringify({
+                translationStatus: "translated",
+                translationPercent: null,
+                blocks: chapterBlocks,
+              })
+            );
+          }
+          if (url.endsWith("/progress")) {
+            return new Response(JSON.stringify({ chapter: 2, block: 1 }));
+          }
+          if (url.endsWith("/api/books/7")) {
+            return new Response(
+              JSON.stringify({
+                id: 7,
+                title: "Probe Book",
+                chapters: [{ position: 2, title: "Two", level: 2 }],
+              })
+            );
+          }
+          return new Response(null, { status: 404 });
+        })
+      );
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // Already translating at load; the poll's next ticks all fail.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000);
+      });
+      expect(
+        screen.getByText(/无法连接服务端，翻译进度可能已过期/)
+      ).toBeTruthy();
+      // A landing tick clears the notice — the loop recovered.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(
+        screen.queryByText(/无法连接服务端，翻译进度可能已过期/)
+      ).toBeNull();
+      expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();

@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
 import type Database from "better-sqlite3";
@@ -866,5 +866,269 @@ describe("translation at the HTTP API seam", () => {
     }[]) {
       expect(block.translationText).toBeNull();
     }
+  });
+});
+
+describe("chapter translation at the HTTP API seam (on-demand-translation ticket 01)", () => {
+  let database: Database.Database;
+  let dictionary: ReturnType<typeof openDictionary>;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    dictionary = createFixtureDictionary();
+  });
+  afterEach(() => {
+    database.close();
+    dictionary.close();
+  });
+
+  // A translator whose armed calls park until released: the import's own
+  // batches (which ran before the test arms the gate) flow through, the
+  // chapter task's first batch parks — its synchronous prefix has run by
+  // the time the trigger POST answers, so a release is queued.
+  function gatedChapterTranslator() {
+    let parked = false;
+    const releases: (() => void)[] = [];
+    const translator = createFakeTranslator(
+      (sentences) =>
+        new Promise((resolve) => {
+          if (!parked) {
+            resolve(sentences.map((sentence) => `译:${sentence}`));
+            return;
+          }
+          releases.push(() =>
+            resolve(sentences.map((sentence) => `译:${sentence}`))
+          );
+        })
+    );
+    return {
+      translator,
+      arm: () => {
+        parked = true;
+      },
+      releaseAll: () => releases.splice(0).forEach((release) => release()),
+    };
+  }
+
+  it("triggers a chapter translation with a 202 and settles it translated", async () => {
+    const gate = gatedChapterTranslator();
+    const app = createApp(database, dictionary, gate.translator);
+    const bookId = await importSampleBookReady(app);
+    gate.arm();
+
+    const triggered = await request(app).post(
+      `/api/books/${bookId}/chapters/2/translate`
+    );
+    expect(triggered.status).toBe(202);
+    // The 202 body is the chapter payload in its brand-new translating
+    // state — the same shape the reading page polls.
+    expect(triggered.body).toMatchObject({
+      position: 2,
+      translationStatus: "translating",
+      translationPercent: 0,
+      translationError: null,
+    });
+
+    gate.releaseAll();
+    await vi.waitFor(async () => {
+      const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
+      expect(chapter.body).toMatchObject({
+        translationStatus: "translated",
+        translationPercent: null,
+        translationError: null,
+      });
+    });
+    // The refreshed lines are visible through the same payload.
+    const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
+    expect(
+      (chapter.body.blocks as { translationText: string | null }[]).map(
+        (block) => block.translationText
+      )
+    ).toEqual([
+      "译:Mr. Gupta woke early.",
+      "译:The morning was quiet, and the sea was calm.",
+      "译:He wrote a failing test first.",
+      "译:Then he made it pass!",
+    ]);
+  });
+
+  it("409s a second trigger on the translating chapter and lets another chapter translate in parallel", async () => {
+    const gate = gatedChapterTranslator();
+    const app = createApp(database, dictionary, gate.translator);
+    const bookId = await importSampleBookReady(app);
+    gate.arm();
+
+    await request(app).post(`/api/books/${bookId}/chapters/2/translate`);
+    // Same chapter, still translating: the claim is the 409's other half.
+    const second = await request(app).post(
+      `/api/books/${bookId}/chapters/2/translate`
+    );
+    expect(second.status).toBe(409);
+    // A different chapter is its own lifecycle — never rejected for
+    // chapter 2's sake (spec: 不同章允许并行).
+    const other = await request(app).post(
+      `/api/books/${bookId}/chapters/1/translate`
+    );
+    expect(other.status).toBe(202);
+    expect(other.body).toMatchObject({ position: 1 });
+
+    gate.releaseAll();
+    await vi.waitFor(async () => {
+      const first = await request(app).get(`/api/books/${bookId}/chapters/1`);
+      const second = await request(app).get(`/api/books/${bookId}/chapters/2`);
+      expect(first.body.translationStatus).toBe("translated");
+      expect(second.body.translationStatus).toBe("translated");
+    });
+  });
+
+  it("409s the trigger on a book that is not ready, joining the reading family", async () => {
+    // Hold the import's first batch: the book sits importing, and the
+    // trigger must get the same 409 the reading routes answer.
+    let releaseImport: (() => void) | undefined;
+    const translator = createFakeTranslator(
+      (sentences) =>
+        new Promise((resolve) => {
+          releaseImport = () =>
+            resolve(sentences.map((sentence) => `译:${sentence}`));
+        })
+    );
+    const app = createApp(database, dictionary, translator);
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", sampleBookPath);
+    expect(created.status).toBe(202);
+
+    const triggered = await request(app).post(
+      `/api/books/${created.body.id}/chapters/1/translate`
+    );
+    expect(triggered.status).toBe(409);
+
+    releaseImport?.();
+    await waitForShelfBook(app, created.body.id, "ready");
+  });
+
+  it("409s the trigger when no translator is configured", async () => {
+    const app = createApp(database, dictionary);
+    const bookId = await importSampleBookReady(app);
+
+    const triggered = await request(app).post(
+      `/api/books/${bookId}/chapters/2/translate`
+    );
+    expect(triggered.status).toBe(409);
+    // The chapter stays as it was: a refused trigger claims nothing.
+    const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
+    expect(chapter.body.translationStatus).toBe("translated");
+  });
+
+  it("leaves an exhausted sentence empty after three rounds and still settles translated", async () => {
+    // The 留空 semantics on the new path: a sentence the translator never
+    // delivers comes back null after MAX_TRANSLATION_ROUNDS requests, and
+    // the chapter counts translated anyway (spec decision 3).
+    const translator = createFakeTranslator((batch) =>
+      batch.map((sentence) =>
+        sentence.includes("failing") ? null : `译:${sentence}`
+      )
+    );
+    const app = createApp(database, dictionary, translator);
+    const bookId = await importSampleBookReady(app);
+
+    const triggered = await request(app).post(
+      `/api/books/${bookId}/chapters/2/translate`
+    );
+    expect(triggered.status).toBe(202);
+
+    await vi.waitFor(async () => {
+      const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
+      expect(chapter.body.translationStatus).toBe("translated");
+    });
+    // The task's own calls are the last three (the import's already
+    // settled before the trigger): chapter 2 holds four sentences — round
+    // 1 requests all four, rounds 2 and 3 re-request only the failed one,
+    // then the rounds run out.
+    expect(translator.calls.slice(-3)).toEqual([
+      [
+        "Mr. Gupta woke early.",
+        "The morning was quiet, and the sea was calm.",
+        "He wrote a failing test first.",
+        "Then he made it pass!",
+      ],
+      ["He wrote a failing test first."],
+      ["He wrote a failing test first."],
+    ]);
+    const chapter = await request(app).get(`/api/books/${bookId}/chapters/2`);
+    const blocks = chapter.body.blocks as {
+      originalText: string;
+      translationText: string | null;
+    }[];
+    expect(
+      blocks.find((block) => block.originalText.includes("failing"))
+    ).toMatchObject({ translationText: null });
+    expect(
+      blocks.find((block) => block.originalText.startsWith("Mr."))
+    ).toMatchObject({ translationText: "译:Mr. Gupta woke early." });
+  });
+
+  it("moves the chapter percent forward batch by batch and clears it on settle", async () => {
+    // 45 sentences in one heading-less chapter make three 20-sentence
+    // batches; each parks until released, so the percent steps are read
+    // through the same chapter payload the reading page polls. The 99
+    // ceiling and the settle-to-NULL mirror the shelf's import percent.
+    const paragraphs = Array.from(
+      { length: 45 },
+      (_, index) =>
+        `Sentence ${index + 1} opens with a quiet walk beside the river.`
+    );
+    const releases: (() => void)[] = [];
+    const translator = createFakeTranslator(
+      (sentences) =>
+        new Promise((resolve) => {
+          releases.push(() =>
+            resolve(sentences.map((sentence) => `译:${sentence}`))
+          );
+        })
+    );
+    const app = createApp(database, dictionary, translator);
+    const created = await request(app)
+      .post("/api/books")
+      .attach("file", Buffer.from(paragraphs.join("\n\n")), {
+        filename: "forty-five-sentences.md",
+        contentType: "text/markdown",
+      });
+    expect(created.status).toBe(202);
+    // The import's own three batches parked; keep releasing until the book
+    // settles with all 45 sentences in chapter 1 — then the chapter task's
+    // batches park the same way.
+    await vi.waitFor(async () => {
+      releases.splice(0).forEach((release) => release());
+      const shelf = await request(app).get("/api/books");
+      expect(shelf.body.books[0]?.status).toBe("ready");
+    });
+
+    const triggered = await request(app).post(
+      `/api/books/${created.body.id}/chapters/1/translate`
+    );
+    expect(triggered.status).toBe(202);
+    expect(triggered.body).toMatchObject({ translationPercent: 0 });
+
+    const observed: number[] = [0];
+    for (;;) {
+      releases.shift()!();
+      const chapter = await request(app).get(
+        `/api/books/${created.body.id}/chapters/1`
+      );
+      if (chapter.body.translationStatus !== "translating") {
+        expect(chapter.body).toMatchObject({
+          translationStatus: "translated",
+          translationPercent: null,
+        });
+        break;
+      }
+      observed.push(chapter.body.translationPercent as number);
+    }
+    // One step per released batch plus the floor: 20 of 45 rounds to 44%,
+    // 40 of 45 to 89%. Monotonic, never 100 while translating.
+    expect(observed).toEqual([0, 44, 89]);
+    expect([...observed].sort((a, b) => a - b)).toEqual(observed);
+    expect(Math.max(...observed)).toBeLessThan(100);
   });
 });

@@ -37,6 +37,10 @@ const chaptersTable = `
       position INTEGER NOT NULL,
       title TEXT NOT NULL,
       level INTEGER,
+      translation_status TEXT NOT NULL DEFAULT 'untranslated'
+        CHECK (translation_status IN ('untranslated', 'translating', 'translated', 'failed')),
+      translation_error TEXT,
+      translation_percent INTEGER,
       UNIQUE (book_id, position)
     );
 `;
@@ -130,6 +134,43 @@ export function migrateSchema(database: Database.Database): void {
     "page_count",
     "ALTER TABLE books ADD COLUMN page_count INTEGER"
   );
+  // Databases created before on-demand translation (ADR-0004) predate the
+  // chapter translation columns; altered in place like the book status
+  // columns. (SQLite cannot add the CHECK through ALTER; new databases get
+  // it from the CREATE above, and the store owns the value set everywhere.)
+  // The backfill runs exactly once — when the status column is the fresh
+  // one — deriving every existing chapter by the block-presence rule (spec
+  // decision 5): a chapter holding sentence blocks has been through the
+  // import translation and counts translated, so old books do not flip to
+  // untranslated. A later startup must not re-derive, or chapters that went
+  // untranslated on purpose would be resurrected to translated.
+  const chapterColumns = database
+    .prepare("PRAGMA table_info(chapters)")
+    .all() as { name: string }[];
+  const statusColumnIsFresh = !chapterColumns.some(
+    (column) => column.name === "translation_status"
+  );
+  addColumnIfMissing(
+    chapterColumns,
+    "translation_status",
+    "ALTER TABLE chapters ADD COLUMN translation_status TEXT NOT NULL DEFAULT 'untranslated'"
+  );
+  addColumnIfMissing(
+    chapterColumns,
+    "translation_error",
+    "ALTER TABLE chapters ADD COLUMN translation_error TEXT"
+  );
+  addColumnIfMissing(
+    chapterColumns,
+    "translation_percent",
+    "ALTER TABLE chapters ADD COLUMN translation_percent INTEGER"
+  );
+  if (statusColumnIsFresh) {
+    database.exec(`UPDATE chapters SET translation_status = 'translated'
+       WHERE EXISTS (SELECT 1 FROM blocks
+                      WHERE blocks.chapter_id = chapters.id
+                        AND blocks.kind = 'sentence')`);
+  }
   // Databases created before ticket 07 carry a kind CHECK without 'image'.
   // SQLite cannot alter a CHECK constraint; the table is rebuilt in place
   // (sqlite.org/lang_altertable.html) with every row carried over.

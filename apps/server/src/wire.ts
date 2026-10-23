@@ -13,6 +13,15 @@
 // reader-facing states are 'ready' and 'failed'.
 export type BookStatus = "importing" | "ready" | "failed";
 
+// The on-demand translation lifecycle of one chapter (ADR-0004,
+// on-demand-translation ticket 01). 'translating' covers everything between
+// the trigger POST's claim write and the task's settle write; the reading
+// page's button keys its three shapes on these values. The pattern mirrors
+// books.status: a restart sweep (ticket 04) is what moves a stranded
+// 'translating' to 'failed'.
+export type TranslationStatus =
+  "untranslated" | "translating" | "translated" | "failed";
+
 // The stages the bookshelf shows while importing. IPA lookups and insert
 // are effectively instant; only 'translating' lasts long enough to be
 // watched, so it is the one stage that carries a percent.

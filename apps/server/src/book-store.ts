@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import type { BookStatus, ImportStage } from "./wire.js";
+import type { BookStatus, ImportStage, TranslationStatus } from "./wire.js";
 
 // The book store: every SQL statement over the four book tables — books,
 // chapters, blocks, reading_progress — lives here and nowhere else. The
@@ -58,11 +58,24 @@ export type ShelfEntry = BookRow & {
   progress_block: number | null;
 };
 
-// A chapter head as the table-of-contents route serves it.
+// A chapter head as the table-of-contents route serves it. The TOC stays
+// translation-blind on purpose: the reading page learns a chapter's
+// translation state from the chapter payload, and the TOC's wire shape is
+// pinned to exactly these keys.
 export type ChapterHead = {
   position: number;
   title: string;
   level: number | null;
+};
+
+// A chapter row with its on-demand translation state (ADR-0004): what the
+// trigger route reads to decide 404 / 409 / 202 and what the task holds as
+// its write handle (the chapter id).
+export type ChapterRow = ChapterHead & {
+  id: number;
+  translation_status: TranslationStatus;
+  translation_error: string | null;
+  translation_percent: number | null;
 };
 
 // One block as the readers see it: sentence blocks carry the three
@@ -86,7 +99,13 @@ export type PlainBlockData = {
 export type BlockData = SentenceBlockData | PlainBlockData;
 
 // A chapter as both readers (the chapter route, the export) consume it.
+// The translation state rides beside the content: the reading page's button
+// keys on translationStatus, the percent moves the 翻译中 label, and the
+// error carries the failure reason (its display is ticket 04's).
 export type ChapterData = ChapterHead & {
+  translationStatus: TranslationStatus;
+  translationPercent: number | null;
+  translationError: string | null;
   blocks: BlockData[];
 };
 
@@ -187,18 +206,28 @@ export function persistBook(
       .get(bookId);
     if (!existing) return false;
     const insertChapter = database.prepare(
-      "INSERT INTO chapters (book_id, position, title, level) VALUES (?, ?, ?, ?)"
+      "INSERT INTO chapters (book_id, position, title, level, translation_status) VALUES (?, ?, ?, ?, ?)"
     );
     const insertBlock = database.prepare(
       "INSERT INTO blocks (chapter_id, position, kind, original_text, ipa_slots, ipa_text, translation_text) VALUES (?, ?, ?, ?, ?, ?, ?)"
     );
     chapters.forEach((chapter, chapterIndex) => {
+      // The initial status derives by the same block-presence rule as the
+      // migration's backfill (spec decision 5): a chapter holding sentence
+      // blocks has been through the import translation and counts
+      // translated, so freshly imported books never flip to untranslated.
+      const translationStatus = chapter.blocks.some(
+        (block) => block.kind === "sentence"
+      )
+        ? "translated"
+        : "untranslated";
       const chapterId = Number(
         insertChapter.run(
           bookId,
           chapterIndex + 1,
           chapter.title,
-          chapter.level
+          chapter.level,
+          translationStatus
         ).lastInsertRowid
       );
       let position = 0;
@@ -275,6 +304,110 @@ export function failInterruptedImports(database: Database.Database): number {
   return interrupted.changes;
 }
 
+// The on-demand translation lifecycle of one chapter (ADR-0004) — the
+// chapters-table mirror of the import writes above: one atomic claim (the
+// trigger route's 409 half), percent writes guarded on 'translating' so a
+// late tick cannot mark a settled or deleted chapter, and one guarded
+// settle that records the verdict exactly once.
+
+// Claims a chapter for translation: flips it to 'translating' at percent 0
+// with any stale error cleared. True when the claim landed; false when the
+// chapter is already translating (the route answers 409) or the id is not
+// there. The claim and the route's check are one UPDATE, so two triggers
+// cannot both hold a chapter.
+export function beginChapterTranslation(
+  database: Database.Database,
+  chapterId: number
+): boolean {
+  const claimed = database
+    .prepare(
+      `UPDATE chapters SET translation_status = 'translating',
+              translation_percent = 0, translation_error = NULL
+       WHERE id = ? AND translation_status != 'translating'`
+    )
+    .run(chapterId);
+  return claimed.changes > 0;
+}
+
+// Moves a translating chapter's percent forward. Guarded on
+// 'translating': a chapter that settled (or a book that was deleted) while
+// a task tick was in flight stays as it is.
+export function setChapterTranslationProgress(
+  database: Database.Database,
+  chapterId: number,
+  percent: number
+): void {
+  database
+    .prepare(
+      "UPDATE chapters SET translation_percent = ? WHERE id = ? AND translation_status = 'translating'"
+    )
+    .run(percent, chapterId);
+}
+
+// The "chapter translation settled" SET shape, shared by the task's two
+// outcomes so the columns live in exactly one place.
+const CHAPTER_SETTLED_ASSIGNMENT =
+  "translation_status = ?, translation_percent = NULL, translation_error = ?";
+
+// Flips a translating chapter to its settled state ('translated' or
+// 'failed'), clearing the live percent and recording the failure reason.
+// Guarded like every import write: a chapter already settled stays as it
+// is — the first verdict wins.
+export function settleChapterTranslation(
+  database: Database.Database,
+  chapterId: number,
+  status: Exclude<TranslationStatus, "untranslated" | "translating">,
+  error: string | null
+): void {
+  database
+    .prepare(
+      `UPDATE chapters SET ${CHAPTER_SETTLED_ASSIGNMENT}
+       WHERE id = ? AND translation_status = 'translating'`
+    )
+    .run(status, error, chapterId);
+}
+
+// One sentence block's write handle: the row id and the text the task
+// translates. Held as references so the write-back can never realign —
+// the same objects walk into translateChapters and back into
+// saveSentenceTranslations.
+export type SentenceBlockRef = {
+  id: number;
+  text: string;
+};
+
+// The chapter's sentence blocks in reading order — the translation task's
+// whole input surface. Non-sentence kinds are never translated.
+// `original_text` maps to SentenceBlockRef.text (the write-back pairs on
+// these same reference objects).
+export function listSentenceBlocks(
+  database: Database.Database,
+  chapterId: number
+): SentenceBlockRef[] {
+  return database
+    .prepare(
+      "SELECT id, original_text AS text FROM blocks WHERE chapter_id = ? AND kind = 'sentence' ORDER BY position"
+    )
+    .all(chapterId) as SentenceBlockRef[];
+}
+
+// Writes one chapter's translations back through the held references, in
+// one transaction: a failure partway leaves no half-written chapter.
+export function saveSentenceTranslations(
+  database: Database.Database,
+  updates: { id: number; translation: string | null }[]
+): void {
+  const save = database.transaction(() => {
+    const update = database.prepare(
+      "UPDATE blocks SET translation_text = ? WHERE id = ?"
+    );
+    for (const { id, translation } of updates) {
+      update.run(translation, id);
+    }
+  });
+  save();
+}
+
 export function findBookRow(
   database: Database.Database,
   id: number
@@ -282,6 +415,22 @@ export function findBookRow(
   return database
     .prepare(`SELECT ${bookColumnSql("")} FROM books WHERE id = ?`)
     .get(id) as BookRow | undefined;
+}
+
+// One chapter row with its translation state, or undefined when the book
+// has no such chapter. The trigger route's 404/409/202 decision reads this.
+export function findChapterRow(
+  database: Database.Database,
+  bookId: number,
+  chapterPosition: number
+): ChapterRow | undefined {
+  return database
+    .prepare(
+      `SELECT id, position, title, level, translation_status,
+              translation_error, translation_percent
+       FROM chapters WHERE book_id = ? AND position = ?`
+    )
+    .get(bookId, chapterPosition) as ChapterRow | undefined;
 }
 
 // The shelf: every book in id order with its last reading position, one
@@ -354,18 +503,14 @@ export function deleteBook(database: Database.Database, bookId: number): void {
   database.prepare("DELETE FROM books WHERE id = ?").run(bookId);
 }
 
-// One chapter, decoded: the chapter head plus its blocks in reading order.
-// undefined when the book has no such chapter.
+// One chapter, decoded: the chapter head, its translation state, and its
+// blocks in reading order. undefined when the book has no such chapter.
 export function loadChapter(
   database: Database.Database,
   bookId: number,
   chapterPosition: number
 ): ChapterData | undefined {
-  const chapter = database
-    .prepare(
-      "SELECT id, position, title, level FROM chapters WHERE book_id = ? AND position = ?"
-    )
-    .get(bookId, chapterPosition) as (ChapterHead & { id: number }) | undefined;
+  const chapter = findChapterRow(database, bookId, chapterPosition);
   if (!chapter) return undefined;
   const blockRows = database
     .prepare(
@@ -376,6 +521,9 @@ export function loadChapter(
     position: chapter.position,
     title: chapter.title,
     level: chapter.level,
+    translationStatus: chapter.translation_status,
+    translationPercent: chapter.translation_percent,
+    translationError: chapter.translation_error,
     blocks: blockRows.map(decodeBlock),
   };
 }
@@ -390,6 +538,9 @@ export function loadWholeBook(
   const rows = database
     .prepare(
       `SELECT c.position AS chapter_position, c.title AS chapter_title, c.level AS chapter_level,
+              c.translation_status AS chapter_translation_status,
+              c.translation_percent AS chapter_translation_percent,
+              c.translation_error AS chapter_translation_error,
               b.position AS block_position, b.kind, b.original_text,
               b.ipa_slots, b.ipa_text, b.translation_text
        FROM chapters c
@@ -401,6 +552,9 @@ export function loadWholeBook(
     chapter_position: number;
     chapter_title: string;
     chapter_level: number | null;
+    chapter_translation_status: TranslationStatus;
+    chapter_translation_percent: number | null;
+    chapter_translation_error: string | null;
     block_position: number | null;
     kind: string | null;
     original_text: string | null;
@@ -417,6 +571,9 @@ export function loadWholeBook(
         position: row.chapter_position,
         title: row.chapter_title,
         level: row.chapter_level,
+        translationStatus: row.chapter_translation_status,
+        translationPercent: row.chapter_translation_percent,
+        translationError: row.chapter_translation_error,
         blocks: [],
       };
       chapters.push(chapter);

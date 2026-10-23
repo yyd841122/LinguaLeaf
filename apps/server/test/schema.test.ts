@@ -282,6 +282,150 @@ describe("book page count migration (pdf-import ticket 03)", () => {
   });
 });
 
+// Databases created before on-demand translation (ADR-0004) have no
+// chapter translation columns. They are altered in place like every
+// status-column migration before them, and each existing chapter's status
+// is derived once by the block-presence rule (spec decision 5: a chapter
+// holding sentence blocks has been through the import translation, so it
+// counts translated — otherwise old books would flip to untranslated and
+// break "old books behave unchanged").
+describe("chapter translation status migration (on-demand-translation ticket 01)", () => {
+  let directory: string;
+  let databasePath: string;
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "lingualeaf-schema-"));
+    databasePath = join(directory, "pre-on-demand.sqlite");
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function createPreOnDemandDatabase(): void {
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        format TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+      CREATE TABLE chapters (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        level INTEGER,
+        UNIQUE (book_id, position)
+      );
+      CREATE TABLE blocks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        chapter_id INTEGER NOT NULL REFERENCES chapters(id) ON DELETE CASCADE,
+        position INTEGER NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('sentence', 'code', 'raw')),
+        original_text TEXT NOT NULL,
+        ipa_slots TEXT,
+        ipa_text TEXT,
+        translation_text TEXT,
+        UNIQUE (chapter_id, position)
+      );
+    `);
+    const bookId = Number(
+      database
+        .prepare(
+          "INSERT INTO books (title, format, created_at) VALUES (?, ?, ?)"
+        )
+        .run("An old book", "markdown", "2026-10-17T00:00:00.000Z")
+        .lastInsertRowid
+    );
+    const translatedChapterId = Number(
+      database
+        .prepare(
+          "INSERT INTO chapters (book_id, position, title, level) VALUES (?, ?, ?, ?)"
+        )
+        .run(bookId, 1, "A translated chapter", 1).lastInsertRowid
+    );
+    // A chapter with a sentence block counts translated, even though the
+    // sentence's own translation is NULL (block presence, not translation
+    // presence, is the derivation).
+    database
+      .prepare(
+        "INSERT INTO blocks (chapter_id, position, kind, original_text) VALUES (?, ?, ?, ?)"
+      )
+      .run(translatedChapterId, 1, "sentence", "An old sentence.");
+    database
+      .prepare(
+        "INSERT INTO blocks (chapter_id, position, kind, original_text) VALUES (?, ?, ?, ?)"
+      )
+      .run(translatedChapterId, 2, "code", "npm test");
+    // A heading-only chapter holds no sentence block and stays untranslated.
+    database
+      .prepare(
+        "INSERT INTO chapters (book_id, position, title, level) VALUES (?, ?, ?, ?)"
+      )
+      .run(bookId, 2, "An empty chapter", null);
+    database.close();
+  }
+
+  it("adds the translation columns in place, deriving each chapter's status from its blocks", () => {
+    createPreOnDemandDatabase();
+
+    const database = openDatabase(databasePath);
+    const chapters = database
+      .prepare(
+        "SELECT position, translation_status, translation_error, translation_percent FROM chapters ORDER BY position"
+      )
+      .all() as {
+      position: number;
+      translation_status: string;
+      translation_error: string | null;
+      translation_percent: number | null;
+    }[];
+    expect(chapters).toEqual([
+      {
+        position: 1,
+        translation_status: "translated",
+        translation_error: null,
+        translation_percent: null,
+      },
+      {
+        position: 2,
+        translation_status: "untranslated",
+        translation_error: null,
+        translation_percent: null,
+      },
+    ]);
+
+    // The new columns carry real translation state.
+    database
+      .prepare(
+        "UPDATE chapters SET translation_status = 'translating', translation_percent = 40 WHERE position = 2"
+      )
+      .run();
+    expect(
+      (
+        database
+          .prepare(
+            "SELECT translation_status, translation_percent FROM chapters WHERE position = 2"
+          )
+          .get() as { translation_status: string; translation_percent: number }
+      ).translation_percent
+    ).toBe(40);
+    database.close();
+
+    // The migration is one-time work: reopening the migrated file is stable.
+    const reopened = openDatabase(databasePath);
+    expect(
+      (
+        reopened.prepare("SELECT COUNT(*) AS n FROM chapters").get() as {
+          n: number;
+        }
+      ).n
+    ).toBe(2);
+    reopened.close();
+  });
+});
+
 // A server restart orphans its in-flight imports: the task is gone and can
 // never resume. The startup sweep fails those rows so the shelf never shows
 // a book stuck importing; settled books are untouched (ticket 08).
