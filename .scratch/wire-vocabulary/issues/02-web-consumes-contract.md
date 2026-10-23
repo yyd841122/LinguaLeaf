@@ -32,3 +32,6 @@ pinned tests per spec 决策 3. Review fixes (f531109): the four coded
 rejection mocks collapsed into one `mockUploadRejection` helper; the 20MB
 copy lines now carry a comment tying them to MAX_UPLOAD_BYTES; the catch
 comment that said the opposite of the code was rewritten.
+
+Acceptance (2026-10-23, human): 加密 PDF 上传实测通过 —— 书架按 code 命中
+「导入失败：加密 PDF 暂不支持。」,服务端改文案不再影响该分支。
