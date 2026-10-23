@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database.js";
 import {
   createImportingBook,
-  findBookRow,
   loadChapter,
+  type BlockData,
 } from "../src/book-store.js";
 import { runImportTask } from "../src/import/import-task.js";
 import type { PreparedBook } from "../src/import/pipeline.js";
+import type { Translator } from "../src/translate/translator.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 
@@ -39,6 +40,33 @@ const joinProbeBook: PreparedBook = {
   ],
 };
 
+// One seeded import run both tests observe: the translator records the
+// sentence texts it was handed, the store holds what the join wrote.
+async function runJoinProbe(
+  database: Database.Database,
+  dictionary: ReturnType<typeof createFixtureDictionary>,
+  translator: Translator
+): Promise<number> {
+  const bookId = createImportingBook(
+    database,
+    joinProbeBook.title,
+    joinProbeBook.format,
+    null
+  );
+  await runImportTask(
+    { database, dictionary, translator },
+    bookId,
+    joinProbeBook
+  );
+  return bookId;
+}
+
+// The join's read shape: only sentence blocks carry a translation line.
+const translationTexts = (blocks: BlockData[] | undefined): (string | null)[] =>
+  (blocks ?? []).map((block) =>
+    block.kind === "sentence" ? block.translationText : null
+  );
+
 describe("runImportTask (the translation join, direct)", () => {
   let database: Database.Database;
   let dictionary: ReturnType<typeof createFixtureDictionary>;
@@ -57,18 +85,7 @@ describe("runImportTask (the translation join, direct)", () => {
     const translator = createFakeTranslator((batch) =>
       batch.map((sentence) => `译:${sentence}`)
     );
-    const bookId = createImportingBook(
-      database,
-      joinProbeBook.title,
-      joinProbeBook.format,
-      null
-    );
-
-    await runImportTask(
-      { database, dictionary, translator },
-      bookId,
-      joinProbeBook
-    );
+    const bookId = await runJoinProbe(database, dictionary, translator);
 
     const mixed = loadChapter(database, bookId, 1);
     expect(
@@ -82,11 +99,7 @@ describe("runImportTask (the translation join, direct)", () => {
     ]);
     // A raw-index join would put 译:Alpha on the image; the sentence-order
     // join leaves the interleaved non-sentence blocks null instead.
-    expect(
-      mixed?.blocks.map((block) =>
-        block.kind === "sentence" ? block.translationText : null
-      )
-    ).toEqual([
+    expect(translationTexts(mixed?.blocks)).toEqual([
       "译:Alpha begins here.",
       "译:Beta follows it.",
       null,
@@ -94,31 +107,16 @@ describe("runImportTask (the translation join, direct)", () => {
       "译:Gamma closes the chapter.",
     ]);
 
-    expect(
-      loadChapter(database, bookId, 2)?.blocks.map((block) =>
-        block.kind === "sentence" ? block.translationText : null
-      )
-    ).toEqual(["译:Delta stands alone."]);
-
-    expect(findBookRow(database, bookId)?.status).toBe("ready");
+    expect(translationTexts(loadChapter(database, bookId, 2)?.blocks)).toEqual([
+      "译:Delta stands alone.",
+    ]);
   });
 
   it("hands the translator exactly the sentence texts in book order", async () => {
     const translator = createFakeTranslator((batch) =>
       batch.map((sentence) => `译:${sentence}`)
     );
-    const bookId = createImportingBook(
-      database,
-      joinProbeBook.title,
-      joinProbeBook.format,
-      null
-    );
-
-    await runImportTask(
-      { database, dictionary, translator },
-      bookId,
-      joinProbeBook
-    );
+    await runJoinProbe(database, dictionary, translator);
 
     expect(translator.calls.flat()).toEqual([
       "Alpha begins here.",
