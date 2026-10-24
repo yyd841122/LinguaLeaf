@@ -4,10 +4,34 @@
 
 **Blocked by:** 01（在状态机之上加固，不等 02）
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] 手工置"翻译中"后触发启动清扫 → 章 failed + 原因文案 + 百分比清空
-- [ ] 失败章：阅读页显示原因，重翻可走通
-- [ ] 并行契约钉：两章同时翻译中各自推进、互不 409
-- [ ] 客户端双击/竞态 409 → 可捕获错误提示
-- [ ] 门禁同 01
+- [x] 手工置"翻译中"后触发启动清扫 → 章 failed + 原因文案 + 百分比清空
+- [x] 失败章：阅读页显示原因，重翻可走通
+- [x] 并行契约钉：两章同时翻译中各自推进、互不 409
+- [x] 客户端双击/竞态 409 → 可捕获错误提示
+- [x] 门禁同 01
+
+## Comments
+
+Done in 6b25887（基线 927d999）。清扫层：failInterruptedChapterTranslations
+照 failInterruptedImports 的既有模式复用 CHAPTER_SETTLED_ASSIGNMENT——残留
+translating 章一次性置 failed + 服务重启原因 + 百分比清空，接线在 main.ts
+端口到手之后（第二个实例抢端口失败时不动首个实例的在飞任务），幂等（二次
+清扫 0，已钉）；阅读层：failed 章的 translationError 以 role=alert 显出，
+按钮保持 重新翻译 可用，重翻 202 → translated 两层钉住（契约层清扫原因
+原文直达读者）。并行契约钉：gated stub 把两章各三批分别扣住，同屏
+translating、各自 0→44→89→translated 独立推进、互不 409（01 的 409 钉
+原样保留）；客户端双击 409 走既有可捕获 alert，页面可交互、迟到的 202
+被轮询跟上。契约套件纯追加，既有断言零删除零改写。
+
+双轴 review（Standards+Spec，e6190c7）：唯一实质发现——双击竞态里输家
+409 的「翻译启动失败」横幅在赢家 202 上屏后不消失（409 后到的时序下无
+任何清除路径，违背 CODING_STANDARDS 的 loop 状态不过活原则），修为触发
+响应落地与轮询 tick 落地都清 startFailed，组件测试补「通知随 202 消失」
+断言；测试卫生三处：常量对自身的同义反复断言删除、契约层清扫原因从
+expect.any(String) 收紧为原文、并行钉的 release 键从 split(" ")[0] 隐式
+耦合改为 chapterNames 前缀显式配对。Spec 轴：五项验收全覆盖、无范围外
+行为。门禁：typecheck/test/lint 全绿（282 tests，exit 0），收尾 verify
+全绿（exit 0）；E2E 生产构建 14/14、dev 5/5（独立 DATABASE_PATH+PORT +
+本地 mock 翻译器，清扫经真实重启验证）。
