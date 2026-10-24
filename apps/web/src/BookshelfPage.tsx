@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { ApiError, fetchJson } from "./api";
+import { useTaskFollower } from "./taskFollower";
 import { downloadAttachment } from "./download";
 import type { ReadingProgress } from "./readingProgress";
 // The wire vocabulary is the server's contract module — type-only, so the
@@ -55,10 +56,6 @@ export function BookshelfPage() {
   const [books, setBooks] = useState<BookSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
-  // Set while an import is in flight but the server has stopped answering
-  // the polls — the shelf's 「导入中」 rows would otherwise sit there
-  // silently after a crash or a failed restart.
-  const [serverUnreachable, setServerUnreachable] = useState(false);
   // The books whose export download is in flight — each clicked button
   // shows 导出中… until its own request settles, so a slow multi-megabyte
   // blob cannot be double-clicked into two downloads, and one book
@@ -81,36 +78,21 @@ export function BookshelfPage() {
     };
   }, []);
 
-  // While any book is importing, the shelf re-asks the list on an interval
-  // so statuses and progress move without user action; the moment none is,
-  // the interval goes away.
-  // Mutations (upload, delete) bump this; an in-flight poll predating the
-  // bump is stale and discarded — a snapshot from before a delete must not
-  // resurrect the row, and one predating a delete must not stop polling on
-  // a list with no importing row left (audit 2026-10-23).
-  const listVersionRef = useRef(0);
-
   const hasImporting =
     books?.some((book) => book.status === "importing") ?? false;
-  useEffect(() => {
-    if (!hasImporting) return;
-    const interval = setInterval(() => {
-      const versionAtRequest = listVersionRef.current;
-      fetchJson<{ books: BookSummary[] }>("/api/books")
-        .then((data) => {
-          if (versionAtRequest !== listVersionRef.current) return;
-          setBooks(data.books);
-          setServerUnreachable(false);
-        })
-        .catch(() => {
-          // Keep the shelf as-is; the next tick retries. But say the
-          // connection is gone — a stale 「导入中」 row alone would hide
-          // the outage.
-          setServerUnreachable(true);
-        });
-    }, IMPORT_POLL_MS);
-    return () => clearInterval(interval);
-  }, [hasImporting]);
+  // While any book is importing, follow the import tasks on the shared
+  // task-follower (taskFollower.ts owns the interval, the stale-tick
+  // discard, and the outage rules — the shelf's 「导入中」 rows would
+  // otherwise sit silently after a crash or a failed restart): statuses
+  // and progress move without user action, and the moment none is
+  // importing, the follow goes away.
+  const { outage: serverUnreachable, invalidate } = useTaskFollower({
+    active: hasImporting,
+    fetchTick: async () =>
+      (await fetchJson<{ books: BookSummary[] }>("/api/books")).books,
+    onTick: setBooks,
+    intervalMs: IMPORT_POLL_MS,
+  });
 
   const uploadBook = async (file: File) => {
     setImporting(true);
@@ -125,7 +107,8 @@ export function BookshelfPage() {
         method: "POST",
         body,
       });
-      listVersionRef.current += 1;
+      // An in-flight tick predating the upload is stale and discarded.
+      invalidate();
       setBooks((current) => [created, ...(current ?? [])]);
       try {
         const { books: refreshed } = await fetchJson<{
@@ -188,8 +171,9 @@ export function BookshelfPage() {
     try {
       await fetchJson(`/api/books/${book.id}`, { method: "DELETE" });
       // Update the list in place — no refetch flash — and invalidate any
-      // poll already in flight (audit 2026-10-23).
-      listVersionRef.current += 1;
+      // tick already in flight, so a snapshot predating the delete cannot
+      // resurrect the row (audit 2026-10-23).
+      invalidate();
       setBooks((current) =>
         current ? current.filter((candidate) => candidate.id !== book.id) : null
       );

@@ -5,6 +5,7 @@ import {
   translateChapter,
   type ChapterTranslationState,
 } from "./chapterTranslation";
+import { useTaskFollower } from "./taskFollower";
 import { useIpaSize } from "./IpaSizeControl";
 import {
   ReadingSettings,
@@ -76,12 +77,11 @@ export function ReadingPage() {
   // anchor it. Clicking another word re-anchors; leaving the chapter closes.
   const [lookup, setLookup] = useState<WordClick | null>(null);
   // The on-demand translation flow (ADR-0004): `startFailed` says the
-  // trigger POST did not land; `pollFailed` says the running poll has
-  // stopped answering. Both clear on their own recovery (a retry, a
-  // landing response, or a landing tick) — a loop's last state must not
-  // outlive its credibility (CODING_STANDARDS).
+  // trigger POST did not land; it clears on its own recovery (a retry or
+  // a landing response) — a loop's last state must not outlive its
+  // credibility (CODING_STANDARDS). The running poll's outage flag lives
+  // in the task-follower below.
   const [startFailed, setStartFailed] = useState(false);
-  const [pollFailed, setPollFailed] = useState(false);
   // The route as of the latest render: a trigger's 202 that resolves after
   // a navigation is stale and must not patch the new chapter's state.
   const currentRouteRef = useRef({ bookId, chapterNumber });
@@ -99,7 +99,6 @@ export function ReadingPage() {
     let cancelled = false;
     setError(null);
     setStartFailed(false);
-    setPollFailed(false);
     setToc(null);
     setContent(null);
     setProgress(null);
@@ -257,36 +256,26 @@ export function ReadingPage() {
       });
   };
 
-  // While this chapter translates, re-ask for the payload on an interval:
-  // the percent moves the disabled button's label, and the response that
-  // leaves 'translating' carries the fresh lines with it. Route changes
-  // and settle both tear the interval down.
+  // While this chapter translates, follow the task on the shared
+  // task-follower (it owns the interval, the staleness discard, and the
+  // outage rules): the percent moves the disabled button's label, and the
+  // response that leaves 'translating' carries the fresh lines with it.
+  // The active fact rides the payload, so route changes and settle both
+  // tear the follow down; a landed tick is also the trigger-failure
+  // notice's recovery.
   const translating = content?.translationStatus === "translating";
-  useEffect(() => {
-    if (!translating) return;
-    let cancelled = false;
-    const interval = window.setInterval(() => {
+  const { outage: pollFailed } = useTaskFollower({
+    active: translating,
+    fetchTick: () =>
       fetchJson<ChapterContent>(
         `/api/books/${bookId}/chapters/${chapterNumber}`
-      )
-        .then((chapterData) => {
-          if (cancelled) return;
-          setContent(chapterData);
-          setPollFailed(false);
-          setStartFailed(false);
-        })
-        .catch(() => {
-          // Keep the chapter as-is; the next tick retries. But say the
-          // connection is gone — a frozen 「翻译中」 alone would hide the
-          // outage (CODING_STANDARDS: retry loops escalate).
-          if (!cancelled) setPollFailed(true);
-        });
-    }, TRANSLATION_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, [translating, bookId, chapterNumber]);
+      ),
+    onTick: (chapterData) => {
+      setContent(chapterData);
+      setStartFailed(false);
+    },
+    intervalMs: TRANSLATION_POLL_MS,
+  });
 
   if (error) {
     return (

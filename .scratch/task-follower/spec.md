@@ -1,0 +1,45 @@
+# task-follower:「跟随后台任务」网页端收进一个 deep module
+
+来源:2026-10-24 architecture review(.scratch/architecture-review-20261024-092119.html)
+候选 1(Strong)。同日 grilling 会话,7 个决策全部与维护者对齐并锁定。
+单票体量,不走 to-tickets 票机,本 spec 即票。
+
+## 问题
+
+「跟随一个服务端后台任务」的 lifecycle 在书架(跟随导入)与阅读页(跟随章翻译)
+各手写一遍:interval 管理、stale tick 丢弃、故障升级 + 恢复清零,三套规则平行存在
+(1500ms 常量两份、版本守卫两套机制、升级旗子两组)。2026-10-23 audit 的两个 bug
+(删除前快照复活、故障静默)都落在这段重复规则里。
+
+## 方案
+
+新 module `apps/web/src/taskFollower.ts`,导出 `useTaskFollower`:interface 是
+active / fetchTick / onTick / intervalMs 四个入参,outage / invalidate 两个出口;
+implementation 吸收 interval 生命周期、版本守卫、stale 丢弃、故障升级与恢复清零。
+两个页面改为消费它,只留各自的领域渲染与触发路径。行为零变化:首 tick 在
+intervalMs 之后、失败不动页面数据、旧 tick 不得覆盖新事实、恢复即清零。
+
+## 决策
+
+1. 共享 module,两页都挂;不是单页抽取(两个真实实例,deletion test 复杂度回到
+   N 个调用方,是 deepening 而非搬运)。
+2. 只吸收跟随循环;触发路径(POST + 202 body 先落地 + 导航 stale 守卫)留在页面
+   ——没有第二个共享实例,不为它扩 interface。
+3. 版本计数器收进 hook,暴露 invalidate();书架在上传成功与删除成功两个 mutation
+   点调用;阅读页不调(active 随路由重跑,effect 清理已覆盖)。
+4. 新增 hook 级测试(fake timers);两页既有用例零删除零改写,新增只追加。
+5. 命名 useTaskFollower;不进 GLOSSARY.md(实现词汇,非读者可见领域语言;
+   「导入中」「翻译中」才是读者可见名字)。
+6. interface 回调式:onTick 收新鲜数据就地 patch,不在 hook 存 data 再让页面
+   useEffect(两页 patch 动作不同:整表替换 vs 整章替换);fetchTick/onTick 经
+   ref 透传,interval 只随 active/intervalMs 重挂,页面重渲染不重置节奏。
+7. outage 是布尔:任一 tick 失败置真、任一 tick 落地清零;跟随重挂(路由切换
+   即 teardown/re-arm)时净启动,上一轮的 outage 不泄漏;「active && outage」
+   的组合渲染判断留在页面。三态不做(无第二个用途撑起它)。
+
+## 门禁
+
+`npm run typecheck && npm test && npm run lint` 全绿(看退出码,不看 tail)。
+既有契约断言零删除零改写,新增只追加(reading.test.tsx / bookshelf.test.tsx 的
+轮询用例原样保留,作为穿过整页的集成信封)。行为信封:1500ms 节奏、首 tick 时机、
+失败不动数据、stale 丢弃、恢复清零——逐一由 hook 测试钉住。
