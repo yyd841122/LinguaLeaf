@@ -1,3 +1,8 @@
+// Fixtures and helper types are describe-local in this file: each describe
+// declares its own stubs and payload constants (chapterBlocks / Call /
+// ChapterPayload in the translate describe, untranslatedBlocks in ticket
+// 03's). Append new tests INSIDE the describe whose fixtures you need — a
+// file-tail append lands in the last describe and misses them.
 import { fireEvent, render, screen } from "@testing-library/react";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";

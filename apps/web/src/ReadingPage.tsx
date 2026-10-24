@@ -223,6 +223,12 @@ export function ReadingPage() {
       window.removeEventListener("pagehide", flushSave);
       flushSave();
     };
+    // Deps are deliberately narrow: the effect keys on the loaded route
+    // and content, not on the save closures (re-created each render —
+    // adding them would re-arm the listeners every render). progress
+    // arrives with content in the same load .then, so keying on either
+    // is equivalent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, chapterNumber, loadedRoute, bookId]);
 
   // The translate trigger: the POST's 202 body is the chapter in its

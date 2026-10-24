@@ -1,3 +1,4 @@
+import reactHooks from "eslint-plugin-react-hooks";
 import js from "@eslint/js";
 import globals from "globals";
 import tseslint from "typescript-eslint";
@@ -61,5 +62,17 @@ export default tseslint.config(
     ],
     languageOptions: { globals: globals.browser },
     rules: noNodeGlobalsInBrowser,
+  },
+  {
+    // Hooks discipline is mechanical now that hooks are a core pattern:
+    // rules-of-hooks (no conditional hooks) and exhaustive-deps (effect
+    // deps complete). Deliberately narrow deps suppress it locally with a
+    // justified disable, never by loosening the rule (retro 2026-10-24).
+    files: ["apps/web/**/*.{ts,tsx}", "packages/reading-model/**/*.{ts,tsx}"],
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "error",
+    },
   }
 );
