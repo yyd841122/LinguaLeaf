@@ -43,3 +43,17 @@ intervalMs 之后、失败不动页面数据、旧 tick 不得覆盖新事实、
 既有契约断言零删除零改写,新增只追加(reading.test.tsx / bookshelf.test.tsx 的
 轮询用例原样保留,作为穿过整页的集成信封)。行为信封:1500ms 节奏、首 tick 时机、
 失败不动数据、stale 丢弃、恢复清零——逐一由 hook 测试钉住。
+
+## review 处置(2026-10-24 code-review,commit aeaf333)
+
+双轴(Standards+Spec)均无硬违规,处置如下:
+
+- S1 hook 测试第二个 describe 重复顶层 timer 钩子,删除。
+- S2 两个 1500ms 常量(IMPORT_POLL_MS / TRANSLATION_POLL_MS)留在各自调用点是
+  有意选择:各页自有节奏策略,不为消重复而归拢。
+- P1 review 发现 hook 还做了 spec 未列举的收紧:teardown 后落地的 tick 一律丢弃
+  (cancelled 守卫,与版本守卫同权;旧书架代码的成功路径无此取消)。确认接受:
+  方向服务「旧 tick 不得覆盖新事实」,作为决策 3/7 的补充语义记于本节。
+- S3 补页面级 pin:章→章跳转(两章都在翻译)时,跟随随旧章拆除、随新章重挂,
+  重挂后首 tick 隔完整 intervalMs、旧章永不再 poll——「行为零变化」的这个角由
+  reading.test.tsx 追加用例钉住(既有用例仍零改写)。

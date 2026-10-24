@@ -1154,6 +1154,95 @@ describe("ReadingPage's translate button through the component boundary", () => 
       vi.unstubAllGlobals();
     }
   });
+  it("re-arms the follow on a chapter jump between two translating chapters: first tick a full interval later", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      // Both chapters answer translating: the jump happens mid-follow, the
+      // corner the hook's [active, intervalMs] re-arm keys on (code-review
+      // 2026-10-24, Standards axis).
+      const translating: ChapterPayload = {
+        translationStatus: "translating",
+        translationPercent: 10,
+        translationError: null,
+        translationAvailable: true,
+        blocks: chapterBlocks,
+      };
+      const chapter3: ChapterPayload = {
+        ...translating,
+        translationPercent: 30,
+      };
+      const calls: Call[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: unknown, init?: RequestInit) => {
+          const url = String(input);
+          calls.push({ url, init: init ?? {} });
+          if (url.endsWith("/chapters/3")) {
+            return new Response(JSON.stringify(chapter3));
+          }
+          if (url.endsWith("/chapters/2")) {
+            return new Response(JSON.stringify(translating));
+          }
+          if (url.endsWith("/progress")) {
+            return new Response(JSON.stringify({ chapter: 2, block: 1 }));
+          }
+          if (url.endsWith("/api/books/7")) {
+            return new Response(
+              JSON.stringify({
+                id: 7,
+                title: "Probe Book",
+                chapters: [
+                  { position: 1, title: "One", level: 2 },
+                  { position: 2, title: "Two", level: 2 },
+                  { position: 3, title: "Three", level: 2 },
+                ],
+              })
+            );
+          }
+          return new Response(null, { status: 404 });
+        })
+      );
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole("button", { name: "翻译中 10%" })).toBeTruthy();
+
+      // Jump to chapter 3 while it too is translating.
+      fireEvent.click(screen.getByRole("link", { name: "下一章 →" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole("button", { name: "翻译中 30%" })).toBeTruthy();
+
+      const chapterGets = (position: number) =>
+        calls.filter(
+          (call) =>
+            call.url.endsWith(`/chapters/${position}`) &&
+            call.init.method === undefined
+        ).length;
+      const ch3AtLoad = chapterGets(3);
+      const ch2AtJump = chapterGets(2);
+
+      // The re-armed follow starts counting from zero: no chapter-3 poll
+      // inside the first interval window, and the torn-down chapter-2
+      // follow never polls again.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1499);
+      });
+      expect(chapterGets(3)).toBe(ch3AtLoad);
+      expect(chapterGets(2)).toBe(ch2AtJump);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(chapterGets(3)).toBe(ch3AtLoad + 1);
+      expect(chapterGets(2)).toBe(ch2AtJump);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 // The untranslated-chapter semantics (on-demand-translation ticket 03): a

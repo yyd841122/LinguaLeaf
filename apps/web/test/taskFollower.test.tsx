@@ -106,13 +106,6 @@ describe("useTaskFollower", () => {
 });
 
 describe("useTaskFollower outage", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
   it("lights outage on a failed tick without touching page data, clears when one lands", async () => {
     const pending = deferred<{ n: number }>();
     const fetchTick = vi
