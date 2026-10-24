@@ -78,3 +78,9 @@ implementation 吸收 never-throw、guarded settle、99 天花板;SQL 守卫留�
 - Spec 轴零发现:五项决策逐条核符,断言零改写经 diff 机械核验(diff 中零条含
   expect 的删除行),verify 退出码 0。
 - 无需代码改动。
+- 翻案(2026-10-24 retro,维护者裁定「全部修复」):S1 已折叠——`sweepInterruptedTasks`
+  表驱动(sweep + warn 文案一行一种,文案逐字节不变);retro 候选 1 一并落地:
+  `apps/server/scripts/check-task-lifecycle-locality.mjs` 接入根 `verify` 链与
+  pre-commit,tracker 指纹(`new Set<Promise` / `createTaskTracker`)出现在
+  task-lifecycle.ts 之外即 fail(负测试验证咬合)。S2 维持 suppressed:去掉
+  `writeProgress?` 会倒退 grilling 决策 2,无「修」的形状。

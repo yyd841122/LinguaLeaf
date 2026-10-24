@@ -100,16 +100,27 @@ export function drainTasks(graceMs: number): Promise<void> {
 // UPDATEs live in book-store; the pairing and the operator-facing
 // warnings live here, once. A store stays quiet; this is the caller.
 export function sweepInterruptedTasks(database: Database.Database): void {
-  const interruptedImports = failInterruptedImports(database);
-  if (interruptedImports > 0) {
-    console.warn(
-      `${interruptedImports} import(s) were interrupted by a restart and are marked failed on the shelf.`
-    );
-  }
-  const interruptedTranslations = failInterruptedChapterTranslations(database);
-  if (interruptedTranslations > 0) {
-    console.warn(
-      `${interruptedTranslations} chapter translation(s) were interrupted by a restart and are marked failed in the reader.`
-    );
+  // The store sweeps and their operator-facing copy, one row per task
+  // kind: a third kind adds a row, not a block.
+  const sweeps: {
+    sweep: (database: Database.Database) => number;
+    warn: (count: number) => string;
+  }[] = [
+    {
+      sweep: failInterruptedImports,
+      warn: (count) =>
+        `${count} import(s) were interrupted by a restart and are marked failed on the shelf.`,
+    },
+    {
+      sweep: failInterruptedChapterTranslations,
+      warn: (count) =>
+        `${count} chapter translation(s) were interrupted by a restart and are marked failed in the reader.`,
+    },
+  ];
+  for (const { sweep, warn } of sweeps) {
+    const interrupted = sweep(database);
+    if (interrupted > 0) {
+      console.warn(warn(interrupted));
+    }
   }
 }
