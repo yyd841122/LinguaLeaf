@@ -251,12 +251,17 @@ body {
   margin: 0;
   font-size: 1.15rem;
 }
+/* Inline IPA: the app's annotation purple; annotation text is never
+   selectable (mirrors apps/web/src/style.css). */
 .ipa-line,
 .translation-line {
   margin: 0;
   min-height: 1.4em;
-  color: #5c6f64;
+  user-select: none;
   font-size: 0.9rem;
+}
+.ipa-line {
+  color: #6a4fa3;
 }
 .translation-line {
   color: #3f5148;
@@ -270,7 +275,8 @@ body {
   border-radius: 0.2rem;
 }
 .ipa-word-ipa {
-  color: #5c6f64;
+  color: #6a4fa3;
+  user-select: none;
   font-size: 0.75rem;
   line-height: 1.35;
 }
