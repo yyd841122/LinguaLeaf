@@ -67,3 +67,14 @@ implementation 吸收 never-throw、guarded settle、99 天花板;SQL 守卫留�
   先例(import 报百分比、translateChapters)的注释改为指向现存事实。
 - ADR-0004 第 21 行的 translateChapters 是历史决策记录,未动。
 - 无遗留人工步骤。
+
+### review 处置(2026-10-24 code-review,commit be5a1aa,双轴 841cbbf 基线)
+
+- Standards 轴无硬违规。S1(判断项):`sweepInterruptedTasks` 内两条 count-and-warn
+  形状平行——处置:保持现状;警告是散文形状的两条文案,折成 {count, noun,
+  destination} 循环反而绕。S2(判断项):`writeProgress?` 可选参数疑似 speculative
+  generality——处置:suppressed,章进度先于本票存在、注释已写明 import 无此项、
+  no-op 路径有测试钉住,属 real-need。
+- Spec 轴零发现:五项决策逐条核符,断言零改写经 diff 机械核验(diff 中零条含
+  expect 的删除行),verify 退出码 0。
+- 无需代码改动。
