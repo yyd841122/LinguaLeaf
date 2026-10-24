@@ -4,7 +4,10 @@ import { resolve } from "node:path";
 import { createApp } from "./app.js";
 import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
-import { failInterruptedImports } from "./book-store.js";
+import {
+  failInterruptedChapterTranslations,
+  failInterruptedImports,
+} from "./book-store.js";
 import { drainImportTasks } from "./import/import-task.js";
 import { drainChapterTranslationTasks } from "./translate/chapter-task.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
@@ -106,6 +109,12 @@ try {
   if (interrupted > 0) {
     console.warn(
       `${interrupted} import(s) were interrupted by a restart and are marked failed on the shelf.`
+    );
+  }
+  const interruptedTranslations = failInterruptedChapterTranslations(database);
+  if (interruptedTranslations > 0) {
+    console.warn(
+      `${interruptedTranslations} chapter translation(s) were interrupted by a restart and are marked failed in the reader.`
     );
   }
 

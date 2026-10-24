@@ -11,6 +11,10 @@ import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import {
   createImportingBook,
+  beginChapterTranslation,
+  failInterruptedChapterTranslations,
+  findChapterRow,
+  setChapterTranslationProgress,
   setImportProgress,
   settleImport,
 } from "../src/book-store.js";
@@ -27,7 +31,11 @@ import {
   saveReadingProgress,
 } from "../../../apps/web/src/readingProgress";
 import { downloadAttachment } from "../../../apps/web/src/download";
-import { translateChapter } from "../../../apps/web/src/chapterTranslation";
+import {
+  translateChapter,
+  type ChapterTranslationState,
+} from "../../../apps/web/src/chapterTranslation";
+import { drainChapterTranslationTasks } from "../src/translate/chapter-task.js";
 
 // The tier seam's test surface: the real web fetch clients (apps/web/src)
 // driving the real Express app over a real socket. This is the executable
@@ -760,6 +768,189 @@ describe("the shelf labels every stage the wire can carry (importCopy.ts)", () =
       expect(row!.importStage).toBe(stage);
       expect(Object.keys(IMPORT_STAGE_LABELS)).toContain(stage);
       expect(IMPORT_STAGE_LABELS[stage]).not.toBe("");
+    }
+  });
+});
+
+describe("chapter translation recovery and concurrency (ticket 04)", () => {
+  it("carries a swept failure reason to the reader and accepts a retry through completion", async () => {
+    const { database } = await startStack({
+      translate: async (sentences) => sentences.map((s) => `译:${s}`),
+    });
+    const id = await uploadReadyBook(sampleBookPath);
+    const chapterId = findChapterRow(database, id, 2)!.id;
+    beginChapterTranslation(database, chapterId);
+    setChapterTranslationProgress(database, chapterId, 44);
+    expect(failInterruptedChapterTranslations(database)).toBe(1);
+
+    const failed = await fetchJson<ChapterTranslationState>(
+      `/api/books/${id}/chapters/2`
+    );
+    expect(failed).toMatchObject({
+      translationStatus: "failed",
+      translationPercent: null,
+      translationError: expect.any(String),
+    });
+    expect(failed.translationError!.length).toBeGreaterThan(0);
+    expect(await translateChapter(id, 2)).toMatchObject({
+      translationStatus: "translating",
+      translationPercent: 0,
+      translationError: null,
+    });
+    await vi.waitFor(async () => {
+      const chapter = await fetchJson<ChapterTranslationState>(
+        `/api/books/${id}/chapters/2`
+      );
+      expect(chapter).toMatchObject({
+        translationStatus: "translated",
+        translationPercent: null,
+        translationError: null,
+      });
+    });
+  });
+
+  it("holds two chapters translating together and advances each without blocking the other", async () => {
+    // Three batches per chapter: each batch parks separately, so releasing
+    // one chapter proves the other's status and percent do not move.
+    const releases = new Map<string, () => void>();
+    let parked = true;
+    await startStack({
+      translate: async (sentences) => {
+        if (parked) {
+          await new Promise<void>((resolve) => {
+            releases.set(sentences[0]!.split(" ")[0]!, resolve);
+          });
+        }
+        return sentences.map((s) => `译:${s}`);
+      },
+    });
+    const markdown = ["First", "Second"]
+      .map(
+        (name) =>
+          `# ${name}\n\n` +
+          Array.from(
+            { length: 45 },
+            (_, index) =>
+              `${name} sentence ${index + 1} opens with a quiet walk beside the river.`
+          ).join("\n\n")
+      )
+      .join("\n\n");
+    const created = await uploadBookBytes(
+      "parallel.md",
+      Buffer.from(markdown),
+      "text/markdown"
+    );
+    await waitForShelfBook(stack!.app, created.id, "ready");
+    const readBoth = () =>
+      Promise.all(
+        [1, 2].map((chapter) =>
+          fetchJson<ChapterTranslationState>(
+            `/api/books/${created.id}/chapters/${chapter}`
+          )
+        )
+      );
+    const release = (name: string) => {
+      const resume = releases.get(name);
+      expect(resume).toBeTypeOf("function");
+      releases.delete(name);
+      resume!();
+    };
+    try {
+      const triggered = await Promise.all([
+        translateChapter(created.id, 1),
+        translateChapter(created.id, 2),
+      ]);
+      for (const chapter of triggered) {
+        expect(chapter).toMatchObject({
+          translationStatus: "translating",
+          translationPercent: 0,
+        });
+      }
+      expect(releases.size).toBe(2);
+      expect(await readBoth()).toEqual([
+        expect.objectContaining({
+          translationStatus: "translating",
+          translationPercent: 0,
+        }),
+        expect.objectContaining({
+          translationStatus: "translating",
+          translationPercent: 0,
+        }),
+      ]);
+
+      release("First");
+      await vi.waitFor(async () => {
+        expect(await readBoth()).toEqual([
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 44,
+          }),
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 0,
+          }),
+        ]);
+      });
+      release("Second");
+      await vi.waitFor(async () => {
+        expect(await readBoth()).toEqual([
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 44,
+          }),
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 44,
+          }),
+        ]);
+      });
+      release("First");
+      await vi.waitFor(async () => {
+        expect(await readBoth()).toEqual([
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 89,
+          }),
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 44,
+          }),
+        ]);
+      });
+      release("First");
+      await vi.waitFor(async () => {
+        expect(await readBoth()).toEqual([
+          expect.objectContaining({
+            translationStatus: "translated",
+            translationPercent: null,
+          }),
+          expect.objectContaining({
+            translationStatus: "translating",
+            translationPercent: 44,
+          }),
+        ]);
+      });
+      release("Second");
+      await vi.waitFor(async () => {
+        expect((await readBoth())[1]).toMatchObject({
+          translationStatus: "translating",
+          translationPercent: 89,
+        });
+      });
+      release("Second");
+      await vi.waitFor(async () => {
+        for (const chapter of await readBoth()) {
+          expect(chapter).toMatchObject({
+            translationStatus: "translated",
+            translationPercent: null,
+            translationError: null,
+          });
+        }
+      });
+    } finally {
+      parked = false;
+      releases.forEach((resume) => resume());
+      await drainChapterTranslationTasks(1000);
     }
   });
 });

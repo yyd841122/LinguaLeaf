@@ -344,7 +344,7 @@ export function ReadingPage() {
                 (ADR-0004): the shape keys on the payload's
                 translationStatus — 翻译本章 / 翻译中 N% (disabled) /
                 重新翻译. A failed chapter keeps 重新翻译: re-running is
-                the recovery (its reason display is ticket 04's). */}
+                the recovery. */}
             <button
               type="button"
               disabled={
@@ -406,6 +406,11 @@ export function ReadingPage() {
           未配置翻译服务，暂时无法翻译；配置后此按钮恢复可用。
         </p>
       )}
+      {content.translationStatus === "failed" && content.translationError ? (
+        <p role="alert" className="error">
+          {content.translationError}
+        </p>
+      ) : null}
       <ReadingView
         chapter={content}
         ipaSize={ipaSize}

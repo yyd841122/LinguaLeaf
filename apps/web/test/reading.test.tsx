@@ -717,8 +717,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
   beforeEach(clearAnnotationToggles);
 
   // The three state fields mirror the real chapter payload's shape (the
-  // stub stubs the wire, not a subset of it); no test scripts "failed"
-  // yet — that display is ticket 04's.
+  // stub stubs the wire, not a subset of it).
   // The stub payloads compile against the wire's own state shape (one
   // source with the server), so the next payload field turns every
   // un-migrated stub literal into a compile error instead of a review
@@ -734,6 +733,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
   function stubTranslateFetch(options: {
     chapterPayloads: ChapterPayload[];
     postBody: ChapterPayload;
+    postResponse?: () => Promise<Response>;
     pollBehavior?: "fail";
   }): { calls: Call[] } {
     const calls: Call[] = [];
@@ -744,6 +744,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
         const url = String(input);
         calls.push({ url, init: init ?? {} });
         if (url.endsWith("/chapters/2/translate")) {
+          if (options.postResponse) return options.postResponse();
           return new Response(JSON.stringify(options.postBody), {
             status: 202,
           });
@@ -990,6 +991,159 @@ describe("ReadingPage's translate button through the component boundary", () => 
       expect(
         screen.queryByText(/无法连接服务端，翻译进度可能已过期/)
       ).toBeNull();
+      expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("displays a failed chapter's reason and retries to fresh translation lines", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      const reason = "服务重启，章节翻译中断，请重新翻译";
+      const { calls } = stubTranslateFetch({
+        chapterPayloads: [
+          {
+            translationStatus: "failed",
+            translationPercent: null,
+            translationError: reason,
+            translationAvailable: true,
+            blocks: chapterBlocks,
+          },
+          {
+            translationStatus: "translated",
+            translationPercent: null,
+            translationError: null,
+            translationAvailable: true,
+            blocks: [
+              {
+                position: 1,
+                kind: "sentence",
+                originalText: "Mr. Gupta woke early.",
+                ipaSlots: null,
+                ipaText: null,
+                translationText: "古普塔先生醒得很早。",
+              },
+            ],
+          },
+        ],
+        postBody: {
+          translationStatus: "translating",
+          translationPercent: 0,
+          translationError: null,
+          translationAvailable: true,
+        },
+      });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole("alert").textContent).toBe(reason);
+      const retry = screen.getByRole("button", { name: "重新翻译" });
+      expect((retry as HTMLButtonElement).disabled).toBe(false);
+      fireEvent.click(retry);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(calls.filter((call) => call.init.method === "POST")).toHaveLength(
+        1
+      );
+      expect(screen.queryByText(reason)).toBeNull();
+      expect(screen.getByRole("button", { name: "翻译中 0%" })).toBeTruthy();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
+      expect(screen.getByText("古普塔先生醒得很早。")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("catches a double-click race's second POST 409 and keeps the reading page usable", async () => {
+    vi.useFakeTimers();
+    try {
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      const translating: ChapterPayload = {
+        translationStatus: "translating",
+        translationPercent: 0,
+        translationError: null,
+        translationAvailable: true,
+      };
+      let acceptFirst!: () => void;
+      const postResponse = vi
+        .fn<() => Promise<Response>>()
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              acceptFirst = () =>
+                resolve(
+                  new Response(JSON.stringify(translating), { status: 202 })
+                );
+            })
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({ error: "chapter is already translating" }),
+            { status: 409 }
+          )
+        );
+      const { calls } = stubTranslateFetch({
+        chapterPayloads: [
+          {
+            translationStatus: "untranslated",
+            translationPercent: null,
+            translationError: null,
+            translationAvailable: true,
+            blocks: chapterBlocks,
+          },
+          {
+            translationStatus: "translated",
+            translationPercent: null,
+            translationError: null,
+            translationAvailable: true,
+            blocks: chapterBlocks,
+          },
+        ],
+        postBody: translating,
+        postResponse,
+      });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      const button = screen.getByRole("button", { name: "翻译本章" });
+      fireEvent.click(button);
+      fireEvent.click(button);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(calls.filter((call) => call.init.method === "POST")).toHaveLength(
+        2
+      );
+      expect(screen.getByRole("alert").textContent).toBe(
+        "翻译启动失败，请重试。"
+      );
+      expect(document.querySelector(".original-line")?.textContent).toBe(
+        "Mr. Gupta woke early."
+      );
+      fireEvent.click(screen.getByRole("button", { name: "目录" }));
+      expect(screen.getByRole("navigation", { name: "目录" })).toBeTruthy();
+
+      // The winning response can still arrive after the losing 409;
+      // polling must follow it through to the settled chapter.
+      await act(async () => {
+        acceptFirst();
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(screen.getByRole("button", { name: "翻译中 0%" })).toBeTruthy();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1500);
+      });
       expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
     } finally {
       vi.useRealTimers();

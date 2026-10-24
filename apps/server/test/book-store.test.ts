@@ -3,10 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { openDatabase } from "../src/database.js";
 import {
   INTERRUPTED_MESSAGE,
+  INTERRUPTED_TRANSLATION_MESSAGE,
   beginChapterTranslation,
   createImportingBook,
   deleteBook,
   failInterruptedImports,
+  failInterruptedChapterTranslations,
   findBookRow,
   findChapterRow,
   getProgress,
@@ -347,6 +349,59 @@ describe("chapter translation state machine", () => {
     ]);
     return id;
   }
+
+  it("sweeps interrupted translations across books once, preserving settled chapters and their lines", () => {
+    const firstBook = bookWithChapters();
+    const secondBook = bookWithChapters();
+    const untouchedBook = bookWithChapters();
+    const firstChapter = findChapterRow(database, firstBook, 1)!;
+    const secondChapter = findChapterRow(database, secondBook, 1)!;
+    const translated = findChapterRow(database, firstBook, 2)!;
+    const failed = findChapterRow(database, secondBook, 2)!;
+    beginChapterTranslation(database, translated.id);
+    settleChapterTranslation(database, translated.id, "translated", null);
+    beginChapterTranslation(database, failed.id);
+    settleChapterTranslation(database, failed.id, "failed", "先前失败原因");
+    const settledBefore = [
+      loadChapter(database, firstBook, 2),
+      loadChapter(database, secondBook, 2),
+      loadWholeBook(database, untouchedBook),
+    ];
+    saveSentenceTranslations(database, [
+      {
+        id: listSentenceBlocks(database, firstChapter.id)[0]!.id,
+        translation: "保留先前译文",
+      },
+    ]);
+    const blocksBefore = loadChapter(database, firstBook, 1)!.blocks;
+
+    // Plant exactly what a dead process leaves behind, including a stale
+    // error: the sweep must replace the reason and clear live progress.
+    for (const chapter of [firstChapter, secondChapter]) {
+      database
+        .prepare(
+          `UPDATE chapters SET translation_status = 'translating',
+           translation_percent = 44, translation_error = 'stale' WHERE id = ?`
+        )
+        .run(chapter.id);
+    }
+    expect(failInterruptedChapterTranslations(database)).toBe(2);
+    for (const book of [firstBook, secondBook]) {
+      expect(loadChapter(database, book, 1)).toMatchObject({
+        translationStatus: "failed",
+        translationPercent: null,
+        translationError: INTERRUPTED_TRANSLATION_MESSAGE,
+      });
+    }
+    expect(INTERRUPTED_TRANSLATION_MESSAGE).toMatch(/服务重启/);
+    expect(loadChapter(database, firstBook, 1)!.blocks).toEqual(blocksBefore);
+    expect([
+      loadChapter(database, firstBook, 2),
+      loadChapter(database, secondBook, 2),
+      loadWholeBook(database, untouchedBook),
+    ]).toEqual(settledBefore);
+    expect(failInterruptedChapterTranslations(database)).toBe(0);
+  });
 
   it("persistBook starts every freshly imported chapter untranslated", () => {
     const id = bookWithChapters();

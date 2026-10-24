@@ -101,7 +101,7 @@ export type BlockData = SentenceBlockData | PlainBlockData;
 // A chapter as both readers (the chapter route, the export) consume it.
 // The translation state rides beside the content: the reading page's button
 // keys on translationStatus, the percent moves the 翻译中 label, and the
-// error carries the failure reason (its display is ticket 04's).
+// error carries the failure reason displayed by the reading page.
 export type ChapterData = ChapterHead & {
   translationStatus: TranslationStatus;
   translationPercent: number | null;
@@ -376,6 +376,23 @@ export function settleChapterTranslation(
        WHERE id = ? AND translation_status = 'translating'`
     )
     .run(status, error, chapterId);
+}
+
+export const INTERRUPTED_TRANSLATION_MESSAGE =
+  "服务重启，章节翻译中断，请重新翻译";
+
+// Like failInterruptedImports, run only after the server owns its port:
+// these chapters belonged to tasks lost with the previous process.
+export function failInterruptedChapterTranslations(
+  database: Database.Database
+): number {
+  const interrupted = database
+    .prepare(
+      `UPDATE chapters SET ${CHAPTER_SETTLED_ASSIGNMENT}
+       WHERE translation_status = 'translating'`
+    )
+    .run("failed", INTERRUPTED_TRANSLATION_MESSAGE);
+  return interrupted.changes;
 }
 
 // One sentence block's write handle: the row id and the text the task
