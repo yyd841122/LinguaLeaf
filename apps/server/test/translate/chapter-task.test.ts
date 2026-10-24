@@ -10,9 +10,9 @@ import {
 } from "../../src/book-store.js";
 import {
   CHAPTER_TRANSLATION_FAILURE_MESSAGE,
-  drainChapterTranslationTasks,
   runChapterTranslationTask,
 } from "../../src/translate/chapter-task.js";
+import { drainTasks } from "../../src/task-lifecycle.js";
 import type { Translator } from "../../src/translate/translator.js";
 
 // Direct chapter-task tests: no HTTP — the api suite pins the trigger
@@ -52,7 +52,7 @@ describe("runChapterTranslationTask (direct)", () => {
     return { bookId, chapterId };
   }
 
-  it("drainChapterTranslationTasks resolves only after the in-flight task settles", async () => {
+  it("drainTasks resolves only after the in-flight task settles", async () => {
     let release!: (value: (string | null)[]) => void;
     const translator: Translator = {
       translateBatch: () =>
@@ -64,7 +64,7 @@ describe("runChapterTranslationTask (direct)", () => {
     const task = runChapterTranslationTask({ database, translator }, chapterId);
 
     let drained = false;
-    const draining = drainChapterTranslationTasks(10_000).then(() => {
+    const draining = drainTasks(10_000).then(() => {
       drained = true;
     });
     await Promise.resolve();

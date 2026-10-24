@@ -5,14 +5,15 @@ import type { Translator } from "./translator.js";
 // wastes little work and prompts stay well under context limits.
 export const SENTENCES_PER_BATCH = 20;
 
-// How many times a sentence may be requested before the import gives up on
+// How many times a sentence may be requested before the task gives up on
 // it and leaves its translation empty (spec: 最终翻译失败的句子译文留空).
 export const MAX_TRANSLATION_ROUNDS = 3;
 
 // Called after every batch request with (batches processed, sentences
-// total); the import task turns it into the shelf's percent progress
-// (ticket 08). Slots — not settled translations — are counted, so the
-// number only ever moves forward, retry rounds included.
+// total); the chapter task turns it into a percent and reports it
+// through the lifecycle envelope's 99 ceiling. Slots — not settled
+// translations — are counted, so the number only ever moves forward,
+// retry rounds included.
 export type TranslationProgress = (done: number, total: number) => void;
 
 // One aligned batch result: a translation per input sentence, null where
@@ -33,7 +34,7 @@ function alignBatch(
 // batch through the translator, and re-requests only the sentences that
 // came back failed (null) until they translate or the rounds run out.
 // Returns one entry per input sentence; entries left null after the final
-// round are the sentences whose translation the import gives up on.
+// round are the sentences whose translation the task gives up on.
 export async function translateSentences(
   translator: Translator,
   sentences: string[],
@@ -71,33 +72,4 @@ export async function translateSentences(
     pending = failed;
   }
   return translations;
-}
-
-// Chapter-shaped entry point for the import pipeline: sentences arrive per
-// chapter in book order, translations come back in the same shape.
-// Requests still batch across chapter boundaries, so back-to-back short
-// chapters share one call.
-export async function translateChapters(
-  translator: Translator,
-  sentencesByChapter: string[][],
-  onProgress?: TranslationProgress
-): Promise<(string | null)[][]> {
-  const sentencesByChapterWithoutTranslations = sentencesByChapter.map(
-    () => [] as (string | null)[]
-  );
-  if (!sentencesByChapter.some((sentences) => sentences.length > 0)) {
-    return sentencesByChapterWithoutTranslations;
-  }
-  const translations = await translateSentences(
-    translator,
-    sentencesByChapter.flat(),
-    onProgress
-  );
-  const byChapter: (string | null)[][] = [];
-  let cursor = 0;
-  for (const sentences of sentencesByChapter) {
-    byChapter.push(translations.slice(cursor, cursor + sentences.length));
-    cursor += sentences.length;
-  }
-  return byChapter;
 }

@@ -1,6 +1,6 @@
 # task-lifecycle module:后台任务生命周期收进一个 deep module(架构评审候选 2)
 
-Status: ready-for-agent
+Status: done
 Type: task
 
 来源:2026-10-24 architecture review(.scratch/architecture-review-20261024-092119.html
@@ -31,3 +31,39 @@ implementation 吸收 never-throw、guarded settle、99 天花板;SQL 守卫留�
 ## 门禁
 
 既有契约断言零删除零改写,新增只追加;`npm run verify` 全绿(看退出码,不看 tail)。
+
+## Comments
+
+### Grilling 决策(2026-10-24,五项全数与维护者对齐锁定)
+
+1. **落点**:新建 `apps/server/src/task-lifecycle.ts`,`task-tracker.ts` 折入删除
+   (全仓仅两个任务文件引用)。模块领域无涉(不 import pipeline/dictionary/
+   translator);两个任务文件留原地瘦身为「组装 spec 并 fire」,领域正文不搬,
+   `runImportTask`/`runChapterTranslationTask` 签名不变——router 与 api.test 零感知。
+2. **fire 形状**:`fireTask({ label, writeProgress?, settleFailed, run })` 通用信封;
+   99 天花板按「吸收」严格义走 report 注入(writeProgress 进 spec,模块钳 99 后交
+   run),「翻译中永不说 100」与 never-throw 同族住进信封。label 复现原日志文案
+   (`Import of book N` / `Translation of chapter N`),逐字节零行为变化。
+3. **sweep 形状**:模块导出 `sweepInterruptedTasks(database)`,配对调用 book-store
+   双 sweep(SQL 与守卫留 store),并持有两条 console.warn 文案(与 main.ts 原文案
+   逐字节一致);store 静默契约由模块作为调用方承接。
+4. **drain 归一 + 门禁解释**:tracker 归一,main.ts 单挂 `drainTasks(3000)`;
+   per-kind drain 删除。门禁「既有契约断言零删除零改写」解释为保护断言内容,不保护
+   import 行与调用手法——三个测试文件(import-task.test / chapter-task.test /
+   contract.test)换符号,expect 逐字节保留(git diff 复核:仅 import、调用符号、
+   一个 `it` 标题随符号更名)。
+5. **测试种植口**:种植口 = fireTask 收 body 闭包这一缝,测试直接向真 tracker 种
+   可控在飞任务。新增 `apps/server/test/task-lifecycle.test.ts` 八例:drain 挂住/
+   release 解算、grace 到期即解算、run 拒绝走 settleFailed 且 promise resolve、
+   同步 throw 同权、settleFailed 再抛被吞+记日志、干净 body 不触 verdict、report
+   99 钳制、无 writeProgress 时 report 为 no-op。
+
+### 收尾(2026-10-24)
+
+- `npm run verify` 退出码 0(typecheck、296 tests 含新 8 例、lint --max-warnings 0、
+  check:sql-locality、build 全过)。
+- 附带事实修正:`translateChapters` 死泛化删除(唯一调用方永远传一章;batch.test
+  只测 `translateSentences`,零测试随删);batch.ts 与 book-store.ts 里引用已死
+  先例(import 报百分比、translateChapters)的注释改为指向现存事实。
+- ADR-0004 第 21 行的 translateChapters 是历史决策记录,未动。
+- 无遗留人工步骤。

@@ -36,7 +36,7 @@ import {
   translateChapter,
   type ChapterTranslationState,
 } from "../../../apps/web/src/chapterTranslation";
-import { drainChapterTranslationTasks } from "../src/translate/chapter-task.js";
+import { drainTasks } from "../src/task-lifecycle.js";
 
 // The tier seam's test surface: the real web fetch clients (apps/web/src)
 // driving the real Express app over a real socket. This is the executable
@@ -958,7 +958,7 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
     } finally {
       parked = false;
       releases.forEach((resume) => resume());
-      await drainChapterTranslationTasks(1000);
+      await drainTasks(1000);
     }
   });
 });

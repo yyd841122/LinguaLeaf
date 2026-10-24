@@ -396,9 +396,9 @@ export function failInterruptedChapterTranslations(
 }
 
 // One sentence block's write handle: the row id and the text the task
-// translates. Held as references so the write-back can never realign —
-// the same objects walk into translateChapters and back into
-// saveSentenceTranslations.
+// translates. The task holds these rows in reading order, walks the texts
+// into translateSentences, and pairs the results back under the same
+// indices — the write-back cannot realign.
 export type SentenceBlockRef = {
   id: number;
   text: string;

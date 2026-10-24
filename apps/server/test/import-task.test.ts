@@ -7,7 +7,8 @@ import {
   loadChapter,
   type BlockData,
 } from "../src/book-store.js";
-import { drainImportTasks, runImportTask } from "../src/import/import-task.js";
+import { runImportTask } from "../src/import/import-task.js";
+import { drainTasks } from "../src/task-lifecycle.js";
 import type { PreparedBook } from "../src/import/pipeline.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 
@@ -123,7 +124,7 @@ describe("runImportTask (direct)", () => {
     // drain stays honest with the now-instant task. chapter-task.test.ts
     // pins the holding half of the same drain with a task that can still
     // be held mid-flight.
-    await drainImportTasks(0);
+    await drainTasks(0);
     expect(findBookRow(database, bookId)).toMatchObject({
       status: "ready",
       import_stage: null,

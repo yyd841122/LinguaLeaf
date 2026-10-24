@@ -4,12 +4,7 @@ import { resolve } from "node:path";
 import { createApp } from "./app.js";
 import { dictionaryPathUnder, openDictionary } from "./dict/dictionary.js";
 import { openDatabase } from "./database.js";
-import {
-  failInterruptedChapterTranslations,
-  failInterruptedImports,
-} from "./book-store.js";
-import { drainImportTasks } from "./import/import-task.js";
-import { drainChapterTranslationTasks } from "./translate/chapter-task.js";
+import { drainTasks, sweepInterruptedTasks } from "./task-lifecycle.js";
 import { attachFrontend, type CloseFrontend } from "./frontend.js";
 import {
   createDeepSeekTranslator,
@@ -101,22 +96,11 @@ try {
     `LinguaLeaf listening on http://${host}:${typeof address === "object" && address ? address.port : port}`
   );
 
-  // Imports orphaned by the previous run can never resume — their task died
-  // with the process. Marked failed only after the port is ours: a second
-  // launch that loses the bind must not fail the first instance's active
-  // imports on its way out (audit 2026-10-23).
-  const interrupted = failInterruptedImports(database);
-  if (interrupted > 0) {
-    console.warn(
-      `${interrupted} import(s) were interrupted by a restart and are marked failed on the shelf.`
-    );
-  }
-  const interruptedTranslations = failInterruptedChapterTranslations(database);
-  if (interruptedTranslations > 0) {
-    console.warn(
-      `${interruptedTranslations} chapter translation(s) were interrupted by a restart and are marked failed in the reader.`
-    );
-  }
+  // Background tasks orphaned by the previous run can never resume — their
+  // tasks died with the process. Swept only after the port is ours: a
+  // second launch that loses the bind must not fail the first instance's
+  // active tasks on its way out (audit 2026-10-23).
+  sweepInterruptedTasks(database);
 
   let closing = false;
   const shutdown = async () => {
@@ -138,10 +122,7 @@ try {
       // grace window to land their writes before the database closes;
       // whatever misses settles as interrupted on the next startup sweep
       // (audit 2026-10-23).
-      await Promise.all([
-        drainImportTasks(3000),
-        drainChapterTranslationTasks(3000),
-      ]);
+      await drainTasks(3000);
       database.close();
       dictionary.close();
       clearTimeout(timeout);
