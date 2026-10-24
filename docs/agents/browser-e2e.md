@@ -3,7 +3,8 @@
 For flows no supertest seam reaches — progress UI, restart recovery, anything
 an acceptance dispute hinges on — drive the real built app in a real browser
 instead of arguing from code. The recipe below settled ticket 08's 「页面上
-没有任何提示」 report in one run.
+没有任何提示」 report in one run. (HTTP-level checks without a browser are
+`docs/agents/local-e2e.md`'s lane.)
 
 ## Setup
 

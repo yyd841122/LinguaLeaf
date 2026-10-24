@@ -22,6 +22,10 @@ Judgement-call rules the review stage enforces live in `CODING_STANDARDS.md` at 
 
 Real-browser verification and live-DB diagnosis — acceptance disputes, flows no supertest seam reaches: `docs/agents/browser-e2e.md`.
 
+### Local E2E
+
+Node-driver end-to-end against a running server — mock translator, orphan-port discipline: `docs/agents/local-e2e.md`.
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
