@@ -1141,10 +1141,14 @@ describe("ReadingPage's translate button through the component boundary", () => 
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(screen.getByRole("button", { name: "翻译中 0%" })).toBeTruthy();
+      // The winning 202 is the loser's 409's recovery: the notice cannot
+      // outlive the translating state it contradicts.
+      expect(screen.queryByRole("alert")).toBeNull();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1500);
       });
       expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();

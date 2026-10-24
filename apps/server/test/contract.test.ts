@@ -11,6 +11,7 @@ import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import {
   createImportingBook,
+  INTERRUPTED_TRANSLATION_MESSAGE,
   beginChapterTranslation,
   failInterruptedChapterTranslations,
   findChapterRow,
@@ -789,9 +790,8 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
     expect(failed).toMatchObject({
       translationStatus: "failed",
       translationPercent: null,
-      translationError: expect.any(String),
+      translationError: INTERRUPTED_TRANSLATION_MESSAGE,
     });
-    expect(failed.translationError!.length).toBeGreaterThan(0);
     expect(await translateChapter(id, 2)).toMatchObject({
       translationStatus: "translating",
       translationPercent: 0,
@@ -812,19 +812,27 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
   it("holds two chapters translating together and advances each without blocking the other", async () => {
     // Three batches per chapter: each batch parks separately, so releasing
     // one chapter proves the other's status and percent do not move.
+    // Chapter names double as the batch tag: every fixture sentence opens
+    // with its chapter's name, so the stub parks a batch under the chapter
+    // it belongs to without parsing anything subtler.
+    const chapterNames = ["First", "Second"];
     const releases = new Map<string, () => void>();
     let parked = true;
     await startStack({
       translate: async (sentences) => {
         if (parked) {
+          const chapter = chapterNames.find((name) =>
+            sentences[0]!.startsWith(`${name} `)
+          );
+          expect(chapter).toBeDefined();
           await new Promise<void>((resolve) => {
-            releases.set(sentences[0]!.split(" ")[0]!, resolve);
+            releases.set(chapter!, resolve);
           });
         }
         return sentences.map((s) => `译:${s}`);
       },
     });
-    const markdown = ["First", "Second"]
+    const markdown = chapterNames
       .map(
         (name) =>
           `# ${name}\n\n` +

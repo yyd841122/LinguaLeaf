@@ -393,7 +393,6 @@ describe("chapter translation state machine", () => {
         translationError: INTERRUPTED_TRANSLATION_MESSAGE,
       });
     }
-    expect(INTERRUPTED_TRANSLATION_MESSAGE).toMatch(/服务重启/);
     expect(loadChapter(database, firstBook, 1)!.blocks).toEqual(blocksBefore);
     expect([
       loadChapter(database, firstBook, 2),

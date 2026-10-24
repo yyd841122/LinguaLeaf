@@ -77,9 +77,9 @@ export function ReadingPage() {
   const [lookup, setLookup] = useState<WordClick | null>(null);
   // The on-demand translation flow (ADR-0004): `startFailed` says the
   // trigger POST did not land; `pollFailed` says the running poll has
-  // stopped answering. Both clear on their own recovery (a retry or a
-  // landing tick) — a loop's last state must not outlive its credibility
-  // (CODING_STANDARDS).
+  // stopped answering. Both clear on their own recovery (a retry, a
+  // landing response, or a landing tick) — a loop's last state must not
+  // outlive its credibility (CODING_STANDARDS).
   const [startFailed, setStartFailed] = useState(false);
   const [pollFailed, setPollFailed] = useState(false);
   // The route as of the latest render: a trigger's 202 that resolves after
@@ -243,6 +243,10 @@ export function ReadingPage() {
     translateChapter(bookId, chapterNumber)
       .then((state) => {
         if (stale()) return;
+        // A landed trigger is the start-failure's recovery: in the
+        // double-click race the losing 409's notice must not outlive the
+        // translating state this response patches in.
+        setStartFailed(false);
         setContent((current) => (current ? { ...current, ...state } : current));
       })
       .catch(() => {
@@ -269,6 +273,7 @@ export function ReadingPage() {
           if (cancelled) return;
           setContent(chapterData);
           setPollFailed(false);
+          setStartFailed(false);
         })
         .catch(() => {
           // Keep the chapter as-is; the next tick retries. But say the
