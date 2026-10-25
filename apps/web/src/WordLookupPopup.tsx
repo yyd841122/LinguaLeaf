@@ -16,7 +16,7 @@ import type { ClickPoint, WordClick } from "./ReadingView";
 const WORD_STATUS_LABELS: Record<WordStatus, string> = {
   learning: "学习中",
   known: "已掌握",
-  ignored: "忽略",
+  ignored: "已忽略",
 };
 const WORD_STATUSES = Object.keys(WORD_STATUS_LABELS) as WordStatus[];
 
@@ -52,11 +52,23 @@ export function WordLookupPopup({
 }) {
   const { word, point } = click;
   const [state, setState] = useState<LookupState>({ phase: "loading" });
+  // A save failure belongs to the word it was attempted for: clicking
+  // another word restarts the popup's story, and the old notice must not
+  // outlive it (CODING_STANDARDS, credibility). The in-flight fact follows
+  // the same rule — both reset when the word changes.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const [saving, setSaving] = useState(false);
+  // The word this popup currently shows, readable from async callbacks
+  // (the render-time adjust idiom — the closures below capture stale words).
+  const currentWordRef = useRef(word);
+  currentWordRef.current = word;
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState({ phase: "loading" });
+    setSaveFailed(false);
+    setSaving(false);
     fetchWordLookup(word)
       .then((lookup) => {
         if (cancelled) return;
@@ -74,21 +86,32 @@ export function WordLookupPopup({
   // patched when it lands. A failed save leaves the previous state shown
   // beside a notice — the last rendered state must not outlive its
   // credibility (CODING_STANDARDS), and the next attempt clears it.
-  const [saveFailed, setSaveFailed] = useState(false);
   const applyStatus = (status: WordStatus) => {
-    if (state.phase !== "found") return;
+    if (state.phase !== "found" || saving) return;
     setSaveFailed(false);
+    setSaving(true);
     // States key on the lemma — the same key the lookup wrote server-side.
     const key = state.lookup.lemma ?? state.lookup.word;
+    const wordAtClick = state.lookup.word;
+    const stale = () => currentWordRef.current !== wordAtClick;
     putWordStatus(key, status)
       .then(() => {
+        // A click since this PUT started moved the popup to another word:
+        // the stale verdict must not patch it (the reading page's rule for
+        // a navigation's stale trigger response).
+        if (stale()) return;
         setState((current) =>
           current.phase === "found"
             ? { ...current, lookup: { ...current.lookup, status } }
             : current
         );
       })
-      .catch(() => setSaveFailed(true));
+      .catch(() => {
+        // Nor does a failed attempt's notice follow the reader to the
+        // next word.
+        if (!stale()) setSaveFailed(true);
+      })
+      .finally(() => setSaving(false));
   };
 
   // Dismiss on Escape, on scroll/resize (the anchor goes stale the moment
@@ -181,6 +204,7 @@ export function WordLookupPopup({
                 type="button"
                 className="lookup-vocab-option"
                 aria-pressed={state.lookup.status === status}
+                disabled={saving}
                 onClick={() => applyStatus(status)}
               >
                 {WORD_STATUS_LABELS[status]}

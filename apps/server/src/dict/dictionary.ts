@@ -173,6 +173,19 @@ export function resolveIpa(
   return null;
 }
 
+// The vocabulary state key of a word (ADR-0005): the lemma the inflection
+// index folds it to, or the folded form itself when the word is lemmaless.
+// The one rule every state seam keys on — the lookup route writing states
+// and vocab-store's chapter join reading them — so the two can never drift
+// into different keys for the same word. Callers pass the already-folded
+// word (normalizeLookupToken).
+export function vocabularyStateKey(
+  dictionary: Dictionary,
+  foldedWord: string
+): string {
+  return lemmaOf(dictionary, foldedWord) ?? foldedWord;
+}
+
 // The lookup contract is the spec's "词形还原后的…释义": whenever the
 // inflection index knows the lemma and the lemma has an entry, the response
 // shows the lemma's senses and part of speech — ECDICT's own entries for

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Dictionary } from "./dict/dictionary.js";
-import { lemmaOf } from "./dict/dictionary.js";
+import { vocabularyStateKey } from "./dict/dictionary.js";
 import { normalizeLookupToken } from "@lingualeaf/reading-model";
 import type { WordStatus } from "./wire.js";
 
@@ -97,9 +97,9 @@ export function tokenStatuses(
   dictionary: Dictionary,
   tokens: string[]
 ): (WordStatus | null)[] {
-  return tokens.map((token) => {
-    const word = normalizeLookupToken(token);
-    const key = lemmaOf(dictionary, word) ?? word;
-    return states.get(key) ?? null;
-  });
+  return tokens.map(
+    (token) =>
+      states.get(vocabularyStateKey(dictionary, normalizeLookupToken(token))) ??
+      null
+  );
 }

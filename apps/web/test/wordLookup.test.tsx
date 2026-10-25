@@ -368,7 +368,7 @@ it("offers the three 生词本 operations and marks the current state", async ()
     "aria-pressed",
     "false"
   );
-  expect(screen.getByRole("button", { name: "忽略" })).toHaveAttribute(
+  expect(screen.getByRole("button", { name: "已忽略" })).toHaveAttribute(
     "aria-pressed",
     "false"
   );
@@ -463,6 +463,176 @@ it("shows a notice when the state save fails and clears it when a retry lands", 
       )
     );
     // A landed attempt is the failure notice's recovery.
+    expect(screen.queryByText("状态保存失败，请重试。")).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+// A PUT the test resolves by hand: the race tests hold the save in flight.
+function deferredResponse(): {
+  promise: Promise<Response>;
+  resolve: (response: Response) => void;
+} {
+  let resolve!: (response: Response) => void;
+  const promise = new Promise<Response>((r) => {
+    resolve = r;
+  });
+  return { promise, resolve };
+}
+
+const WOKE_ENTRY = {
+  word: "woke",
+  lemma: "wake",
+  ipa: "ˈwoʊk",
+  pos: "v.",
+  translation: "v. 醒来, 唤醒",
+  status: "learning",
+};
+const BOOK_ENTRY = {
+  word: "book",
+  lemma: null,
+  ipa: "bʊk",
+  pos: "n. v.",
+  translation: "n. 书, 簿, 账册\nv. 预订, 登记",
+  status: "learning",
+};
+
+it("disables the state row while a save is in flight", async () => {
+  const put = deferredResponse();
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<Response>
+  >((url, init) => {
+    if (init?.method === "PUT") return put.promise;
+    return Promise.resolve(
+      new Response(JSON.stringify(WOKE_ENTRY), { status: 200 })
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(
+      <WordLookupPopup
+        click={{ word: "woke", point: { x: 100, y: 100 } }}
+        onClose={() => {}}
+      />
+    );
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // One save at a time: the whole row waits, so two clicks cannot race
+    // into an out-of-order last-write.
+    expect(screen.getByRole("button", { name: "已掌握" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    put.resolve(
+      new Response(JSON.stringify({ lemma: "wake", status: "known" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled()
+    );
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("does not patch a save's verdict onto a word the popup moved to", async () => {
+  const put = deferredResponse();
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<Response>
+  >((url, init) => {
+    if (init?.method === "PUT") return put.promise;
+    const entry = String(url).endsWith("/lookup/woke")
+      ? WOKE_ENTRY
+      : BOOK_ENTRY;
+    return Promise.resolve(
+      new Response(JSON.stringify(entry), { status: 200 })
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(<LookupHarness blocks={lookupBlocks} />);
+    fireEvent.click(screen.getByText("woke"));
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // The reader moves on before the save lands: book's popup is its own
+    // story, and woke's in-flight verdict must not write over it.
+    fireEvent.click(screen.getByText("book"));
+    expect(
+      await screen.findByRole("dialog", { name: "词详情：book" })
+    ).toBeInTheDocument();
+    put.resolve(
+      new Response(JSON.stringify({ lemma: "wake", status: "known" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled()
+    );
+    expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("leaves a failed save's notice behind when the reader moves to another word", async () => {
+  const fetchMock = vi
+    .fn<(url: string, init?: RequestInit) => Promise<Response>>()
+    // Call order: woke's lookup, the failed PUT, then book's lookup.
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          word: "woke",
+          lemma: "wake",
+          ipa: "ˈwoʊk",
+          pos: "v.",
+          translation: "v. 醒来, 唤醒",
+          status: "learning",
+        }),
+        { status: 200 }
+      )
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "boom" }), { status: 500 })
+    )
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          word: "book",
+          lemma: null,
+          ipa: "bʊk",
+          pos: "n. v.",
+          translation: "n. 书, 簿, 账册\nv. 预订, 登记",
+          status: "learning",
+        }),
+        { status: 200 }
+      )
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(<LookupHarness blocks={lookupBlocks} />);
+    fireEvent.click(screen.getByText("woke"));
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    expect(
+      await screen.findByText("状态保存失败，请重试。")
+    ).toBeInTheDocument();
+    // Clicking another word re-anchors the popup; the notice belonged to
+    // the previous word's save, so it must not follow.
+    fireEvent.click(screen.getByText("book"));
+    expect(
+      await screen.findByRole("dialog", { name: "词详情：book" })
+    ).toBeInTheDocument();
     expect(screen.queryByText("状态保存失败，请重试。")).toBeNull();
   } finally {
     vi.unstubAllGlobals();

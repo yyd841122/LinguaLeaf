@@ -1,6 +1,6 @@
 import { Router } from "express";
 import type { Dictionary } from "./dictionary.js";
-import { lookupWord } from "./dictionary.js";
+import { lookupWord, vocabularyStateKey } from "./dictionary.js";
 import type { WordStatus } from "../wire.js";
 
 // The states store the lookup needs, injected at construction (grilling
@@ -33,9 +33,12 @@ export function createLookupRouter(
       return;
     }
     // States key on the lemma (ADR-0005): any surface form of a word
-    // lands on one row — the same key rule vocab-store's chapter join
-    // computes (lemma, or the folded form when the word is lemmaless).
-    const status = wordStates.statusAfterLookup(entry.lemma ?? entry.word);
+    // lands on one row. The key rule lives once in dictionary.ts — the
+    // chapter join reads states through the same function. entry.word is
+    // lookupWord's folded form, the key's input.
+    const status = wordStates.statusAfterLookup(
+      vocabularyStateKey(dictionary, entry.word)
+    );
     response.json({ ...entry, status });
   });
   return router;

@@ -317,6 +317,22 @@ describe("putWordStatus over the real server (wordLookup.ts)", () => {
     expect(books?.status).toBe("known");
   });
 
+  it("reads the DELETE's 204 as bodyless success, idempotently", async () => {
+    await startStack();
+    await putWordStatus("book", "ignored");
+    // The 204 is the deleteBook shape: no body — fetchJson must not parse
+    // one into a failure. Clearing an unstated lemma is the same 204
+    // (idempotent), so the delete runs twice.
+    await expect(
+      fetchJson<void>("/api/vocab/lemmas/book", { method: "DELETE" })
+    ).resolves.toBeUndefined();
+    await expect(
+      fetchJson<void>("/api/vocab/lemmas/book", { method: "DELETE" })
+    ).resolves.toBeUndefined();
+    const entry = await fetchWordLookup("book");
+    expect(entry?.status).toBe("learning");
+  });
+
   it("surfaces the invalid-status 400 as a catchable ApiError", async () => {
     await startStack();
     // Status family plus body presence, not copy: the client branches on
