@@ -175,6 +175,25 @@ a diff adds or renames a wire enum member, both tiers must compile
 against the shared union and the contract suite must pin it in the same
 change.
 
+## User-facing copy speaks the glossary
+
+Display copy — buttons, notices, labels, empty states — uses the canonical
+term in GLOSSARY.md, and never a word its _Avoid_ list retires. When a
+ticket touches the glossary, the discipline doubles: the term just written
+down is the term the UI renders.
+
+Why: the vocabulary-states ticket added 已忽略 (Ignored) to GLOSSARY.md and,
+in the same change, shipped the popup button as 忽略 — the drift sat one
+screen above the entry that forbids it, until the Standards axis caught it
+(.scratch/vocabulary-states/issues/01-vocabulary-states.md). Display copy
+is where the glossary meets the reader; a synonym here forks the domain
+language in its most visible spot.
+
+At review: for every new user-facing string in the diff, name the glossary
+term it renders (or state that none applies), and check the Avoid lists —
+the drift to hunt is the near-synonym (忽略 for 已忽略, 查词 for
+点词查详情), not the unrelated word.
+
 ## Contract pins carry machine facts, not server copy
 
 A seam contract test asserts what the wire guarantees the client — the
