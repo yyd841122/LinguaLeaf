@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["node"],
+    "noEmit": true
+  },
+  // contract.test.ts is excluded from the NodeNext project config (the web
+  // clients it borrows use Bundler-style extensionless imports). This probe
+  // typechecks that one file under Bundler resolution so a broken import —
+  // e.g. a web client helper gone module-internal — goes red in the
+  // cheapest gate (root `typecheck`), including inside sandboxes that
+  // cannot run the socket-bound suite itself.
+  "include": ["test/contract.test.ts"]
+}

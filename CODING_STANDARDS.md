@@ -36,6 +36,32 @@ client modules run real requests through `apps/server/test/contract.test.ts`
 diff adds a caller of a shared fetch helper or a new endpoint shape, extend
 that suite in the same change instead of trusting a hand-built mock.
 
+## Contract-suite borrows migrate with the client change
+
+The tier seam's contract suite (apps/server/test/contract.test.ts) borrows
+the real web client modules and drives them over a real socket. When a
+change makes one of those helpers module-internal or deletes it, the borrow
+migrates in the same change: the type import moves to the wire module, and
+the call sites move to a suite-local helper over the same `fetchJson`
+client layer — so the suite keeps pinning client-shaped requests, and each
+borrowed helper's contract keeps one home.
+
+Why: making `translateChapter` module-internal
+(.scratch/reading-page-state-machines/issues/02-translation-trigger.md)
+broke the suite's seven borrow sites, and the break surfaced through the
+implementer's own honesty rather than a gate — the file sat outside every
+tsc project, because its web imports need Bundler resolution while the
+server project is NodeNext. The probe
+(apps/server/tsconfig.contract-test.json, wired into the root typecheck as
+check:contract-types) now catches the import break mechanically. The layer
+half stays a review judgement: a migrated borrow still drives `fetchJson`
+over the real socket.
+
+At review: when a diff un-exports, moves, or deletes an apps/web/src helper
+the contract suite imports, name each borrow site's migration and check the
+replacement drives the same real client layer. When a diff adds such a
+borrow, check the probe still covers the file.
+
 ## Retry loops escalate persistent failure
 
 A client loop that retries through failure — polling, refresh, reconnect —

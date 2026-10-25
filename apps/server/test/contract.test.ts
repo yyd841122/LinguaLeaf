@@ -2,7 +2,6 @@ import { readFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { basename } from "node:path";
-import { Blob, File } from "node:buffer";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import type { Express } from "express";
@@ -46,6 +45,20 @@ import { drainTasks } from "../src/task-lifecycle.js";
 // The chapter translation trigger calls the shared fetch layer directly
 // since translateChapter became module-internal
 // (reading-page-state-machines 02): same client layer, real endpoint.
+// The suite builds multipart bodies from node Buffers; DOM's Blob and
+// FormData draw the underlying ArrayBuffer more narrowly than @types/node
+// does, so the runtime bytes cross into DOM-typed land through this one
+// view — same memory, no copy.
+const domFile = (
+  bytes: Buffer,
+  filename: string,
+  type?: string
+): globalThis.Blob =>
+  new Blob(
+    [bytes as unknown as BlobPart],
+    type ? { type } : {}
+  ) as unknown as globalThis.Blob;
+
 const triggerChapter = (bookId: number, chapterPosition: number) =>
   fetchJson<ChapterTranslationState>(
     `/api/books/${bookId}/chapters/${chapterPosition}/translate`,
@@ -106,24 +119,22 @@ async function startStack(
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = (server.address() as AddressInfo).port;
   realFetch = globalThis.fetch;
-  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>
-    realFetch(
-      new URL(String(input), `http://127.0.0.1:${port}`),
-      init
-    )) as typeof globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    return realFetch(new URL(String(input), `http://127.0.0.1:${port}`), init);
+  }) as typeof globalThis.fetch;
   stack = { app, database, dictionary, server };
   return stack;
 }
 
 // The upload client path exactly as BookshelfPage runs it: fetchJson with
-// a FormData body carrying one File.
+// a FormData body carrying one file part.
 async function uploadBookBytes(
   filename: string,
   bytes: Buffer,
   type: string
 ): Promise<{ id: number } & Record<string, unknown>> {
   const form = new FormData();
-  form.append("file", new File([bytes], filename, { type }));
+  form.append("file", domFile(bytes, filename, type), filename);
   return fetchJson<{ id: number } & Record<string, unknown>>("/api/books", {
     method: "POST",
     body: form,
@@ -149,7 +160,7 @@ async function uploadRejection(
   bytes: Buffer
 ): Promise<unknown> {
   const form = new FormData();
-  form.append("file", new File([bytes], filename));
+  form.append("file", domFile(bytes, filename), filename);
   return fetchJson("/api/books", { method: "POST", body: form }).then(
     () => null,
     (error) => error
@@ -724,7 +735,11 @@ describe("upload rejections through the real client path (fetchJson + FormData)"
     // one reachable path into the uncoded else-branch. Pinned, not
     // endorsed: this is the test that flips when the echo gains a wire
     // code.
-    form.append("document", new File([Buffer.from("bytes")], "book.md"));
+    form.append(
+      "document",
+      domFile(Buffer.from("bytes"), "book.md"),
+      "book.md"
+    );
     const error = await fetchJson("/api/books", {
       method: "POST",
       body: form,
