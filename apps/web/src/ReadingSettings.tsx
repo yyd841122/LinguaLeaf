@@ -1,11 +1,16 @@
-import { readStoredNumber, useStoredBoolean, useStoredNumber } from "./prefs";
+import {
+  readStoredBookNumber,
+  useStoredBookBoolean,
+  useStoredBookNumber,
+} from "./prefs";
 import { IpaSizeControl } from "./IpaSizeControl";
 import { SizeStepper } from "./SizeStepper";
 
 // Original-line (原文行) font size, in pixels, adjusted per device and
-// remembered in localStorage alongside the IPA size and the two toggles.
-// Exported bounds keep the stepper, the storage reader, and the reading
-// view's CSS variable in agreement.
+// remembered per book (book:<id>:originalSize, per-book-toggles ticket 01)
+// alongside the IPA size and the two toggles. Exported bounds keep the
+// stepper, the storage reader, and the reading view's CSS variable in
+// agreement.
 export const MIN_ORIGINAL_SIZE = 14;
 export const MAX_ORIGINAL_SIZE = 28;
 export const DEFAULT_ORIGINAL_SIZE = 18;
@@ -16,10 +21,11 @@ export const MIN_TRANSLATION_SIZE = 12;
 export const MAX_TRANSLATION_SIZE = 24;
 export const DEFAULT_TRANSLATION_SIZE = 14;
 
-const ORIGINAL_SIZE_STORAGE_KEY = "lingualeaf.originalSize";
-const TRANSLATION_SIZE_STORAGE_KEY = "lingualeaf.translationSize";
-const SHOW_IPA_STORAGE_KEY = "lingualeaf.showIpa";
-const SHOW_TRANSLATION_STORAGE_KEY = "lingualeaf.showTranslation";
+// The <pref> half of the book-scoped storage keys (book:<id>:<pref>).
+const ORIGINAL_SIZE_PREF = "originalSize";
+const TRANSLATION_SIZE_PREF = "translationSize";
+const SHOW_IPA_PREF = "showIpa";
+const SHOW_TRANSLATION_PREF = "showTranslation";
 
 export function clampOriginalSize(value: number): number {
   return Math.min(MAX_ORIGINAL_SIZE, Math.max(MIN_ORIGINAL_SIZE, value));
@@ -29,46 +35,59 @@ export function clampTranslationSize(value: number): number {
   return Math.min(MAX_TRANSLATION_SIZE, Math.max(MIN_TRANSLATION_SIZE, value));
 }
 
-export function readStoredOriginalSize(): number {
-  return readStoredNumber(
-    ORIGINAL_SIZE_STORAGE_KEY,
+export function readStoredOriginalSize(bookId: number): number {
+  return readStoredBookNumber(
+    bookId,
+    ORIGINAL_SIZE_PREF,
     DEFAULT_ORIGINAL_SIZE,
     clampOriginalSize
   );
 }
 
-export function readStoredTranslationSize(): number {
-  return readStoredNumber(
-    TRANSLATION_SIZE_STORAGE_KEY,
+export function readStoredTranslationSize(bookId: number): number {
+  return readStoredBookNumber(
+    bookId,
+    TRANSLATION_SIZE_PREF,
     DEFAULT_TRANSLATION_SIZE,
     clampTranslationSize
   );
 }
 
-export function useOriginalSize(): [number, (size: number) => void] {
-  return useStoredNumber(
-    ORIGINAL_SIZE_STORAGE_KEY,
+export function useOriginalSize(
+  bookId: number
+): [number, (size: number) => void] {
+  return useStoredBookNumber(
+    bookId,
+    ORIGINAL_SIZE_PREF,
     DEFAULT_ORIGINAL_SIZE,
     clampOriginalSize
   );
 }
 
-export function useTranslationSize(): [number, (size: number) => void] {
-  return useStoredNumber(
-    TRANSLATION_SIZE_STORAGE_KEY,
+export function useTranslationSize(
+  bookId: number
+): [number, (size: number) => void] {
+  return useStoredBookNumber(
+    bookId,
+    TRANSLATION_SIZE_PREF,
     DEFAULT_TRANSLATION_SIZE,
     clampTranslationSize
   );
 }
 
-// The annotation toggles (显示开关, GLOSSARY). Both annotation lines start
-// visible; the original line has no toggle — it is never hidden.
-export function useShowIpa(): [boolean, (value: boolean) => void] {
-  return useStoredBoolean(SHOW_IPA_STORAGE_KEY, true);
+// The annotation toggles (显示开关, GLOSSARY), remembered per book since
+// per-book-toggles ticket 01. Both annotation lines start visible; the
+// original line has no toggle — it is never hidden.
+export function useShowIpa(
+  bookId: number
+): [boolean, (value: boolean) => void] {
+  return useStoredBookBoolean(bookId, SHOW_IPA_PREF, true);
 }
 
-export function useShowTranslation(): [boolean, (value: boolean) => void] {
-  return useStoredBoolean(SHOW_TRANSLATION_STORAGE_KEY, true);
+export function useShowTranslation(
+  bookId: number
+): [boolean, (value: boolean) => void] {
+  return useStoredBookBoolean(bookId, SHOW_TRANSLATION_PREF, true);
 }
 
 export function OriginalSizeControl({

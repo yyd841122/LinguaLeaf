@@ -68,11 +68,14 @@ export function ReadingPage() {
   const [error, setError] = useState<string | null>(null);
   const [tocOpen, setTocOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [ipaSize, setIpaSize] = useIpaSize();
-  const [originalSize, setOriginalSize] = useOriginalSize();
-  const [translationSize, setTranslationSize] = useTranslationSize();
-  const [showIpa, setShowIpa] = useShowIpa();
-  const [showTranslation, setShowTranslation] = useShowTranslation();
+  // Display preferences are per book (per-book-toggles ticket 01): the
+  // route's book id scopes every key, and an invalid id degrades to the
+  // defaults inside prefs.ts while the error notice renders.
+  const [ipaSize, setIpaSize] = useIpaSize(bookId);
+  const [originalSize, setOriginalSize] = useOriginalSize(bookId);
+  const [translationSize, setTranslationSize] = useTranslationSize(bookId);
+  const [showIpa, setShowIpa] = useShowIpa(bookId);
+  const [showTranslation, setShowTranslation] = useShowTranslation(bookId);
   // The word-lookup popup (ticket 06): which word was clicked, and where to
   // anchor it. Clicking another word re-anchors; leaving the chapter closes.
   const [lookup, setLookup] = useState<WordClick | null>(null);

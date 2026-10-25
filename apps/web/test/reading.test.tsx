@@ -18,9 +18,10 @@ import {
   readStoredIpaSize,
 } from "../src/IpaSizeControl";
 import {
-  readStoredBoolean,
-  useStoredBoolean,
-  useStoredNumber,
+  readStoredBookBoolean,
+  readStoredBookNumber,
+  useStoredBookBoolean,
+  useStoredBookNumber,
 } from "../src/prefs";
 import {
   MAX_ORIGINAL_SIZE,
@@ -63,8 +64,12 @@ function renderReadingPage() {
 }
 
 // The annotation toggles persist across tests; tests that assert on the
-// rendered lines start from the visible defaults.
+// rendered lines start from the visible defaults. The harness's book is 7:
+// both its per-book keys and the legacy fallback keys (which would
+// silently re-seed book 7 through the one-time migration) start cleared.
 function clearAnnotationToggles() {
+  window.localStorage.removeItem("book:7:showIpa");
+  window.localStorage.removeItem("book:7:showTranslation");
   window.localStorage.removeItem("lingualeaf.showIpa");
   window.localStorage.removeItem("lingualeaf.showTranslation");
 }
@@ -201,13 +206,17 @@ it("ipa size control steps one pixel per click and clamps at the bounds", () => 
   ).toBe(true);
 });
 
-it("reads the remembered ipa size from localStorage, defaulting on garbage", () => {
-  window.localStorage.setItem("lingualeaf.ipaSize", "16");
-  expect(readStoredIpaSize()).toBe(16);
-  window.localStorage.setItem("lingualeaf.ipaSize", "big");
-  expect(readStoredIpaSize()).toBe(12);
+it("reads the remembered ipa size per book, legacy fallback, defaulting on garbage", () => {
+  window.localStorage.setItem("book:41:ipaSize", "16");
+  expect(readStoredIpaSize(41)).toBe(16);
+  window.localStorage.setItem("book:41:ipaSize", "big");
+  expect(readStoredIpaSize(41)).toBe(12);
+  // A book never opened since the migration reads the global-era key.
+  window.localStorage.removeItem("book:41:ipaSize");
+  window.localStorage.setItem("lingualeaf.ipaSize", "14");
+  expect(readStoredIpaSize(41)).toBe(14);
   window.localStorage.removeItem("lingualeaf.ipaSize");
-  expect(readStoredIpaSize()).toBe(12);
+  expect(readStoredIpaSize(41)).toBe(12);
 });
 
 it("reading view exposes the ipa size to CSS as a variable", () => {
@@ -243,35 +252,192 @@ it("reading view exposes the translation size to CSS as a variable", () => {
   expect(reading.style.getPropertyValue("--translation-size")).toBe("16px");
 });
 
-it("reads stored boolean prefs, defaulting on missing or unrecognized values", () => {
-  window.localStorage.setItem("lingualeaf.showIpa", "false");
-  expect(readStoredBoolean("lingualeaf.showIpa", true)).toBe(false);
-  window.localStorage.setItem("lingualeaf.showIpa", "yes");
-  expect(readStoredBoolean("lingualeaf.showIpa", true)).toBe(true);
-  window.localStorage.removeItem("lingualeaf.showIpa");
-  expect(readStoredBoolean("lingualeaf.showIpa", true)).toBe(true);
+// Per-book pref readers (per-book-toggles ticket 01): every preference
+// lives on `book:<id>:<pref>`; the pre-per-book global keys
+// (`lingualeaf.<pref>`) are a read-only one-time fallback. Book ids 3/4
+// keep these tests out of the ReadingPage harness's book 7.
+describe("per-book pref readers (ticket per-book-toggles 01)", () => {
+  beforeEach(() => {
+    for (const key of [
+      "book:3:showIpa",
+      "book:3:originalSize",
+      "lingualeaf.showIpa",
+      "lingualeaf.originalSize",
+    ]) {
+      window.localStorage.removeItem(key);
+    }
+  });
+
+  it("reads the book-scoped key, which wins over a disagreeing legacy key", () => {
+    window.localStorage.setItem("book:3:showIpa", "true");
+    window.localStorage.setItem("lingualeaf.showIpa", "false");
+    expect(readStoredBookBoolean(3, "showIpa", false)).toBe(true);
+
+    window.localStorage.setItem("book:3:originalSize", "20");
+    window.localStorage.setItem("lingualeaf.originalSize", "16");
+    expect(
+      readStoredBookNumber(3, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    ).toBe(20);
+  });
+
+  it("falls back to the legacy global key when the book key is missing", () => {
+    window.localStorage.setItem("lingualeaf.showIpa", "false");
+    expect(readStoredBookBoolean(3, "showIpa", true)).toBe(false);
+
+    window.localStorage.setItem("lingualeaf.originalSize", "22");
+    expect(
+      readStoredBookNumber(3, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    ).toBe(22);
+  });
+
+  it("clamps a legacy fallback value the same as a book-key value", () => {
+    window.localStorage.setItem("lingualeaf.originalSize", "99");
+    expect(
+      readStoredBookNumber(3, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    ).toBe(28);
+  });
+
+  it("defaults when neither the book key nor the legacy key exists", () => {
+    expect(readStoredBookBoolean(3, "showIpa", true)).toBe(true);
+    expect(
+      readStoredBookNumber(3, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    ).toBe(18);
+  });
+
+  it("does not fall back to the legacy key when the book key holds garbage", () => {
+    // A present book key means this book already has its own value; the
+    // legacy key only speaks for books never opened since the migration.
+    window.localStorage.setItem("book:3:showIpa", "yes");
+    window.localStorage.setItem("lingualeaf.showIpa", "false");
+    expect(readStoredBookBoolean(3, "showIpa", true)).toBe(true);
+
+    window.localStorage.setItem("book:3:originalSize", "junk");
+    window.localStorage.setItem("lingualeaf.originalSize", "22");
+    expect(
+      readStoredBookNumber(3, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    ).toBe(18);
+  });
+
+  it("treats an invalid book id as no preference at all", () => {
+    expect(readStoredBookBoolean(Number.NaN, "showIpa", true)).toBe(true);
+    expect(
+      readStoredBookNumber(Number.NaN, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    ).toBe(18);
+  });
+
+  it("degrades to the default when localStorage itself is broken", () => {
+    // The 守护门禁: private browsing / blocked storage degrades to the
+    // default, it never breaks rendering.
+    const broken = vi
+      .spyOn(window.localStorage, "getItem")
+      .mockImplementation(() => {
+        throw new Error("storage blocked");
+      });
+    try {
+      expect(readStoredBookBoolean(3, "showIpa", true)).toBe(true);
+      expect(readStoredBookNumber(3, "originalSize", 18)).toBe(18);
+    } finally {
+      broken.mockRestore();
+    }
+  });
 });
 
-it("persists toggle changes to localStorage and falls back on broken storage", () => {
-  const { result } = renderHook(() =>
-    useStoredBoolean("lingualeaf.showTranslation", true)
-  );
-  act(() => result.current[1](false));
-  expect(result.current[0]).toBe(false);
-  expect(window.localStorage.getItem("lingualeaf.showTranslation")).toBe(
-    "false"
-  );
-});
+// The book hooks (same ticket): persistence lands on the book key, the
+// legacy key stays read-only, and a mounted hook follows a book-id change
+// (the useState initializer runs once per mount — shelf → another book
+// must not keep the previous book's values).
+describe("per-book pref hooks (ticket per-book-toggles 01)", () => {
+  beforeEach(() => {
+    for (const key of [
+      "book:3:showIpa",
+      "book:3:originalSize",
+      "book:4:showIpa",
+      "lingualeaf.showIpa",
+      "lingualeaf.originalSize",
+    ]) {
+      window.localStorage.removeItem(key);
+    }
+  });
 
-it("persists number prefs through the clamp", () => {
-  const { result } = renderHook(() =>
-    useStoredNumber("lingualeaf.originalSize", 18, (value) =>
-      Math.min(28, Math.max(14, value))
-    )
-  );
-  act(() => result.current[1](99));
-  expect(result.current[0]).toBe(28);
-  expect(window.localStorage.getItem("lingualeaf.originalSize")).toBe("28");
+  it("persists through the clamp to the book key and never writes the legacy key", () => {
+    window.localStorage.setItem("lingualeaf.originalSize", "16");
+    const { result } = renderHook(() =>
+      useStoredBookNumber(3, "originalSize", 18, (value) =>
+        Math.min(28, Math.max(14, value))
+      )
+    );
+    // The legacy value speaks until this book has one of its own.
+    expect(result.current[0]).toBe(16);
+    act(() => result.current[1](99));
+    expect(result.current[0]).toBe(28);
+    expect(window.localStorage.getItem("book:3:originalSize")).toBe("28");
+    expect(window.localStorage.getItem("lingualeaf.originalSize")).toBe("16");
+  });
+
+  it("materializes the book key from the legacy fallback on mount", () => {
+    window.localStorage.setItem("lingualeaf.showIpa", "false");
+    const { result } = renderHook(() =>
+      useStoredBookBoolean(3, "showIpa", true)
+    );
+    expect(result.current[0]).toBe(false);
+    expect(window.localStorage.getItem("book:3:showIpa")).toBe("false");
+    // The legacy key is read-only, even as its value moves over.
+    expect(window.localStorage.getItem("lingualeaf.showIpa")).toBe("false");
+  });
+
+  it("follows the book when the book id changes under a mounted hook", () => {
+    window.localStorage.setItem("book:3:showIpa", "false");
+    const { result, rerender } = renderHook(
+      ({ bookId }: { bookId: number }) =>
+        useStoredBookBoolean(bookId, "showIpa", true),
+      { initialProps: { bookId: 3 } }
+    );
+    expect(result.current[0]).toBe(false);
+    rerender({ bookId: 4 });
+    expect(result.current[0]).toBe(true); // book 4 has no value yet: default
+    act(() => result.current[1](false));
+    expect(window.localStorage.getItem("book:4:showIpa")).toBe("false");
+    rerender({ bookId: 3 });
+    expect(result.current[0]).toBe(false); // book 3's own value again
+  });
+
+  it("persists nothing for an invalid book id", () => {
+    const { result } = renderHook(() =>
+      useStoredBookBoolean(Number.NaN, "showIpa", true)
+    );
+    act(() => result.current[1](false));
+    expect(result.current[0]).toBe(false); // the toggle still works in-session
+    expect(window.localStorage.getItem("book:NaN:showIpa")).toBeNull();
+  });
+
+  it("swallows the write when localStorage itself is broken", () => {
+    const broken = vi
+      .spyOn(window.localStorage, "setItem")
+      .mockImplementation(() => {
+        throw new Error("storage blocked");
+      });
+    try {
+      const { result } = renderHook(() =>
+        useStoredBookBoolean(3, "showIpa", true)
+      );
+      act(() => result.current[1](false));
+      expect(result.current[0]).toBe(false); // in-session state still flips
+    } finally {
+      broken.mockRestore();
+    }
+  });
 });
 
 it("settings panel drives both toggles and both font sizes", () => {
@@ -393,22 +559,28 @@ it("clamps the original and translation size steppers at their bounds", () => {
   ).toBe(true);
 });
 
-it("reads the remembered original size from localStorage, defaulting on garbage", () => {
-  window.localStorage.setItem("lingualeaf.originalSize", "22");
-  expect(readStoredOriginalSize()).toBe(22);
-  window.localStorage.setItem("lingualeaf.originalSize", "99");
-  expect(readStoredOriginalSize()).toBe(28);
+it("reads the remembered original size per book, legacy fallback, defaulting on garbage", () => {
+  window.localStorage.setItem("book:42:originalSize", "22");
+  expect(readStoredOriginalSize(42)).toBe(22);
+  window.localStorage.setItem("book:42:originalSize", "99");
+  expect(readStoredOriginalSize(42)).toBe(28);
+  window.localStorage.removeItem("book:42:originalSize");
+  window.localStorage.setItem("lingualeaf.originalSize", "20");
+  expect(readStoredOriginalSize(42)).toBe(20);
   window.localStorage.removeItem("lingualeaf.originalSize");
-  expect(readStoredOriginalSize()).toBe(18);
+  expect(readStoredOriginalSize(42)).toBe(18);
 });
 
-it("reads the remembered translation size from localStorage, defaulting on garbage", () => {
-  window.localStorage.setItem("lingualeaf.translationSize", "18");
-  expect(readStoredTranslationSize()).toBe(18);
-  window.localStorage.setItem("lingualeaf.translationSize", "big");
-  expect(readStoredTranslationSize()).toBe(14);
+it("reads the remembered translation size per book, legacy fallback, defaulting on garbage", () => {
+  window.localStorage.setItem("book:43:translationSize", "18");
+  expect(readStoredTranslationSize(43)).toBe(18);
+  window.localStorage.setItem("book:43:translationSize", "big");
+  expect(readStoredTranslationSize(43)).toBe(14);
+  window.localStorage.removeItem("book:43:translationSize");
+  window.localStorage.setItem("lingualeaf.translationSize", "16");
+  expect(readStoredTranslationSize(43)).toBe(16);
   window.localStorage.removeItem("lingualeaf.translationSize");
-  expect(readStoredTranslationSize()).toBe(14);
+  expect(readStoredTranslationSize(43)).toBe(14);
 });
 
 it("parses a bodyless 204 as success instead of a failure", async () => {
