@@ -18,6 +18,8 @@ import {
   findBookRow,
   findChapterRow,
   type ChapterData,
+  type PlainBlockData,
+  type SentenceBlockData,
   getProgress,
   listChapters,
   listShelf,
@@ -27,7 +29,13 @@ import {
   type BookRow,
   type ShelfEntry,
 } from "./book-store.js";
-import type { ChapterTranslationState, ImportRejection } from "./wire.js";
+import { tokenizeWords } from "./dict/ipa-line.js";
+import { loadWordStatuses, tokenStatuses } from "./vocab-store.js";
+import type {
+  ChapterTranslationState,
+  ImportRejection,
+  WordStatus,
+} from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -71,16 +79,41 @@ export function createBooksRouter(
   const router = Router();
 
   // The chapter payload as the wire carries it: the store's ChapterData
-  // plus the service-availability flag (ticket 03). The store stays
-  // translator-blind; the router is where the assembled translator is
-  // known, so the flag is decided here and every chapter response goes
-  // through this one construction — the GET and the trigger's 202 cannot
-  // disagree.
-  type ChapterPayload = ChapterData & ChapterTranslationState;
-  const toChapterPayload = (chapter: ChapterData): ChapterPayload => ({
-    ...chapter,
-    translationAvailable: translator != null,
-  });
+  // plus the service-availability flag (ticket 03) plus each sentence
+  // block's per-token 生词本 states (ADR-0005, vocabulary-states ticket
+  // 01). The store stays translator-blind and the block shapes stay as
+  // the import wrote them; the router is where the assembled translator
+  // and dictionary are known, so the flag and the token join are decided
+  // here and every chapter response goes through this one construction —
+  // the GET and the trigger's 202 cannot disagree.
+  type SentenceBlockPayload = SentenceBlockData & {
+    // One entry per word token (tokenizeWords order): the token's
+    // lemma's state, null = New.
+    wordStatuses: (WordStatus | null)[];
+  };
+  type ChapterPayload = Omit<ChapterData, "blocks"> &
+    ChapterTranslationState & {
+      blocks: (SentenceBlockPayload | PlainBlockData)[];
+    };
+  const toChapterPayload = (chapter: ChapterData): ChapterPayload => {
+    const states = loadWordStatuses(database);
+    return {
+      ...chapter,
+      translationAvailable: translator != null,
+      blocks: chapter.blocks.map((block) =>
+        block.kind === "sentence"
+          ? {
+              ...block,
+              wordStatuses: tokenStatuses(
+                states,
+                dictionary,
+                tokenizeWords(block.originalText)
+              ),
+            }
+          : block
+      ),
+    };
+  };
   const upload = multer({
     storage: multer.memoryStorage(),
     // Only the "file" part carries data this route reads; field bytes,

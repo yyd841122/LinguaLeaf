@@ -169,6 +169,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "He wrote the book on quiet reading.",
         ipaSlots: ["hi", "roʊt", "", "bʊk", "", "", ""],
         ipaText: "hi roʊt  bʊk",
+        wordStatuses: [null, null, null, null, null, null, null],
         translationText: null,
       },
       {
@@ -177,6 +178,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "A second paragraph keeps the spine honest.",
         ipaSlots: ["ə", "", "", "", "", "", ""],
         ipaText: "ə",
+        wordStatuses: [null, null, null, null, null, null, null],
         translationText: null,
       },
     ]);
@@ -192,6 +194,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "A picture sits between two sentences.",
         ipaSlots: ["ə", "", "", "", "", ""],
         ipaText: "ə",
+        wordStatuses: [null, null, null, null, null, null],
         translationText: null,
       },
       { position: 2, kind: "image", originalText: "A red dot" },
@@ -201,6 +204,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "The story continues after the picture.",
         ipaSlots: ["", "", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null, null],
         translationText: null,
       },
       { position: 4, kind: "image", originalText: "A blue square" },
@@ -210,6 +214,7 @@ describe("EPUB import through the HTTP API seam", () => {
         originalText: "The square closes the chapter.",
         ipaSlots: ["", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null],
         translationText: null,
       },
     ]);

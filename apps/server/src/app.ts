@@ -8,6 +8,8 @@ import type { Dictionary } from "./dict/dictionary.js";
 import type { Translator } from "./translate/translator.js";
 import { createBooksRouter } from "./books-router.js";
 import { createLookupRouter } from "./dict/lookup-router.js";
+import { createVocabRouter } from "./vocab-router.js";
+import { learnWordIfAbsent } from "./vocab-store.js";
 
 // The translator is the chapter route's optional network source (ADR-0004):
 // absent means the 翻译本章 trigger answers 409 until a key is configured.
@@ -60,7 +62,17 @@ export function createApp(
 
   app.use("/api/books", createBooksRouter(database, dictionary, translator));
 
-  app.use("/api/lookup", createLookupRouter(dictionary));
+  // The popup's explicit state operations (ADR-0005).
+  app.use("/api/vocab", createVocabRouter(database));
+
+  // The lookup's states store is assembled here, where the book database
+  // lives (grilling decision 3): the router itself stays SQL-free.
+  app.use(
+    "/api/lookup",
+    createLookupRouter(dictionary, {
+      statusAfterLookup: (lemma) => learnWordIfAbsent(database, lemma),
+    })
+  );
 
   // Keep unknown API requests out of the frontend's SPA fallback.
   app.use("/api", (_request, response) => {

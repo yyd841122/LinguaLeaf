@@ -11,6 +11,7 @@ import {
   persistBook,
   settleImport,
 } from "../src/book-store.js";
+import { loadWordStatuses, setWordState } from "../src/vocab-store.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 
@@ -154,6 +155,20 @@ describe("Markdown import through the HTTP API seam", () => {
           "A short sample used by LinguaLeaf's API seam tests and manual demos.",
         ipaSlots: ["ə", "", "", "", "", "", "", "", "", "", "", ""],
         ipaText: "ə",
+        wordStatuses: [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+        ],
         translationText: null,
       },
     ]);
@@ -168,6 +183,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "Mr. Gupta woke early.",
         ipaSlots: ["", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null],
         translationText: null,
       },
       {
@@ -176,6 +192,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "The morning was quiet, and the sea was calm.",
         ipaSlots: ["", "", "", "", "", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null, null, null, null, null],
         translationText: null,
       },
       {
@@ -184,6 +201,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "He wrote a failing test first.",
         ipaSlots: ["hi", "roʊt", "ə", "ˈfeɪlɪŋ", "test", "fɜːst"],
         ipaText: "hi roʊt ə ˈfeɪlɪŋ test fɜːst",
+        wordStatuses: [null, null, null, null, null, null],
         translationText: null,
       },
       {
@@ -192,6 +210,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "Then he made it pass!",
         ipaSlots: ["", "hi", "", "", ""],
         ipaText: "hi",
+        wordStatuses: [null, null, null, null, null],
         translationText: null,
       },
     ]);
@@ -205,6 +224,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "Run the whole suite with:",
         ipaSlots: ["", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null],
         translationText: null,
       },
       { position: 2, kind: "code", originalText: "npm test -- --filter core" },
@@ -228,6 +248,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "The community kept three rules:",
         ipaSlots: ["", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null],
         translationText: null,
       },
       {
@@ -236,6 +257,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "Write the failing test first.",
         ipaSlots: ["raɪt", "", "ˈfeɪlɪŋ", "test", "fɜːst"],
         ipaText: "raɪt  ˈfeɪlɪŋ test fɜːst",
+        wordStatuses: [null, null, null, null, null],
         translationText: null,
       },
       {
@@ -244,6 +266,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "Refactor with the suite green.",
         ipaSlots: ["", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null],
         translationText: null,
       },
       {
@@ -252,6 +275,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "Keep the list short.",
         ipaSlots: ["", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null],
         translationText: null,
       },
       {
@@ -261,6 +285,21 @@ describe("Markdown import through the HTTP API seam", () => {
           "A test that passes the moment it is written has told you nothing.",
         ipaSlots: ["ə", "test", "", "", "", "", "", "", "raɪt", "", "", "", ""],
         ipaText: "ə test       raɪt",
+        wordStatuses: [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+        ],
         translationText: null,
       },
       {
@@ -269,6 +308,7 @@ describe("Markdown import through the HTTP API seam", () => {
         originalText: "It merely records the code as it is.",
         ipaSlots: ["", "", "", "", "", "", "", ""],
         ipaText: "",
+        wordStatuses: [null, null, null, null, null, null, null, null],
         translationText: null,
       },
     ]);
@@ -341,6 +381,7 @@ describe("GET /api/lookup/:word", () => {
       ipa: "bʊk",
       pos: "n. v.",
       translation: "n. 书, 簿, 账册\nv. 预订, 登记",
+      status: "learning",
     });
   });
 
@@ -353,6 +394,7 @@ describe("GET /api/lookup/:word", () => {
       ipa: "roʊt",
       pos: "v.",
       translation: "v. 写, 作曲, 写信",
+      status: "learning",
     });
     // "books" has its own American IPA entry: /s/ stays on the plural.
     const books = await request(app).get("/api/lookup/books");
@@ -1034,5 +1076,113 @@ describe("chapter translation at the HTTP API seam (on-demand-translation ticket
     expect(observed).toEqual([0, 44, 89]);
     expect([...observed].sort((a, b) => a - b)).toEqual(observed);
     expect(Math.max(...observed)).toBeLessThan(100);
+  });
+});
+
+// The vocabulary's four states (ADR-0005, vocabulary-states ticket 01):
+// the lookup's one automatic write (a hit's New→learning, server-side,
+// same request), the popup's explicit set/clear pair, and the per-token
+// states the chapter payload carries so the frontend renders without
+// lemmatizing anything itself.
+describe("生词本 word states through the HTTP seam (ADR-0005)", () => {
+  let database: Database.Database;
+  let dictionary: ReturnType<typeof openDictionary>;
+  let app: Express;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    dictionary = createFixtureDictionary();
+    app = createApp(database, dictionary);
+  });
+  afterEach(() => {
+    database.close();
+    dictionary.close();
+  });
+
+  it("writes learning on a lookup hit and carries the status in the response", async () => {
+    // The surface form is inflected: the state keys on the lemma, so
+    // "wrote" lands on "write" and a lookup of the lemma reads that row.
+    const first = await request(app).get("/api/lookup/wrote");
+    expect(first.status).toBe(200);
+    expect(first.body.status).toBe("learning");
+    const lemma = await request(app).get("/api/lookup/write");
+    expect(lemma.status).toBe(200);
+    expect(lemma.body.status).toBe("learning");
+  });
+
+  it("never moves an existing state — a known word stays known on lookup", async () => {
+    setWordState(database, "write", "known");
+    const looked = await request(app).get("/api/lookup/wrote");
+    expect(looked.status).toBe(200);
+    expect(looked.body.status).toBe("known");
+  });
+
+  it("writes nothing on a lookup miss", async () => {
+    const missed = await request(app).get("/api/lookup/iguana");
+    expect(missed.status).toBe(404);
+    expect(loadWordStatuses(database).size).toBe(0);
+  });
+
+  it("sets states explicitly and idempotently through the vocab routes", async () => {
+    const set = await request(app)
+      .put("/api/vocab/lemmas/book")
+      .send({ status: "known" });
+    expect(set.status).toBe(200);
+    expect(set.body).toEqual({ lemma: "book", status: "known" });
+    // The same value again is the same one row; any state from any state
+    // is the popup's whole operation set (ADR-0005).
+    await request(app).put("/api/vocab/lemmas/book").send({ status: "known" });
+    const back = await request(app)
+      .put("/api/vocab/lemmas/write")
+      .send({ status: "learning" });
+    expect(back.status).toBe(200);
+    expect(loadWordStatuses(database)).toEqual(
+      new Map([
+        ["book", "known"],
+        ["write", "learning"],
+      ])
+    );
+  });
+
+  it("rejects an unknown status with a 400 and a lemmaless path with a 404", async () => {
+    const bad = await request(app)
+      .put("/api/vocab/lemmas/book")
+      .send({ status: "mastered" });
+    expect(bad.status).toBe(400);
+    const empty = await request(app)
+      .put("/api/vocab/lemmas/%20")
+      .send({ status: "known" });
+    expect(empty.status).toBe(404);
+    expect(loadWordStatuses(database).size).toBe(0);
+  });
+
+  it("deletes the row — back to New, idempotently", async () => {
+    setWordState(database, "book", "ignored");
+    const gone = await request(app).delete("/api/vocab/lemmas/book");
+    expect(gone.status).toBe(204);
+    expect(loadWordStatuses(database).size).toBe(0);
+    const still = await request(app).delete("/api/vocab/lemmas/book");
+    expect(still.status).toBe(204);
+  });
+
+  it("attaches per-token states to the chapter payload's sentence blocks", async () => {
+    setWordState(database, "he", "ignored");
+    setWordState(database, "write", "known");
+    const bookId = await importSampleBookReady(app);
+    const red = await request(app).get(`/api/books/${bookId}/chapters/2`);
+    expect(red.status).toBe(200);
+    const sentences = red.body.blocks.filter(
+      (block: { kind: string }) => block.kind === "sentence"
+    );
+    // Token order, statuses keyed through the fold and the lemma: "He"→he,
+    // "wrote"→write; every token without a row reads null (New).
+    expect(
+      sentences.map((block: { wordStatuses: unknown }) => block.wordStatuses)
+    ).toEqual([
+      [null, null, null, null],
+      [null, null, null, null, null, null, null, null, null],
+      ["ignored", "known", null, null, null, null],
+      [null, "ignored", null, null, null],
+    ]);
   });
 });

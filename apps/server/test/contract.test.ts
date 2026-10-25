@@ -246,12 +246,17 @@ describe("fetchWordLookup over the real server (wordLookup.ts)", () => {
   it("returns the lookup entry's full shape for a known word", async () => {
     await startStack();
     const entry = await fetchWordLookup("book");
+    // The full wire shape: the reading-model entry plus the lemma's
+    // 生词本 status (ADR-0005) — the auto-migration is the server's
+    // same-request write, so a first lookup on a fresh stack reads
+    // learning (fixture-derived literal).
     expect(entry).toEqual({
       word: "book",
       lemma: null,
       ipa: "bʊk",
       pos: "n. v.",
       translation: "n. 书, 簿, 账册\nv. 预订, 登记",
+      status: "learning",
     });
   });
 
@@ -404,7 +409,9 @@ describe("the reading page's fetches over the real server (ReadingPage.tsx)", ()
     expect(red.position).toBe(2);
     expect(red.title).toBe("Chapter One: Red");
     // Sentence arm: the annotation lines arrive decoded — ipaSlots an
-    // array (not the column's JSON text), the untranslated line null.
+    // array (not the column's JSON text), the untranslated line null —
+    // plus one 生词本 state per word token, all null (New) with no states
+    // planted (fixture-derived literals).
     expect(red.blocks[0]).toEqual({
       position: 1,
       kind: "sentence",
@@ -412,6 +419,7 @@ describe("the reading page's fetches over the real server (ReadingPage.tsx)", ()
       ipaSlots: expect.any(Array),
       ipaText: expect.any(String),
       translationText: null,
+      wordStatuses: [null, null, null, null],
     });
     // Passthrough arms (the interlude chapter) carry exactly the three
     // keys — no annotation fields.

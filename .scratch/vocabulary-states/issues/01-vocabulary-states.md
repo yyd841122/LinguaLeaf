@@ -1,6 +1,6 @@
 # 生词本四态:词元状态表 + 弹窗状态操作 + Known/Ignored 视觉弱化
 
-Status: ready-for-agent
+Status: claimed
 Type: task
 
 按 `../spec.md` 落地,领域规则以 `docs/adr/0005-vocabulary-four-state-model.md` 为准。

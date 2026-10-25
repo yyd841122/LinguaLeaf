@@ -14,7 +14,12 @@ import type Database from "better-sqlite3";
 // moment the book row is created until the annotation transaction flips it
 // to 'ready', or the task records 'failed' with a reason; import_stage /
 // import_percent carry the live progress while importing and are NULL once
-// the import settles.
+// the import settles. `word_states`
+// (ADR-0005, vocabulary-states ticket 01) is learner data, not book data:
+// one row per lemma with its 生词本 status, keyed across every book —
+// 「会一个词」在哪本书都会. New is a row's absence, so the table needs no
+// migration story beyond CREATE TABLE IF NOT EXISTS: a database from
+// before the vocabulary simply grows the table on its next open.
 const booksTable = `
     CREATE TABLE IF NOT EXISTS books (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -68,6 +73,15 @@ const readingProgressTable = `
     );
 `;
 
+const wordStatesTable = `
+    CREATE TABLE IF NOT EXISTS word_states (
+      lemma TEXT PRIMARY KEY,
+      status TEXT NOT NULL
+        CHECK (status IN ('learning', 'known', 'ignored')),
+      updated_at TEXT NOT NULL
+    );
+`;
+
 export function migrateSchema(database: Database.Database): void {
   // One guard for the "old database lacks this column" shape: check the
   // PRAGMA snapshot, add the column in place (SQLite cannot add a column
@@ -82,7 +96,7 @@ export function migrateSchema(database: Database.Database): void {
     }
   };
   database.exec(
-    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}`
+    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}`
   );
   // Databases created before ticket 03's word-pairing work lack the slots
   // column; add it in place so an existing .data file keeps working. Runs

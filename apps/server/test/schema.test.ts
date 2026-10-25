@@ -478,3 +478,72 @@ describe("interrupted import sweep (ticket 08)", () => {
     database.close();
   });
 });
+
+// The word_states table (ADR-0005, vocabulary-states ticket 01) postdates
+// every database above. New is a row's absence, so the migration story is
+// only "the table exists": a pre-vocabulary .data file grows it on its
+// next open, and the CHECK keeps the three stored states the only values
+// a row can carry.
+describe("word_states table migration (vocabulary-states ticket 01)", () => {
+  let directory: string;
+  let databasePath: string;
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "lingualeaf-schema-"));
+    databasePath = join(directory, "pre-vocab.sqlite");
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function createPreVocabularyDatabase(): void {
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        format TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    database.close();
+  }
+
+  it("grows a pre-vocabulary database the word_states table, CHECK intact", () => {
+    createPreVocabularyDatabase();
+
+    const database = openDatabase(databasePath);
+    database
+      .prepare(
+        "INSERT INTO word_states (lemma, status, updated_at) VALUES (?, ?, ?)"
+      )
+      .run("book", "learning", "2026-10-25T00:00:00.000Z");
+    expect(
+      (
+        database
+          .prepare("SELECT status FROM word_states WHERE lemma = ?")
+          .get("book") as { status: string }
+      ).status
+    ).toBe("learning");
+    // The CHECK admits only the three stored states — New is absence.
+    expect(() =>
+      database
+        .prepare(
+          "INSERT INTO word_states (lemma, status, updated_at) VALUES (?, ?, ?)"
+        )
+        .run("go", "new", "2026-10-25T00:00:00.000Z")
+    ).toThrow();
+    database.close();
+
+    // The migration is one-time work: reopening the migrated file is stable.
+    const reopened = openDatabase(databasePath);
+    expect(
+      (
+        reopened.prepare("SELECT COUNT(*) AS n FROM word_states").get() as {
+          n: number;
+        }
+      ).n
+    ).toBe(1);
+    reopened.close();
+  });
+});

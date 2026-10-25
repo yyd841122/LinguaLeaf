@@ -116,12 +116,16 @@ structural: every SQL statement over the four book tables (books, chapters,
 blocks, reading_progress) lives in apps/server/src/book-store.ts, so a column
 list has exactly one possible home.
 
-The gate enforces the locality: apps/server/scripts/check-sql-locality.mjs
-(wired into `verify` and the pre-commit hook) fails the build on four-table
-SQL outside the store; schema.ts's DDL and in-place migrations and test
-fixture or fault-injection SQL are the deliberate exceptions.
+The gate enforces the locality:
+apps/server/scripts/check-sql-locality.mjs (wired into `verify` and the
+pre-commit hook) holds a table→owner map — the four book tables →
+book-store.ts, word_states → vocab-store.ts (vocabulary-states ticket 01)
+— and fails the build on tracked-table SQL outside the row's owner;
+schema.ts's DDL and in-place migrations and test fixture or
+fault-injection SQL are the deliberate exceptions. A new table with SQL
+in more than one file joins this map with exactly one owner.
 
-At review: for the four book tables the gate owns locality, so the
+At review: for the tracked tables the gate owns locality, so the
 reviewer's job here is the column-list discipline for every other table.
 When a diff adds a column to a table, check every SELECT and INSERT of that
 table, and ask whether a row-level `as` cast could hide a missed copy.

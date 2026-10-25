@@ -123,7 +123,11 @@ function findEntry(dictionary: Dictionary, word: string): EntryRow | undefined {
   );
 }
 
-function lemmaOf(dictionary: Dictionary, word: string): string | null {
+// The inflection index's answer for an already-folded word, or null when
+// no entry knows it. Private helper made shared for the vocabulary join
+// (vocab-store): states key on the lemma, and the chapter's token→state
+// walk folds and lemmatizes through this exact function.
+export function lemmaOf(dictionary: Dictionary, word: string): string | null {
   const inflection = cachedGet<{ lemma: string }>(
     dictionary,
     "SELECT lemma FROM dict_inflections WHERE form = ?",

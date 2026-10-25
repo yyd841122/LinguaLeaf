@@ -63,3 +63,10 @@ export type ImportRejection = {
   code: ImportErrorCode;
   error: string;
 };
+
+// The vocabulary's stored states (ADR-0005, 生词本四态): a word_states row
+// always carries one of these three. 'New' — never encountered — is the
+// row's absence (the chapter payload's null), never a stored value: the
+// auto-migration inserts 'learning' on the first lookup, and only the
+// popup's explicit operations move a row from there.
+export type WordStatus = "learning" | "known" | "ignored";
