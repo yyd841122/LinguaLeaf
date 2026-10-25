@@ -8,7 +8,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError, fetchJson } from "../src/api";
-import type { ChapterTranslationState } from "../src/chapterTranslation";
+import type { ChapterTranslationState } from "../../server/src/wire";
 import { ReadingPage } from "../src/ReadingPage";
 import { ReadingView, type Block } from "../src/ReadingView";
 import {

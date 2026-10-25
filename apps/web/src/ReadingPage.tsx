@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { fetchJson } from "./api";
-import { translateChapter } from "./chapterTranslation";
+import { useChapterTranslation } from "./chapterTranslation";
 import type { BookToc, ChapterPayload } from "../../server/src/wire";
-import { useTaskFollower } from "./taskFollower";
 import { useIpaSize } from "./IpaSizeControl";
 import {
   ReadingSettings,
@@ -15,11 +14,6 @@ import {
 import { useProgressSession } from "./progressSession";
 import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
-
-// How often the chapter re-asks for its payload while a translation runs;
-// mirrors the shelf's import poll (the task updates the percent per batch,
-// so this needs to feel live, not be instant).
-const TRANSLATION_POLL_MS = 1500;
 
 export function ReadingPage() {
   const { id, chapter } = useParams();
@@ -49,16 +43,6 @@ export function ReadingPage() {
   // The word-lookup popup (ticket 06): which word was clicked, and where to
   // anchor it. Clicking another word re-anchors; leaving the chapter closes.
   const [lookup, setLookup] = useState<WordClick | null>(null);
-  // The on-demand translation flow (ADR-0004): `startFailed` says the
-  // trigger POST did not land; it clears on its own recovery (a retry or
-  // a landing response) — a loop's last state must not outlive its
-  // credibility (CODING_STANDARDS). The running poll's outage flag lives
-  // in the task-follower below.
-  const [startFailed, setStartFailed] = useState(false);
-  // The route as of the latest render: a trigger's 202 that resolves after
-  // a navigation is stale and must not patch the new chapter's state.
-  const currentRouteRef = useRef({ bookId, chapterNumber });
-  currentRouteRef.current = { bookId, chapterNumber };
 
   useEffect(() => {
     setLookup(null);
@@ -71,7 +55,6 @@ export function ReadingPage() {
     }
     let cancelled = false;
     setError(null);
-    setStartFailed(false);
     setToc(null);
     setContent(null);
     Promise.all([
@@ -101,56 +84,18 @@ export function ReadingPage() {
     loadedRoute.chapterNumber === chapterNumber;
   const { saveFailed } = useProgressSession({ bookId, chapterNumber, ready });
 
-  // The translate trigger: the POST's 202 body is the chapter in its
-  // brand-new translating state, patched in immediately (the shelf's
-  // "202 body joins first" precedent — a failed refresh cannot masquerade
-  // as a failed trigger). From there the poll below follows the lifecycle;
-  // the button's disabled state keys on the server's status, never on the
-  // POST having returned.
-  const startTranslation = () => {
-    setStartFailed(false);
-    const route = { bookId, chapterNumber };
-    // A navigation since the click makes the response stale: the page is
-    // another chapter's now, and its own state must not be patched.
-    const stale = () =>
-      currentRouteRef.current.bookId !== route.bookId ||
-      currentRouteRef.current.chapterNumber !== route.chapterNumber;
-    translateChapter(bookId, chapterNumber)
-      .then((state) => {
-        if (stale()) return;
-        // A landed trigger is the start-failure's recovery: in the
-        // double-click race the losing 409's notice must not outlive the
-        // translating state this response patches in.
-        setStartFailed(false);
-        setContent((current) => (current ? { ...current, ...state } : current));
-      })
-      .catch(() => {
-        // The endpoint's 409s (already translating / no service) and every
-        // other failure land here: a catchable notice, not a white screen.
-        if (stale()) return;
-        setStartFailed(true);
-      });
-  };
-
-  // While this chapter translates, follow the task on the shared
-  // task-follower (it owns the interval, the staleness discard, and the
-  // outage rules): the percent moves the disabled button's label, and the
-  // response that leaves 'translating' carries the fresh lines with it.
-  // The active fact rides the payload, so route changes and settle both
-  // tear the follow down; a landed tick is also the trigger-failure
-  // notice's recovery.
   const translating = content?.translationStatus === "translating";
-  const { outage: pollFailed } = useTaskFollower({
+  const {
+    start: startTranslation,
+    startFailed,
+    pollFailed,
+  } = useChapterTranslation({
     active: translating,
-    fetchTick: () =>
-      fetchJson<ChapterPayload>(
-        `/api/books/${bookId}/chapters/${chapterNumber}`
-      ),
-    onTick: (chapterData) => {
-      setContent(chapterData);
-      setStartFailed(false);
-    },
-    intervalMs: TRANSLATION_POLL_MS,
+    bookId,
+    chapterNumber,
+    onTranslationState: (state) =>
+      setContent((current) => (current ? { ...current, ...state } : current)),
+    onTick: (chapterData) => setContent(chapterData),
   });
 
   if (error) {

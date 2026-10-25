@@ -8,7 +8,11 @@ import type Database from "better-sqlite3";
 import type { Express } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { segmentOriginal } from "@lingualeaf/reading-model";
-import type { BookToc, ChapterPayload } from "../src/wire.js";
+import type {
+  BookToc,
+  ChapterPayload,
+  ChapterTranslationState,
+} from "../src/wire.js";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import {
@@ -37,11 +41,16 @@ import {
   saveReadingProgress,
 } from "../../../apps/web/src/readingProgress";
 import { downloadAttachment } from "../../../apps/web/src/download";
-import {
-  translateChapter,
-  type ChapterTranslationState,
-} from "../../../apps/web/src/chapterTranslation";
 import { drainTasks } from "../src/task-lifecycle.js";
+
+// The chapter translation trigger calls the shared fetch layer directly
+// since translateChapter became module-internal
+// (reading-page-state-machines 02): same client layer, real endpoint.
+const triggerChapter = (bookId: number, chapterPosition: number) =>
+  fetchJson<ChapterTranslationState>(
+    `/api/books/${bookId}/chapters/${chapterPosition}/translate`,
+    { method: "POST" }
+  );
 
 // The tier seam's test surface: the real web fetch clients (apps/web/src)
 // driving the real Express app over a real socket. This is the executable
@@ -753,7 +762,7 @@ describe("chapter translation over the real server (chapterTranslation.ts)", () 
       // page's button stays live.
       translationAvailable: true,
     });
-    const triggered = await translateChapter(id, 2);
+    const triggered = await triggerChapter(id, 2);
     expect(triggered).toMatchObject({
       translationStatus: "translating",
       translationError: null,
@@ -793,8 +802,8 @@ describe("chapter translation over the real server (chapterTranslation.ts)", () 
     // Arm only after the import settled: the chapter task parks, the claim
     // is held, and the second trigger meets the 409.
     armed = true;
-    await translateChapter(id, 2);
-    const error = await translateChapter(id, 2).then(
+    await triggerChapter(id, 2);
+    const error = await triggerChapter(id, 2).then(
       () => null,
       (caught) => caught
     );
@@ -815,7 +824,7 @@ describe("chapter translation over the real server (chapterTranslation.ts)", () 
       `/api/books/${id}/chapters/2`
     );
     expect(chapter.translationAvailable).toBe(false);
-    const error = await translateChapter(id, 2).then(
+    const error = await triggerChapter(id, 2).then(
       () => null,
       (caught) => caught
     );
@@ -875,7 +884,7 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
       translationPercent: null,
       translationError: INTERRUPTED_TRANSLATION_MESSAGE,
     });
-    expect(await translateChapter(id, 2)).toMatchObject({
+    expect(await triggerChapter(id, 2)).toMatchObject({
       translationStatus: "translating",
       translationPercent: 0,
       translationError: null,
@@ -948,8 +957,8 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
     };
     try {
       const triggered = await Promise.all([
-        translateChapter(created.id, 1),
-        translateChapter(created.id, 2),
+        triggerChapter(created.id, 1),
+        triggerChapter(created.id, 2),
       ]);
       for (const chapter of triggered) {
         expect(chapter).toMatchObject({
