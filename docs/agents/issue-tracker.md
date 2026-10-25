@@ -10,6 +10,7 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 - Closure flips the line: when an implementation ticket finishes, its `Status:` becomes `done` — the wrap-up report stays under `## Comments`. `ready-for-agent` means nobody has picked it up yet; frontier and triage scans read it as open work.
+- Specs assert facts about the current code: verify those claims against the code when claiming a ticket, and record a drift in the ticket's `## Comments` while correcting the spec (per-book-toggles 01's spec said 两个字号 where the code had three).
 - Gate text states relationships, never values: pin a review baseline as "the HEAD before this ticket's first implementation commit", not a SHA — a value written before the work starts is stale by the time the gate runs.
 
 ## When a skill says "publish to the issue tracker"

@@ -18,11 +18,12 @@
     "start": "node --env-file-if-exists=.env .output/server/main.js",
     "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @lingualeaf/reading-model && npm run typecheck --workspace @lingualeaf/server && npm run typecheck --workspace @lingualeaf/web",
     "test": "vitest run",
-    "verify": "npm run typecheck && npm test && npm run lint && npm run check:sql-locality && npm run check:task-lifecycle && npm run build",
+    "verify": "npm run typecheck && npm test && npm run lint && npm run check:sql-locality && npm run check:task-lifecycle && npm run check:storage-locality && npm run build",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
     "check:sql-locality": "npm run check:sql-locality --workspace @lingualeaf/server",
     "check:task-lifecycle": "npm run check:task-lifecycle --workspace @lingualeaf/server",
+    "check:storage-locality": "npm run check:storage-locality --workspace @lingualeaf/web",
     "prepare": "husky",
     "pretypecheck": "npm run build --workspace @lingualeaf/reading-model",
     "pretest": "npm run build --workspace @lingualeaf/reading-model"

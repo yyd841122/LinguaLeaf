@@ -255,3 +255,24 @@ lint fix, and every request past the API 404 — the whole frontend — answered
 At review: when a diff adds or edits an error-handling middleware, count the
 parameters; three is a bug, not a style choice. Keep the unused trailing next
 even when the handler always responds itself.
+
+## State keyed by a route or prop follows the key
+
+State whose read key derives from a route param or a prop — a per-book
+preference, an entity-scoped value — re-reads when that key changes under a
+mounted component: the `useState` initializer runs once per mount, and React
+Router keeps the route element mounted across param changes, so the page
+silently renders the previous entity's values. The working shapes are the
+render-time adjust (hold the previous key, re-read on mismatch) and the
+`key={id}` remount; "the initializer runs again" is the bug itself.
+
+Why: the per-book prefs (ticket 01, per-book-toggles) put every display
+setting on `book:<id>:<pref>`, and shelf → another-book navigation mounts no
+new component — the first hook design kept book A's sizes on book B until
+the render-time adjust went into apps/web/src/prefs.ts and the book-switch
+test ("follows the book when the book id changes under a mounted hook")
+pinned it.
+
+At review: for every `useState` reading through a param or prop, name the
+event that re-reads it when that value changes. "It remounts" is a claim to
+check against the route table, not an assumption.

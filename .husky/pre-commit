@@ -4,3 +4,4 @@ npm run lint
 npm run test
 npm run check:sql-locality
 npm run check:task-lifecycle
+npm run check:storage-locality

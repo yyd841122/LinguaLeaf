@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check:storage-locality": "node scripts/check-storage-locality.mjs"
   },
   "dependencies": {
     "@lingualeaf/reading-model": "0.1.0",

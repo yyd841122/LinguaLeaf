@@ -16,7 +16,7 @@ export function clampIpaSize(value: number): number {
   return Math.min(MAX_IPA_SIZE, Math.max(MIN_IPA_SIZE, value));
 }
 
-// Reads the remembered size; any garbage (or a broken localStorage, e.g.
+// Reads the remembered size; any garbage (or broken storage, e.g.
 // private browsing) falls back to the default instead of throwing.
 export function readStoredIpaSize(bookId: number): number {
   return readStoredBookNumber(

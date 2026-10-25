@@ -41,6 +41,7 @@ export default tseslint.config(
     // process/Buffer invalid inside web app source.
     files: [
       "apps/server/**/*.{js,mjs,ts,tsx}",
+      "apps/web/scripts/**/*.{js,mjs}",
       "scripts/**/*.{js,mjs}",
       "**/vite.config.ts",
       "**/vitest.config.ts",
