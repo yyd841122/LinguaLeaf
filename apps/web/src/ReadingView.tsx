@@ -5,43 +5,14 @@ import type {
 } from "react";
 import { memo } from "react";
 import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
-import type { WordStatus } from "../../server/src/wire";
+import type {
+  SentenceBlockPayload,
+  BlockPayload,
+  ChapterPayload,
+  WordStatus,
+} from "../../server/src/wire";
 
-export type SentenceBlock = {
-  position: number;
-  kind: "sentence";
-  originalText: string;
-  ipaSlots: string[] | null;
-  ipaText: string | null;
-  translationText: string | null;
-  // One entry per word token (the server's tokenizeWords order): the
-  // token's lemma's 生词本 state, null = New (ADR-0005). The frontend
-  // renders these verbatim and never lemmatizes (spec decision 5).
-  wordStatuses: (WordStatus | null)[];
-};
-
-export type PassthroughBlock = {
-  position: number;
-  kind: "code" | "raw";
-  originalText: string;
-};
-
-// EPUB/Markdown illustrations become placeholder blocks at their reading
-// position (ticket 07): the alt text captions the placeholder, the image
-// bytes themselves are not rendered.
-export type ImageBlock = {
-  position: number;
-  kind: "image";
-  originalText: string;
-};
-
-export type Block = SentenceBlock | PassthroughBlock | ImageBlock;
-
-export type ChapterContent = {
-  position: number;
-  title: string;
-  blocks: Block[];
-};
+export type Block = BlockPayload;
 
 // Renders the sentence as clickable word units — the word, its IPA beneath
 // when slots pair — so every transcription stays attached to its own word at
@@ -111,7 +82,7 @@ function SentenceBlockView({
   showIpa,
   showTranslation,
 }: {
-  block: SentenceBlock;
+  block: SentenceBlockPayload;
   showIpa: boolean;
   showTranslation: boolean;
 }) {
@@ -147,7 +118,7 @@ function BlockView({
   showIpa,
   showTranslation,
 }: {
-  block: Block;
+  block: BlockPayload;
   showIpa: boolean;
   showTranslation: boolean;
 }) {
@@ -203,7 +174,7 @@ export const ReadingView = memo(function ReadingView({
   showTranslation = true,
   onWordClick,
 }: {
-  chapter: ChapterContent;
+  chapter: Pick<ChapterPayload, "position" | "title" | "blocks">;
   ipaSize?: number;
   originalSize?: number;
   translationSize?: number;

@@ -1,10 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { fetchJson } from "./api";
-import {
-  translateChapter,
-  type ChapterTranslationState,
-} from "./chapterTranslation";
+import { translateChapter } from "./chapterTranslation";
+import type { BookToc, ChapterPayload } from "../../server/src/wire";
 import { useTaskFollower } from "./taskFollower";
 import { useIpaSize } from "./IpaSizeControl";
 import {
@@ -20,20 +18,8 @@ import {
   topmostVisibleBlock,
   type ReadingProgress,
 } from "./readingProgress";
-import { ReadingView, type Block, type WordClick } from "./ReadingView";
+import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
-
-type TableOfContents = {
-  id: number;
-  title: string;
-  chapters: { position: number; title: string; level: number | null }[];
-};
-
-type ChapterContent = ChapterTranslationState & {
-  position: number;
-  title: string;
-  blocks: Block[];
-};
 
 const SAVE_DEBOUNCE_MS = 500;
 // How often the chapter re-asks for its payload while a translation runs;
@@ -49,8 +35,8 @@ export function ReadingPage() {
   const { id, chapter } = useParams();
   const bookId = Number(id);
   const chapterNumber = Number(chapter);
-  const [toc, setToc] = useState<TableOfContents | null>(null);
-  const [content, setContent] = useState<ChapterContent | null>(null);
+  const [toc, setToc] = useState<BookToc | null>(null);
+  const [content, setContent] = useState<ChapterPayload | null>(null);
   // The route the loaded content belongs to. A navigation's first render has
   // the old content under the new chapter number; autosave keys on this
   // identity so that render never writes new-chapter/block-1 over the
@@ -109,8 +95,8 @@ export function ReadingPage() {
     // (null); a failed lookup parks the state as "unavailable" without
     // blocking the chapter from opening.
     Promise.all([
-      fetchJson<TableOfContents>(`/api/books/${bookId}`),
-      fetchJson<ChapterContent>(
+      fetchJson<BookToc>(`/api/books/${bookId}`),
+      fetchJson<ChapterPayload>(
         `/api/books/${bookId}/chapters/${chapterNumber}`
       ),
       fetchReadingProgress(bookId).catch(() => "unavailable" as const),
@@ -276,7 +262,7 @@ export function ReadingPage() {
   const { outage: pollFailed } = useTaskFollower({
     active: translating,
     fetchTick: () =>
-      fetchJson<ChapterContent>(
+      fetchJson<ChapterPayload>(
         `/api/books/${bookId}/chapters/${chapterNumber}`
       ),
     onTick: (chapterData) => {

@@ -18,8 +18,6 @@ import {
   findBookRow,
   findChapterRow,
   type ChapterData,
-  type PlainBlockData,
-  type SentenceBlockData,
   getProgress,
   listChapters,
   listShelf,
@@ -31,11 +29,7 @@ import {
 } from "./book-store.js";
 import { tokenizeWords } from "./dict/ipa-line.js";
 import { loadWordStatuses, tokenStatuses } from "./vocab-store.js";
-import type {
-  ChapterTranslationState,
-  ImportRejection,
-  WordStatus,
-} from "./wire.js";
+import type { ChapterPayload, ImportRejection } from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -86,15 +80,6 @@ export function createBooksRouter(
   // and dictionary are known, so the flag and the token join are decided
   // here and every chapter response goes through this one construction —
   // the GET and the trigger's 202 cannot disagree.
-  type SentenceBlockPayload = SentenceBlockData & {
-    // One entry per word token (tokenizeWords order): the token's
-    // lemma's state, null = New.
-    wordStatuses: (WordStatus | null)[];
-  };
-  type ChapterPayload = Omit<ChapterData, "blocks"> &
-    ChapterTranslationState & {
-      blocks: (SentenceBlockPayload | PlainBlockData)[];
-    };
   const toChapterPayload = (chapter: ChapterData): ChapterPayload => {
     const states = loadWordStatuses(database);
     return {

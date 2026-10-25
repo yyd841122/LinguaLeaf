@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
 import type { Express } from "express";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { segmentOriginal } from "@lingualeaf/reading-model";
+import type { BookToc, ChapterPayload } from "../src/wire.js";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import {
@@ -484,6 +486,31 @@ describe("the reading page's fetches over the real server (ReadingPage.tsx)", ()
       kind: "raw",
       originalText: "Reading more: the official handbook. It is free.",
     });
+  });
+
+  it("aligns every sentence block's wordStatuses with the reading model's word tokens", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const toc = await fetchJson<BookToc>(`/api/books/${id}`);
+    let sentenceCount = 0;
+    for (const { position } of toc.chapters) {
+      const chapter = await fetchJson<ChapterPayload>(
+        `/api/books/${id}/chapters/${position}`
+      );
+      for (const block of chapter.blocks) {
+        if (block.kind !== "sentence") continue;
+        sentenceCount++;
+        const { segments } = segmentOriginal(
+          block.originalText,
+          block.ipaSlots
+        );
+        const wordCount = segments.filter(
+          (segment) => segment.kind === "word"
+        ).length;
+        expect(block.wordStatuses).toHaveLength(wordCount);
+      }
+    }
+    expect(sentenceCount).toBeGreaterThan(0);
   });
 
   it("reads a heading-only chapter as an empty block list and an out-of-range one as a 404", async () => {

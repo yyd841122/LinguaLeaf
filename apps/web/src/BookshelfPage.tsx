@@ -3,29 +3,10 @@ import { Link } from "react-router";
 import { ApiError, fetchJson } from "./api";
 import { useTaskFollower } from "./taskFollower";
 import { downloadAttachment } from "./download";
-import type { ReadingProgress } from "./readingProgress";
 // The wire vocabulary is the server's contract module — type-only, so the
 // bundle carries no server code.
-import type { BookStatus, ImportStage } from "../../server/src/wire";
+import type { BookSummary } from "../../server/src/wire";
 import { importErrorCopy, importStageLabel } from "./importCopy";
-
-type BookSummary = {
-  id: number;
-  title: string;
-  format: string;
-  createdAt: string;
-  // The async import lifecycle (ticket 08): 'importing' books show live
-  // progress on the shelf, 'failed' books show the reason, 'ready' books
-  // are the readable links.
-  status: BookStatus;
-  importStage: ImportStage | null;
-  importPercent: number | null;
-  importError: string | null;
-  // PDF only (null for the other formats): drives the long-book hint on
-  // the importing row.
-  pageCount: number | null;
-  progress: ReadingProgress | null;
-};
 
 // How often the shelf re-asks for the book list while an import is in
 // flight; the import task updates progress per translation batch, so this

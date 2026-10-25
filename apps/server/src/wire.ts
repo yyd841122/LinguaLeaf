@@ -1,6 +1,6 @@
-// The import lifecycle's wire vocabulary — the machine fields the API puts
-// on the wire and the shelf reads back, declared once so both tiers compile
-// against one source. The server owns the values (it writes them); the web
+// The import lifecycle's wire vocabulary AND the reading-pair/shelf-row
+// payload shapes — declared once so both tiers compile against one source.
+// The server owns the values (it writes them); the web
 // owns the label/copy maps keyed by them (apps/web/src/importCopy.ts).
 // Type-only on purpose: every web-side import is `import type`, so the built
 // bundle carries no server code, and nothing here exists at runtime.
@@ -70,3 +70,56 @@ export type ImportRejection = {
 // auto-migration inserts 'learning' on the first lookup, and only the
 // popup's explicit operations move a row from there.
 export type WordStatus = "learning" | "known" | "ignored";
+
+export type SentenceBlockPayload = {
+  position: number;
+  kind: "sentence";
+  originalText: string;
+  ipaSlots: string[] | null;
+  ipaText: string | null;
+  translationText: string | null;
+  // One entry per word token (the server's tokenizeWords order): the
+  // token's lemma's 生词本 state, null = New (ADR-0005). The frontend
+  // renders these verbatim and never lemmatizes (vocabulary-states spec, decision 5).
+  wordStatuses: (WordStatus | null)[];
+};
+
+// EPUB/Markdown illustrations become placeholder blocks at their reading
+// position (ticket 07): the alt text captions the placeholder, the image
+// bytes themselves are not rendered.
+export type PlainBlockPayload = {
+  position: number;
+  kind: "code" | "raw" | "image";
+  originalText: string;
+};
+
+export type BlockPayload = SentenceBlockPayload | PlainBlockPayload;
+
+export type ChapterPayload = ChapterTranslationState & {
+  position: number;
+  title: string;
+  level: number | null;
+  blocks: BlockPayload[];
+};
+
+export type BookSummary = {
+  id: number;
+  title: string;
+  format: string;
+  createdAt: string;
+  // The async import lifecycle (ticket 08): 'importing' books show live
+  // progress on the shelf, 'failed' books show the reason, 'ready' books
+  // are the readable links.
+  status: BookStatus;
+  importStage: ImportStage | null;
+  importPercent: number | null;
+  importError: string | null;
+  // PDF only (null for the other formats): drives the long-book hint on
+  // the importing row.
+  pageCount: number | null;
+  progress: { chapter: number; block: number } | null;
+};
+
+export type BookToc = Omit<BookSummary, "progress"> & {
+  chapters: { position: number; title: string; level: number | null }[];
+};
