@@ -42,6 +42,7 @@ const blocks: Block[] = [
     ipaSlots: null,
     ipaText: null,
     translationText: null,
+    wordStatuses: [null, null, null, null],
   },
   { position: 2, kind: "code", originalText: "npm test -- --filter core" },
   {
@@ -103,6 +104,7 @@ it("pairs each word with its IPA beneath it when slots are available", () => {
       ipaSlots: ["", "ˈɡʊptə", "ˈwoʊk", "ˈɝːli"],
       ipaText: "ˈɡʊptə ˈwoʊk ˈɝːli",
       translationText: null,
+      wordStatuses: [null, null, null, null],
     },
   ];
   render(
@@ -163,6 +165,7 @@ it("renders an image block as a placeholder in its reading position", () => {
             ipaSlots: null,
             ipaText: null,
             translationText: null,
+            wordStatuses: [null, null, null, null, null, null],
           },
           { position: 2, kind: "image", originalText: "A red dot" },
           {
@@ -172,6 +175,7 @@ it("renders an image block as a placeholder in its reading position", () => {
             ipaSlots: null,
             ipaText: null,
             translationText: null,
+            wordStatuses: [null, null, null, null, null, null],
           },
         ],
       }}
@@ -638,6 +642,7 @@ const toggledBlocks: Block[] = [
     ipaSlots: ["", "ˈɡʊptə", "ˈwoʊk", "ˈɝːli"],
     ipaText: "ˈɡʊptə ˈwoʊk ˈɝːli",
     translationText: "古普塔先生醒得很早。",
+    wordStatuses: [null, null, null, null],
   },
   {
     position: 2,
@@ -646,6 +651,7 @@ const toggledBlocks: Block[] = [
     ipaSlots: null,
     ipaText: "ə bʊk",
     translationText: "一本没有槽位的书。",
+    wordStatuses: [null, null, null, null],
   },
 ];
 
@@ -721,6 +727,7 @@ describe("ReadingPage through the component boundary", () => {
     ipaSlots: null,
     ipaText: null,
     translationText: null,
+    wordStatuses: [null, null, null, null, null],
   }));
 
   type Call = { url: string; init: RequestInit };
@@ -886,6 +893,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
       ipaSlots: null,
       ipaText: null,
       translationText: null,
+      wordStatuses: [null, null, null, null],
     },
   ];
 
@@ -978,6 +986,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
             ipaSlots: null,
             ipaText: null,
             translationText: "古普塔先生醒得很早。",
+            wordStatuses: [null, null, null, null],
           },
         ],
       };
@@ -1202,6 +1211,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
                 ipaSlots: null,
                 ipaText: null,
                 translationText: "古普塔先生醒得很早。",
+                wordStatuses: [null, null, null, null],
               },
             ],
           },
@@ -1436,6 +1446,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
       ipaSlots: null,
       ipaText: null,
       translationText: null,
+      wordStatuses: [null, null, null, null],
     },
     {
       position: 2,
@@ -1444,6 +1455,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
       ipaSlots: null,
       ipaText: null,
       translationText: null,
+      wordStatuses: [null, null, null, null],
     },
   ];
   // The individual-hole shape: one sentence translated, the next failed
@@ -1456,6 +1468,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
       ipaSlots: null,
       ipaText: null,
       translationText: "古普塔先生醒得很早。",
+      wordStatuses: [null, null, null, null],
     },
     {
       position: 2,
@@ -1464,6 +1477,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
       ipaSlots: null,
       ipaText: null,
       translationText: null,
+      wordStatuses: [null, null, null, null],
     },
   ];
 

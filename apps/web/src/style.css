@@ -263,6 +263,14 @@ main {
   background: #ecefe6;
 }
 
+/* 生词本 (ADR-0005): Known/Ignored words keep their lookup but drop the
+   hover tint — the affordance withdraws from words the reader knows or
+   chose to ignore. Word color and IPA rendering stay untouched. */
+.lookup-word.word-settled:hover,
+.ipa-word.word-settled:hover {
+  background: none;
+}
+
 /* The popup floats over the reading flow — no backdrop, no scroll lock —
    anchored to the clicked word (left/top set inline, clamped to viewport).
    The box values hand-mirror the reading model's popup constants
@@ -334,6 +342,42 @@ main {
 .lookup-pos {
   color: #5c6f64;
   font-size: 0.85rem;
+}
+
+/* 生词本状态操作 (ADR-0005): the three-option row IS the operation set —
+   any state from any other state; the current one is aria-pressed. */
+.lookup-vocab {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #ecefe6;
+}
+
+.lookup-vocab-label {
+  color: #5c6f64;
+  font-size: 0.8rem;
+}
+
+.lookup-vocab-option {
+  border: 1px solid #dde3d8;
+  background: none;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+  color: #22342a;
+}
+
+.lookup-vocab-option:hover {
+  background: #ecefe6;
+}
+
+.lookup-vocab-option[aria-pressed="true"] {
+  background: #ecefe6;
+  border-color: #5c6f64;
 }
 
 /* Sense lines arrive newline-separated from ECDICT; keep the line breaks. */

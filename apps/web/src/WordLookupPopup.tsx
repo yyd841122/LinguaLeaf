@@ -1,15 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { anchorPopup } from "@lingualeaf/reading-model";
-import { fetchWordLookup, speakWord, type WordLookup } from "./wordLookup";
+import type { WordStatus } from "../../server/src/wire";
+import {
+  fetchWordLookup,
+  putWordStatus,
+  speakWord,
+  type WordLookupResponse,
+} from "./wordLookup";
 import type { ClickPoint, WordClick } from "./ReadingView";
+
+// The 生词本 state the popup manages (ADR-0005): the three buttons are the
+// whole operation set — any state from any other state, no hidden matrix.
+// Record-typed so a wire member without copy is a compile error.
+const WORD_STATUS_LABELS: Record<WordStatus, string> = {
+  learning: "学习中",
+  known: "已掌握",
+  ignored: "忽略",
+};
+const WORD_STATUSES = Object.keys(WORD_STATUS_LABELS) as WordStatus[];
 
 // Fetch phases: loading → found | missing (dictionary has no such word) |
 // error (the lookup itself failed). Missing and error are distinct because
 // they read differently to a reader ("词库里没有" vs "查询没成功").
 type LookupState =
   | { phase: "loading" }
-  | { phase: "found"; lookup: WordLookup }
+  | { phase: "found"; lookup: WordLookupResponse }
   | { phase: "missing" }
   | { phase: "error" };
 
@@ -53,6 +69,27 @@ export function WordLookupPopup({
       cancelled = true;
     };
   }, [word]);
+
+  // The popup's status operation: an idempotent PUT, the shown state
+  // patched when it lands. A failed save leaves the previous state shown
+  // beside a notice — the last rendered state must not outlive its
+  // credibility (CODING_STANDARDS), and the next attempt clears it.
+  const [saveFailed, setSaveFailed] = useState(false);
+  const applyStatus = (status: WordStatus) => {
+    if (state.phase !== "found") return;
+    setSaveFailed(false);
+    // States key on the lemma — the same key the lookup wrote server-side.
+    const key = state.lookup.lemma ?? state.lookup.word;
+    putWordStatus(key, status)
+      .then(() => {
+        setState((current) =>
+          current.phase === "found"
+            ? { ...current, lookup: { ...current.lookup, status } }
+            : current
+        );
+      })
+      .catch(() => setSaveFailed(true));
+  };
 
   // Dismiss on Escape, on scroll/resize (the anchor goes stale the moment
   // the page moves under the popup — moving on is the dismissal), or on any
@@ -135,6 +172,25 @@ export function WordLookupPopup({
           ) : null}
           {state.lookup.translation ? (
             <p className="lookup-translation">{state.lookup.translation}</p>
+          ) : null}
+          <div className="lookup-vocab" role="group" aria-label="生词本状态">
+            <span className="lookup-vocab-label">生词本</span>
+            {WORD_STATUSES.map((status) => (
+              <button
+                key={status}
+                type="button"
+                className="lookup-vocab-option"
+                aria-pressed={state.lookup.status === status}
+                onClick={() => applyStatus(status)}
+              >
+                {WORD_STATUS_LABELS[status]}
+              </button>
+            ))}
+          </div>
+          {saveFailed ? (
+            <p className="lookup-status" role="status">
+              状态保存失败，请重试。
+            </p>
           ) : null}
         </>
       ) : null}

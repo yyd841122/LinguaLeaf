@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ReadingView, type Block, type WordClick } from "../src/ReadingView";
 import { WordLookupPopup } from "../src/WordLookupPopup";
@@ -41,6 +41,9 @@ const lookupBlocks: Block[] = [
     ipaSlots: ["", "ˈɡʊptə", "ˈwoʊk", "ˈɝːli"],
     ipaText: "ˈɡʊptə ˈwoʊk ˈɝːli",
     translationText: "古普塔先生醒得很早。",
+    // Token order, null = New: Gupta ignored and early known render
+    // settled (the hover tint withdrawn), the rest stay affordances.
+    wordStatuses: ["learning", "ignored", null, "known"],
   },
   {
     position: 2,
@@ -49,6 +52,7 @@ const lookupBlocks: Block[] = [
     ipaSlots: null,
     ipaText: null,
     translationText: "一本没有槽位的书。",
+    wordStatuses: [null, null, null, null],
   },
   { position: 3, kind: "code", originalText: "npm run dict:import-ecdict" },
 ];
@@ -91,6 +95,7 @@ it("shows IPA, part of speech, translation, and the lemma for a found word", asy
     ipa: "roʊt",
     pos: "v.",
     translation: "v. 写, 作曲, 写信",
+    status: "learning",
   });
   try {
     render(
@@ -123,6 +128,7 @@ it("omits the IPA, part-of-speech, and lemma rows when the entry lacks them", as
     ipa: null,
     pos: null,
     translation: "n. 鬣蜥",
+    status: "learning",
   });
   render(
     <WordLookupPopup
@@ -186,6 +192,7 @@ it("speaks the word through browser speech synthesis from the 发音 button", as
     ipa: "roʊt",
     pos: "v.",
     translation: "v. 写, 作曲, 写信",
+    status: "learning",
   });
   const synthesis = stubSpeech();
   try {
@@ -237,6 +244,7 @@ it("clicking a word opens the popup and fetches that word", async () => {
     ipa: "ˈwoʊk",
     pos: "v.",
     translation: "v. 醒来, 唤醒",
+    status: "learning",
   });
   render(<LookupHarness blocks={lookupBlocks} />);
   fireEvent.click(screen.getByText("woke"));
@@ -254,6 +262,7 @@ it("closes from the 关闭 button, Escape, and clicks outside, but not word clic
     ipa: "ˈwoʊk",
     pos: "v.",
     translation: "v. 醒来, 唤醒",
+    status: "learning",
   });
   render(<LookupHarness blocks={lookupBlocks} />);
   fireEvent.click(screen.getByText("woke"));
@@ -306,6 +315,160 @@ it("anchors the popup at the click and clamps it inside the viewport", () => {
   });
 });
 
+it("drops the hover affordance on known and ignored words but keeps them clickable", () => {
+  const onWordClick = vi.fn();
+  render(
+    <ReadingView
+      chapter={{ position: 2, title: "Chapter One: Red", blocks: lookupBlocks }}
+      onWordClick={onWordClick}
+    />
+  );
+  // Positional ride: Gupta (ignored) and early (known) render settled;
+  // woke (New) and Mr (learning) keep the full affordance. Paired mode
+  // nests the word text inside the IPA unit — assert on the data-word span.
+  const unit = (word: string) => screen.getByText(word).closest("[data-word]");
+  expect(unit("Gupta")).toHaveClass("ipa-word", "word-settled");
+  expect(unit("early")).toHaveClass("ipa-word", "word-settled");
+  expect(unit("woke")).toHaveClass("ipa-word");
+  expect(unit("woke")).not.toHaveClass("word-settled");
+  expect(unit("Mr")).not.toHaveClass("word-settled");
+  // The affordance withdraws; the lookup itself stays.
+  fireEvent.click(screen.getByText("Gupta"));
+  expect(onWordClick).toHaveBeenCalledWith({
+    word: "Gupta",
+    point: { x: 0, y: 0 },
+  });
+});
+
+it("offers the three 生词本 operations and marks the current state", async () => {
+  stubLookupResponse({
+    word: "wrote",
+    lemma: "write",
+    ipa: "roʊt",
+    pos: "v.",
+    translation: "v. 写, 作曲, 写信",
+    status: "learning",
+  });
+  render(
+    <WordLookupPopup
+      click={{ word: "wrote", point: { x: 100, y: 100 } }}
+      onClose={() => {}}
+    />
+  );
+  await screen.findByText("/roʊt/");
+  const group = screen.getByRole("group", { name: "生词本状态" });
+  expect(group).toBeInTheDocument();
+  // The button row is the whole operation set; the current state is the
+  // pressed one.
+  expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+    "aria-pressed",
+    "true"
+  );
+  expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+  expect(screen.getByRole("button", { name: "忽略" })).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+});
+
+it("sets a state through PUT keyed on the lemma and moves the pressed state", async () => {
+  const fetchMock = stubLookupResponse({
+    word: "wrote",
+    lemma: "write",
+    ipa: "roʊt",
+    pos: "v.",
+    translation: "v. 写, 作曲, 写信",
+    status: "learning",
+  });
+  render(
+    <WordLookupPopup
+      click={{ word: "wrote", point: { x: 100, y: 100 } }}
+      onClose={() => {}}
+    />
+  );
+  await screen.findByText("/roʊt/");
+  fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    )
+  );
+  // The PUT keys on the lemma ("write", not the surface "wrote") and
+  // carries the machine status — the real request shape.
+  expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/vocab/lemmas/write");
+  expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+    method: "PUT",
+    body: JSON.stringify({ status: "known" }),
+  });
+  expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+    "aria-pressed",
+    "false"
+  );
+});
+
+it("shows a notice when the state save fails and clears it when a retry lands", async () => {
+  const fetchMock = vi
+    .fn<(url: string, init?: RequestInit) => Promise<Response>>()
+    .mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          word: "wrote",
+          lemma: "write",
+          ipa: "roʊt",
+          pos: "v.",
+          translation: "v. 写, 作曲, 写信",
+          status: "learning",
+        }),
+        { status: 200 }
+      )
+    )
+    // The first PUT misses (500); the retry lands.
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "boom" }), { status: 500 })
+    )
+    // The real PUT 200 body: the saved lemma and status (JSON — a bodyless
+    // 2xx would fail fetchJson's parse and read as a failure).
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ lemma: "write", status: "known" }), {
+        status: 200,
+      })
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(
+      <WordLookupPopup
+        click={{ word: "wrote", point: { x: 100, y: 100 } }}
+        onClose={() => {}}
+      />
+    );
+    await screen.findByText("/roʊt/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    expect(
+      await screen.findByText("状态保存失败，请重试。")
+    ).toBeInTheDocument();
+    // The failed save must not move the pressed state.
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+        "aria-pressed",
+        "true"
+      )
+    );
+    // A landed attempt is the failure notice's recovery.
+    expect(screen.queryByText("状态保存失败，请重试。")).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("closes when the reader scrolls or the viewport resizes", async () => {
   stubLookupResponse({
     word: "woke",
@@ -313,6 +476,7 @@ it("closes when the reader scrolls or the viewport resizes", async () => {
     ipa: "ˈwoʊk",
     pos: "v.",
     translation: "v. 醒来, 唤醒",
+    status: "learning",
   });
   const onClose = vi.fn();
   render(

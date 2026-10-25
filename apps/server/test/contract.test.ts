@@ -26,7 +26,10 @@ import { createEncryptedPdf, createScannedPdf } from "./fixtures/pdf.js";
 import { buildEpub } from "./fixtures/epub.js";
 import { ApiError, fetchJson } from "../../../apps/web/src/api";
 import { IMPORT_STAGE_LABELS } from "../../../apps/web/src/importCopy";
-import { fetchWordLookup } from "../../../apps/web/src/wordLookup";
+import {
+  fetchWordLookup,
+  putWordStatus,
+} from "../../../apps/web/src/wordLookup";
 import {
   fetchReadingProgress,
   saveReadingProgress,
@@ -299,6 +302,35 @@ describe("fetchWordLookup over the real server (wordLookup.ts)", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+});
+
+describe("putWordStatus over the real server (wordLookup.ts)", () => {
+  it("round-trips a state set through PUT and the next lookup reads it", async () => {
+    await startStack();
+    await putWordStatus("book", "known");
+    const entry = await fetchWordLookup("book");
+    expect(entry?.status).toBe("known");
+    // An inflected surface reads the same lemma row — the key is the
+    // lemma on both sides of the seam.
+    const books = await fetchWordLookup("books");
+    expect(books?.status).toBe("known");
+  });
+
+  it("surfaces the invalid-status 400 as a catchable ApiError", async () => {
+    await startStack();
+    // Status family plus body presence, not copy: the client branches on
+    // nothing here — the popup shows its own canned notice.
+    await expect(
+      fetchJson("/api/vocab/lemmas/book", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "mastered" }),
+      })
+    ).rejects.toMatchObject({
+      status: 400,
+      body: { error: expect.any(String) },
+    });
   });
 });
 

@@ -5,6 +5,7 @@ import type {
 } from "react";
 import { memo } from "react";
 import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
+import type { WordStatus } from "../../server/src/wire";
 
 export type SentenceBlock = {
   position: number;
@@ -13,6 +14,10 @@ export type SentenceBlock = {
   ipaSlots: string[] | null;
   ipaText: string | null;
   translationText: string | null;
+  // One entry per word token (the server's tokenizeWords order): the
+  // token's lemma's 生词本 state, null = New (ADR-0005). The frontend
+  // renders these verbatim and never lemmatizes (spec decision 5).
+  wordStatuses: (WordStatus | null)[];
 };
 
 export type PassthroughBlock = {
@@ -47,9 +52,11 @@ export type ChapterContent = {
 function WordSegments({
   segments,
   showSlots,
+  wordStatuses,
 }: {
   segments: Segment[];
   showSlots: boolean;
+  wordStatuses: (WordStatus | null)[];
 }) {
   const nodes: ReactNode[] = [];
   let index = 0;
@@ -59,10 +66,16 @@ function WordSegments({
       continue;
     }
     const ipa = showSlots ? segment.ipa : undefined;
+    // The state ride is positional: index counts word segments in walk
+    // order, exactly the server's tokenizeWords order. Known/Ignored keep
+    // their lookup but drop the hover tint — the affordance withdraws
+    // (ADR-0005); word color and IPA rendering stay untouched.
+    const settled =
+      wordStatuses[index] === "known" || wordStatuses[index] === "ignored";
     nodes.push(
       ipa ? (
         <span
-          className="ipa-word"
+          className={settled ? "ipa-word word-settled" : "ipa-word"}
           data-word={segment.word}
           key={index}
           role="button"
@@ -73,7 +86,7 @@ function WordSegments({
         </span>
       ) : (
         <span
-          className="lookup-word"
+          className={settled ? "lookup-word word-settled" : "lookup-word"}
           data-word={segment.word}
           key={index}
           role="button"
@@ -113,7 +126,11 @@ function SentenceBlockView({
   return (
     <div className="sentence-block" data-position={block.position}>
       <p className="original-line">
-        <WordSegments segments={segments} showSlots={showIpa && paired} />
+        <WordSegments
+          segments={segments}
+          showSlots={showIpa && paired}
+          wordStatuses={block.wordStatuses}
+        />
       </p>
       {showIpa && !paired ? (
         <p className="ipa-line">{block.ipaText ?? ""}</p>
