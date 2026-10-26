@@ -157,11 +157,11 @@ export function ReadingPage() {
             </button>
             {/* The third toolbar button, acting on the current chapter
                 (ADR-0004): the shape keys on the payload's
-                translationStatus — 翻译本章 / 翻译中 N% (disabled) /
-                重新翻译 (disabled). A translated chapter is final —
-                re-running is off the table (acceptance feedback
-                2026-10-26); a failed chapter has no translation yet, so
-                its 重新翻译 stays enabled: re-running is the recovery. */}
+                translationStatus — 翻译 (untranslated, or failed: no
+                translation exists yet, the alert above carries the reason
+                and re-running is the recovery) / 翻译中 N% (disabled) /
+                已翻译 (disabled — a translated chapter is final;
+                acceptance feedback 2026-10-26). */}
             <button
               type="button"
               disabled={
@@ -173,9 +173,9 @@ export function ReadingPage() {
             >
               {content.translationStatus === "translating"
                 ? `翻译中 ${content.translationPercent ?? 0}%`
-                : content.translationStatus === "untranslated"
-                  ? "翻译本章"
-                  : "重新翻译"}
+                : content.translationStatus === "translated"
+                  ? "已翻译"
+                  : "翻译"}
             </button>
           </div>
         </header>

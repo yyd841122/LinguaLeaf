@@ -971,7 +971,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
     return { calls };
   }
 
-  it("offers 翻译本章 on an untranslated chapter, then polls to 重新翻译 with fresh lines", async () => {
+  it("offers 翻译 on an untranslated chapter, then polls to 已翻译 with fresh lines", async () => {
     vi.useFakeTimers();
     try {
       window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -1023,7 +1023,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
       });
 
       // State one: the chapter has no translation yet.
-      const button = screen.getByRole("button", { name: "翻译本章" });
+      const button = screen.getByRole("button", { name: "翻译" });
       expect(button).toBeTruthy();
 
       fireEvent.click(button);
@@ -1049,12 +1049,12 @@ describe("ReadingPage's translate button through the component boundary", () => 
       expect(screen.getByRole("button", { name: "翻译中 44%" })).toBeTruthy();
 
       // Poll two: the chapter settled — the fresh translation line rides
-      // the same response. The button is back as 重新翻译 but disabled:
+      // the same response. The button is back as 已翻译 but disabled:
       // translated chapters don't re-translate.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1500);
       });
-      const again = screen.getByRole("button", { name: "重新翻译" });
+      const again = screen.getByRole("button", { name: "已翻译" });
       expect(again).toBeTruthy();
       expect((again as HTMLButtonElement).disabled).toBe(true);
       expect(screen.getByText("古普塔先生醒得很早。")).toBeTruthy();
@@ -1079,7 +1079,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
     }
   });
 
-  it("shows 重新翻译 on a translated chapter and disables the button while the payload says translating", async () => {
+  it("shows 已翻译 on a translated chapter and disables the button while the payload says translating", async () => {
     vi.useFakeTimers();
     try {
       window.HTMLElement.prototype.scrollIntoView = vi.fn();
@@ -1186,7 +1186,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
       expect(
         screen.queryByText(/无法连接服务端，翻译进度可能已过期/)
       ).toBeNull();
-      expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "已翻译" })).toBeTruthy();
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();
@@ -1237,7 +1237,9 @@ describe("ReadingPage's translate button through the component boundary", () => 
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(screen.getByRole("alert").textContent).toBe(reason);
-      const retry = screen.getByRole("button", { name: "重新翻译" });
+      // A failed chapter has no translation: the button reads 翻译 and
+      // stays the recovery path.
+      const retry = screen.getByRole("button", { name: "翻译" });
       expect((retry as HTMLButtonElement).disabled).toBe(false);
       fireEvent.click(retry);
       await act(async () => {
@@ -1253,7 +1255,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
       });
       expect(screen.getByText("古普塔先生醒得很早。")).toBeTruthy();
       const settled = screen.getByRole("button", {
-        name: "重新翻译",
+        name: "已翻译",
       }) as HTMLButtonElement;
       expect(settled.disabled).toBe(true);
       expect(screen.queryByRole("alert")).toBeNull();
@@ -1315,7 +1317,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(0);
       });
-      const button = screen.getByRole("button", { name: "翻译本章" });
+      const button = screen.getByRole("button", { name: "翻译" });
       fireEvent.click(button);
       fireEvent.click(button);
       await act(async () => {
@@ -1346,7 +1348,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1500);
       });
-      expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "已翻译" })).toBeTruthy();
       expect(screen.queryByRole("alert")).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -1558,7 +1560,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
     expect(translationBox.disabled).toBe(true);
     // The button stays live — the service is configured, the chapter is
     // simply not translated yet.
-    const button = screen.getByRole("button", { name: "翻译本章" });
+    const button = screen.getByRole("button", { name: "翻译" });
     expect((button as HTMLButtonElement).disabled).toBe(false);
     vi.unstubAllGlobals();
   });
@@ -1605,7 +1607,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
     // Grayed, not hidden: the button keeps its label and carries the
     // disabled state; the hint says why.
     const button = screen.getByRole("button", {
-      name: "翻译本章",
+      name: "翻译",
     }) as HTMLButtonElement;
     expect(button.disabled).toBe(true);
     expect(screen.getByText(/未配置翻译服务/)).toBeTruthy();
