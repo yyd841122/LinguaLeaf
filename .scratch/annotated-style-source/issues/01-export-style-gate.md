@@ -36,19 +36,23 @@ spawn --check,失败消息指名修复命令)。
 落地后暂时过时可接受,02 收口时随组删除)。app 侧 popup 规则继续独立生效。
 
 决策 4 双 commit:commit 1 重构(如上全部,popup 双侧各自,渲染零变化);
-commit 2 修复——border-box 进 annotated-shared.css 的 .lookup-popup(audit
-注释随迁),annotated-style.css 本区 popup 删除,export.test.ts 补 pin(导出
-style 的 .lookup-popup 含 `box-sizing: border-box`),重新生成生成物。
+commit 2 结构收编——.lookup-popup 整组进 annotated-shared.css,共享版显式带
+`box-sizing: border-box`(app 侧无通配 reset,须逐元素声明;export 侧 `*`
+reset 保留),audit 注释随迁;annotated-style.css 本区 popup 删除;
+export.test.ts 补 pin(导出 style 的 .lookup-popup 含
+`box-sizing: border-box`),重新生成生成物。**commit 2 渲染零变化**:实现时
+查明导出本有 `* { box-sizing: border-box }`(今日 :197)命中弹窗,两侧渲染
+素来等价,原「导出弹窗超宽」前提不成立(见 Comments 纠错)。
 
 **Blocked by:** None(01 即首票)
 
 - [ ] export.test.ts 既有断言零改写跑绿(commit 2 只增 popup pin)
 - [ ] 新鲜度门禁可红验证:改 css 源不重新生成 → 红、消息指名命令;再生 → 绿(验后还原)
 - [ ] 渲染零变化(commit 1):拼装保序,导出规则次序与今日一致;var 化仅字节漂移
-- [ ] commit 2:导出弹窗 border-box 修正记档于本票 Comments;pin 防回退
+- [ ] commit 2:渲染零变化(box-sizing 双侧渲染素来等价,见 Comments 纠错);pin 防回退
 - [ ] POPUP_* 常量改一处 → 重新生成 → 导出 style 跟随(令牌替换生效,验后还原)
 - [ ] 每个 commit typecheck && test && lint 绿(看退出码,不看 tail);收尾 pre-commit 全门禁绿
-- [ ] 人工验收(全程唯一渲染变化):下载一份导出文件双击,弹窗宽度回到 18rem、贴边不再溢出 —— **人做,agent 勿代签**
+- [ ] 人工验收(整票收尾后):下载一份导出文件双击过目,样式无异常 —— **人做,agent 勿代签**
 - [ ] 基线 = 本票首个实现 commit 之前的 HEAD(钉关系不钉 SHA)
 
 ## Comments

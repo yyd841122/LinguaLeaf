@@ -1,0 +1,118 @@
+@import "./annotated-shared.css";
+
+:root {
+  color-scheme: light;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: #f6f7f2;
+  color: #22342a;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Helvetica Neue",
+    Arial,
+    "Noto Sans",
+    sans-serif;
+  line-height: 1.6;
+}
+.export-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f6f7f2;
+  border-bottom: 1px solid #dde3d8;
+}
+.export-toolbar-inner {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 0.9rem 1.25rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.book-title {
+  font-size: 1.25rem;
+  margin: 0;
+}
+.export-toggles {
+  display: flex;
+  gap: 1rem;
+}
+.export-toggle {
+  display: inline-flex;
+  gap: 0.45rem;
+  align-items: center;
+  cursor: pointer;
+}
+.book {
+  max-width: 48rem;
+  margin: 0 auto 3rem;
+  padding: 0 1.25rem;
+}
+.chapter-title {
+  margin: 2.5rem 0 1.25rem;
+}
+/* @shared sentence-block */
+/* @shared original-line */
+/* @shared annotation-lines */
+/* @shared ipa-line */
+.translation-line {
+  color: #3f5148;
+}
+/* @shared ipa-word */
+/* @shared ipa-word-ipa */
+/* @shared lookup-word */
+/* @shared lookup-word-hover */
+.lookup-popup {
+  position: fixed;
+  z-index: 20;
+  width: __POPUP_WIDTH_REM__;
+  max-width: calc(100vw - __POPUP_MARGIN_TWICE_REM__);
+  max-height: __POPUP_MAX_HEIGHT_REM__;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #dde3d8;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+}
+/* @shared lookup-head */
+/* @shared lookup-head-word */
+/* @shared lookup-lemma */
+/* @shared lookup-head-actions */
+/* @shared lookup-head-button */
+/* @shared lookup-head-button-hover */
+/* @shared lookup-paragraphs */
+/* @shared lookup-ipa */
+/* @shared lookup-pos */
+/* @shared lookup-translation */
+/* @shared lookup-status */
+/* @shared code-block */
+/* @shared raw-block */
+/* @shared image-block */
+/* @shared image-placeholder */
+/* @shared image-caption */
+/* Display toggles hide annotations while keeping original words clickable. */
+body.hide-ipa .ipa-line,
+body.hide-ipa .ipa-word-ipa {
+  display: none;
+}
+body.hide-translation .translation-line {
+  display: none;
+}
+@media (max-width: 640px) {
+  .book {
+    padding: 0 1rem;
+  }
+  .original-line {
+    font-size: 1.05rem;
+  }
+}

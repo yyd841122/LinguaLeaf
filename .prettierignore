@@ -2,3 +2,4 @@
 .scratch/
 # 生成物按字节参与 --check 新鲜度比对,rewrap 会制造假漂移
 apps/server/src/export/file-script.generated.ts
+apps/server/src/export/style.generated.ts

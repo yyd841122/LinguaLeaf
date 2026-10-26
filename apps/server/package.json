@@ -10,7 +10,8 @@
     "check:task-lifecycle": "node scripts/check-task-lifecycle-locality.mjs",
     "dict:import-ecdict": "node --import tsx src/dict/import-ecdict.ts",
     "dict:import-ipa-dict": "node --import tsx src/dict/import-ipa-dict.ts",
-    "build:file-script": "node scripts/build-file-script.mjs"
+    "build:file-script": "node scripts/build-file-script.mjs",
+    "build:export-style": "node scripts/build-export-style.mjs"
   },
   "dependencies": {
     "@lingualeaf/reading-model": "0.1.0",

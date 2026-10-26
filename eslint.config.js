@@ -23,6 +23,7 @@ export default tseslint.config(
       ".output/**",
       "**/dist/**",
       "apps/server/src/export/file-script.generated.ts",
+      "apps/server/src/export/style.generated.ts",
       ".data/**",
       "**/node_modules/**",
       ".claude/**",
