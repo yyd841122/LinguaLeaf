@@ -250,6 +250,14 @@ main {
   line-height: 1.35;
 }
 
+/* The transcription paints from data-ipa via ::before: pseudo-element
+   content is invisible to text selection and copy in every engine, so
+   selecting the original line copies the words only (mirrors the shared
+   fragment; ticket 02 deletes this copy with the rest of the mirror). */
+.ipa-word-ipa::before {
+  content: attr(data-ipa);
+}
+
 /* Word lookup (ticket 06): every word in the original line is a lookup
    target; the hover tint is the affordance. */
 .lookup-word,

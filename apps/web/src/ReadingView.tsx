@@ -53,7 +53,11 @@ function WordSegments({
           tabIndex={0}
         >
           <span className="ipa-word-text">{segment.word}</span>
-          <span className="ipa-word-ipa">{ipa}</span>
+          {/* Transcription rides as data-ipa and paints via ::before:
+              pseudo-element content never enters a text selection, so
+              copying the original line picks up words only (mirrors the
+              export; the shared stylesheet carries the same rule). */}
+          <span className="ipa-word-ipa" data-ipa={ipa} />
         </span>
       ) : (
         <span

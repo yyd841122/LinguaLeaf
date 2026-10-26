@@ -124,9 +124,17 @@ it("pairs each word with its IPA beneath it when slots are available", () => {
   expect(units).toHaveLength(3);
   const gupta = units?.[0];
   expect(gupta?.querySelector(".ipa-word-text")?.textContent).toBe("Gupta");
-  expect(gupta?.querySelector(".ipa-word-ipa")?.textContent).toBe("ˈɡʊptə");
-  expect(units?.[1]?.querySelector(".ipa-word-ipa")?.textContent).toBe("ˈwoʊk");
-  expect(units?.[2]?.querySelector(".ipa-word-ipa")?.textContent).toBe("ˈɝːli");
+  // The transcription is a data attribute (::before renders it), not a
+  // text child — selecting the original never picks it up.
+  expect(gupta?.querySelector(".ipa-word-ipa")?.getAttribute("data-ipa")).toBe(
+    "ˈɡʊptə"
+  );
+  expect(
+    units?.[1]?.querySelector(".ipa-word-ipa")?.getAttribute("data-ipa")
+  ).toBe("ˈwoʊk");
+  expect(
+    units?.[2]?.querySelector(".ipa-word-ipa")?.getAttribute("data-ipa")
+  ).toBe("ˈɝːli");
 
   // A word without a transcription stays plain — no empty box next to it.
   expect(sentenceBlock?.querySelectorAll(".ipa-word-text")).toHaveLength(3);
