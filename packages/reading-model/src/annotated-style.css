@@ -2,10 +2,10 @@
 
 :root {
   color-scheme: light;
-  /* Export snapshot value: the paired IPA reads a step larger in the
-     standalone file than the app's 0.75rem default (feedback 2026-10-26).
+  /* Export snapshot value: the paired IPA sits one size under the original
+     line (1.15rem), level with the annotation lines (feedback 2026-10-26).
      Declared here once — the app keeps its stepper-driven default. */
-  --ipa-size: 0.85rem;
+  --ipa-size: 0.9rem;
 }
 * {
   box-sizing: border-box;
