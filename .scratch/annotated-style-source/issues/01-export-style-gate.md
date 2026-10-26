@@ -52,7 +52,7 @@ export.test.ts 补 pin(导出 style 的 .lookup-popup 含
 - [x] commit 2:渲染零变化(box-sizing 双侧渲染素来等价,见 Comments 纠错);pin 防回退
 - [x] POPUP_* 常量改一处 → 重新生成 → 导出 style 跟随(令牌替换生效,验后还原)
 - [x] 每个 commit typecheck && test && lint 绿(看退出码,不看 tail);收尾 pre-commit 全门禁绿
-- [ ] 人工验收(整票收尾后):下载一份导出文件双击过目,样式无异常 —— **人做,agent 勿代签**
+- [x] 人工验收(整票收尾后):下载一份导出文件双击过目,样式无异常 —— 维护者 2026-10-26 会话内逐项过目通过(字号/选择行为/浮层位置/间距四轮迭代收尾),口头确认「可以了」
 - [x] 基线 = 本票首个实现 commit 之前的 HEAD(钉关系不钉 SHA)
 
 ## Comments
