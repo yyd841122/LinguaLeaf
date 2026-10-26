@@ -19,6 +19,16 @@ Status: ready-for-agent
 annotated-shared.css 无交集——复述回潮即红(轻量正则逐组提取,不求完整
 css parser)。
 
+**令牌约束(票 01 评审移交,认领时先裁)**:共享文件现含 `__POPUP_*__`
+令牌(决策 8 的 export 侧机制;popup 盒值已随票 01 commit 2 进共享区)。app
+侧整文件 @import 会把非法声明吃进弹窗规则(CSS 错误恢复丢弃该声明,弹窗丢
+宽高——渲染变化)。两条路:(a) web 构建侧解析令牌(vite transform,循生成
+器机械);(b) popup 组不进 app 引用——app 本地保留 popup 规则(今日 rem 值
++ 对 POPUP_* 的 pin 测试),style-locality 断言把 popup 组列为已声明例外。
+推荐 (b):web 构建零新机械,三声明有 pin 把守,循 word-settled「故意分歧
+声明一次」先例。裁后同步更新共享头注释(票 01 已临时软化,写明令牌接线前
+app 不消费)。
+
 **Blocked by:** 01(共享区文件先落位)
 
 - [ ] style.css 共享组复述清零;app 独有组与注释原样保留
