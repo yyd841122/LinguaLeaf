@@ -14,6 +14,9 @@
 .original-line {
   margin: 0;
   font-size: var(--original-size, 1.15rem);
+  /* Double leading reserves the band the overlaying transcriptions float
+     in — every wrapped line keeps its annotation row without collisions. */
+  line-height: 2;
 }
 
 /* @shared annotation-lines */
@@ -33,21 +36,26 @@
 }
 
 /* @shared ipa-word */
-/* Each word and transcription wrap together while retaining the word baseline. */
+/* The unit stays a plain inline span: atomic boxes (the old inline-flex
+   stack) made selection and copy fall apart into one fragment per word.
+   The transcription overlays its word instead of stacking under it. */
 .ipa-word {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  vertical-align: baseline;
+  display: inline;
+  position: relative;
 }
 
 /* @shared ipa-word-ipa */
 /* Only the transcription hides when IPA is toggled off. */
 .ipa-word-ipa {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: -1.05em;
   color: #6a4fa3;
   user-select: none;
   font-size: var(--ipa-size, 0.75rem);
-  line-height: 1.35;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 /* The transcription paints from data-ipa via ::before: pseudo-element
    content is invisible to text selection and copy in every engine, so

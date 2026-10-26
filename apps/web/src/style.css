@@ -215,6 +215,8 @@ main {
 .original-line {
   margin: 0;
   font-size: var(--original-size, 1.15rem);
+  /* Double leading reserves the overlaying transcription band. */
+  line-height: 2;
 }
 
 /* Annotation lines are dimmer and hold their space even when empty so the
@@ -236,18 +238,23 @@ main {
 /* Word-paired IPA: each unit stacks its word and transcription so the IPA
    stays glued to its own word at any wrap point. The column keeps the word's
    baseline for surrounding punctuation. */
+/* Mirrors the shared fragment: plain inline span (selection-friendly),
+   transcription overlays via absolute positioning. */
 .ipa-word {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  vertical-align: baseline;
+  display: inline;
+  position: relative;
 }
 
 .ipa-word-ipa {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: -1.05em;
   color: #6a4fa3;
   user-select: none;
   font-size: var(--ipa-size, 0.75rem);
-  line-height: 1.35;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 /* The transcription paints from data-ipa via ::before: pseudo-element
