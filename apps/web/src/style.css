@@ -215,7 +215,11 @@ main {
 }
 
 .original-line {
-  margin: 0;
+  /* Bottom margin reserves the overlaying transcription band below the
+     last line — without it the IPA collides with the translation line.
+     Untranslated sentences collapse this through the block margin, so
+     their spacing is unchanged. */
+  margin: 0 0 1.2rem;
   font-size: var(--original-size, 1.15rem);
   /* Double leading reserves the overlaying transcription band. */
   line-height: 2;
