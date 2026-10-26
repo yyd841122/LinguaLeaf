@@ -1,3 +1,7 @@
+/* Shared annotation-book styles come from @lingualeaf/reading-model/annotated-shared.css
+   (imported below); app-only rules live in this file. */
+@import "@lingualeaf/reading-model/annotated-shared.css";
+
 :root {
   font-family: system-ui, sans-serif;
   color: #22342a;
@@ -210,80 +214,6 @@ main {
   margin: 0 1.25rem 0.75rem;
 }
 
-.sentence-block {
-  margin: 0 0 1.25rem;
-}
-
-.original-line {
-  /* Bottom margin reserves the overlaying transcription band below the
-     last line — without it the IPA collides with the translation line.
-     Untranslated sentences collapse this through the block margin, so
-     their spacing is unchanged. */
-  margin: 0 0 1.2rem;
-  font-size: var(--original-size, 1.15rem);
-  /* Double leading reserves the overlaying transcription band. */
-  line-height: 2;
-}
-
-/* Annotation lines are dimmer and hold their space even when empty so the
-   block structure stays complete while tickets 03/04 fill them. */
-.ipa-line,
-.translation-line {
-  margin: 0;
-  min-height: 1.4em;
-  user-select: none;
-  font-size: 0.9rem;
-}
-
-/* Inline IPA is the p0 prototype's annotation purple (english-annotation-reader
-   prototypes/p0 decorate.js); the translation line keeps the muted ink. */
-.ipa-line {
-  color: #6a4fa3;
-}
-
-/* Word-paired IPA: each unit stacks its word and transcription so the IPA
-   stays glued to its own word at any wrap point. The column keeps the word's
-   baseline for surrounding punctuation. */
-/* Mirrors the shared fragment: plain inline span (selection-friendly),
-   transcription overlays via absolute positioning. */
-.ipa-word {
-  display: inline;
-  position: relative;
-}
-
-.ipa-word-ipa {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  top: 1.4em;
-  color: #6a4fa3;
-  user-select: none;
-  font-size: var(--ipa-size, 0.75rem);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-/* The transcription paints from data-ipa via ::before: pseudo-element
-   content is invisible to text selection and copy in every engine, so
-   selecting the original line copies the words only (mirrors the shared
-   fragment; ticket 02 deletes this copy with the rest of the mirror). */
-.ipa-word-ipa::before {
-  content: attr(data-ipa);
-}
-
-/* Word lookup (ticket 06): every word in the original line is a lookup
-   target; the hover tint is the affordance. */
-.lookup-word,
-.ipa-word {
-  cursor: pointer;
-  border-radius: 0.2rem;
-}
-
-.lookup-word:hover,
-.ipa-word:hover {
-  background: #ecefe6;
-}
-
 /* 生词本 (ADR-0005): Known/Ignored words keep their lookup but drop the
    hover tint — the affordance withdraws from words the reader knows or
    chose to ignore. Word color and IPA rendering stay untouched. */
@@ -313,56 +243,6 @@ main {
   border-radius: 0.5rem;
   padding: 0.6rem 0.9rem;
   box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
-}
-
-.lookup-head {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  margin-bottom: 0.2rem;
-}
-
-.lookup-head-word {
-  font-weight: 600;
-  font-size: 1.05rem;
-}
-
-.lookup-lemma {
-  color: #5c6f64;
-  font-size: 0.8rem;
-}
-
-.lookup-head-actions {
-  margin-left: auto;
-  display: flex;
-  gap: 0.15rem;
-}
-
-.lookup-head-actions button {
-  border: none;
-  background: none;
-  padding: 0 0.2rem;
-  cursor: pointer;
-  font-size: 0.9rem;
-  line-height: 1.2;
-}
-
-.lookup-head-actions button:hover {
-  background: #ecefe6;
-  border-radius: 0.25rem;
-}
-
-.lookup-popup p {
-  margin: 0.15rem 0;
-}
-
-.lookup-ipa {
-  color: #5c6f64;
-}
-
-.lookup-pos {
-  color: #5c6f64;
-  font-size: 0.85rem;
 }
 
 /* 生词本状态操作 (ADR-0005): the three-option row IS the operation set —
@@ -401,56 +281,9 @@ main {
   border-color: #5c6f64;
 }
 
-/* Sense lines arrive newline-separated from ECDICT; keep the line breaks. */
-.lookup-translation {
-  white-space: pre-line;
-}
-
-.lookup-status {
-  color: #5c6f64;
-}
-
 .translation-line {
   color: #3f5148;
   font-size: var(--translation-size, 0.9rem);
-}
-
-.code-block {
-  background: #ecefe6;
-  border-radius: 0.5rem;
-  padding: 0.75rem 1rem;
-  overflow-x: auto;
-  margin: 0 0 1.25rem;
-}
-
-.raw-block {
-  margin: 0 0 1.25rem;
-  color: #5c6f64;
-}
-
-/* Illustration placeholders (ticket 07): the image bytes are not rendered,
-   the alt text captions the box. */
-.image-block {
-  margin: 0 auto 1.25rem;
-  max-width: 60%;
-  text-align: center;
-}
-
-.image-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 6rem;
-  background: #ecefe6;
-  border: 1px dashed #b8c4bc;
-  border-radius: 0.5rem;
-  font-size: 1.75rem;
-}
-
-.image-block figcaption {
-  margin-top: 0.4rem;
-  color: #5c6f64;
-  font-size: 0.85rem;
 }
 
 .size-stepper {

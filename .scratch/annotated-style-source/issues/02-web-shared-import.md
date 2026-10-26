@@ -53,3 +53,16 @@ popup、`.ipa-word`、`.ipa-word-ipa`、`.ipa-word-ipa::before`、
 `.original-line` 行距等,均随共享消费一并删除);共享头注释更新时一并摘掉
 「app 未消费」措辞。另:词单元已去原子化(ipa-word 回 inline、音标绝对定位
 浮层,选原文整句连续复制),镜像两侧同形,02 无需额外处置。
+
+**认领(2026-10-26,编排会话)。** 令牌约束裁 **(b)**:popup 组不进 app
+引用——`.lookup-popup` 本地保留今日 rem 值,style-locality 断言把
+`lookup-popup` 列为已声明例外(且例外集合恰为它,多一个即红);同测试文件加
+POPUP_* pin(app 字面量 vs POPUP_WIDTH_PX/16、POPUP_MAX_HEIGHT_PX/16、
+POPUP_MARGIN_PX*2/16 + border-box 存在性),常量自 @lingualeaf/reading-model
+取。认领时机械比对(node 逐组提取、声明归一排序):共享 26 组全部在
+style.css 有同名组,25 组声明逐字相同,唯一分歧 = `.lookup-popup` 三盒值
+(18rem/16rem/calc(100vw - 1rem) vs 三令牌),与票面注记一致,零新漂移;
+word-settled 覆盖、lookup-vocab、translation-line var 规则等 app-only 组
+不受影响。共享头注释摘「app 未消费」+ `::before` 组内「App adoption rides
+with ticket 02」过时句一并更新(app 侧采纳已落地,本地副本随本票删除)。
+评审基线 = 本票首个实现 commit 之前的 HEAD(今日即 52a9b61)。

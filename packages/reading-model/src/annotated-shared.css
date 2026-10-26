@@ -1,6 +1,9 @@
 /* Named fragments are expanded at the matching export slots to preserve
-   cascade order. The app does not consume this file yet: popup box values
-   ride as __POPUP_*__ tokens until ticket 02 wires app-side resolution
+   cascade order. The app imports this file via @import since ticket 02.
+   The lookup-popup group is the one exception: its box values ride as
+   __POPUP_*__ tokens for export-side generator interpolation, while the app
+   keeps its own .lookup-popup block with resolved rem values guarded by the
+   web style-locality test
    (.scratch/annotated-style-source/issues/02-web-shared-import.md). */
 
 /* @shared sentence-block */
@@ -65,8 +68,8 @@
    content is invisible to text selection and copy in every engine, so
    selecting the original line copies the words only. user-select: none
    alone cannot promise that — engines may still include such text in the
-   copied range. App adoption rides with ticket 02 (css + DOM flip
-   together: with this rule active the text child must be gone). */
+   copied range. Both sides render from attr(data-ipa); the app's local
+   copy of this rule was deleted with the shared import in ticket 02. */
 .ipa-word-ipa::before {
   content: attr(data-ipa);
 }
