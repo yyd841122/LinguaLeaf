@@ -1,5 +1,7 @@
 /* Named fragments are expanded at the matching export slots to preserve
-   cascade order. This file also remains a normal stylesheet for the app. */
+   cascade order. The app does not consume this file yet: popup box values
+   ride as __POPUP_*__ tokens until ticket 02 wires app-side resolution
+   (.scratch/annotated-style-source/issues/02-web-shared-import.md). */
 
 /* @shared sentence-block */
 /* Sentence blocks keep space between successive sentences. */
