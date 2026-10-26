@@ -49,6 +49,15 @@
   font-size: var(--ipa-size, 0.75rem);
   line-height: 1.35;
 }
+/* The transcription paints from data-ipa via ::before: pseudo-element
+   content is invisible to text selection and copy in every engine, so
+   selecting the original line copies the words only. user-select: none
+   alone cannot promise that — engines may still include such text in the
+   copied range. App adoption rides with ticket 02 (css + DOM flip
+   together: with this rule active the text child must be gone). */
+.ipa-word-ipa::before {
+  content: attr(data-ipa);
+}
 
 /* @shared lookup-word */
 /* Every original word is a lookup target; hover tint is the affordance. */

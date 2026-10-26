@@ -63,9 +63,13 @@ const renderSentenceBlock = (block: SentenceBlockData): string => {
     }
     const word = escapeHtml(segment.word);
     // The unit stem (ipa-word) stays clickable and visible even when the
-    // IPA line is toggled off — only the transcription child hides.
+    // IPA line is toggled off — only the transcription child hides. The
+    // transcription rides as data-ipa and paints via ::before (shared
+    // stylesheet): pseudo-element content never enters a text selection,
+    // so copying the original line never picks the IPA up (user-select:
+    // none alone still lets engines include it in the copied range).
     original += segment.ipa
-      ? `<span class="ipa-word" data-word="${word}"><span class="ipa-word-text">${word}</span><span class="ipa-word-ipa">${escapeHtml(segment.ipa)}</span></span>`
+      ? `<span class="ipa-word" data-word="${word}"><span class="ipa-word-text">${word}</span><span class="ipa-word-ipa" data-ipa="${escapeHtml(segment.ipa)}"></span></span>`
       : `<span class="lookup-word" data-word="${word}">${word}</span>`;
   }
 

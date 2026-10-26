@@ -150,7 +150,11 @@ describe("GET /api/books/:id/export", () => {
     // stacked inside the unit (mirrors the app's .ipa-word structure).
     expect(html).toContain('<span class="ipa-word" data-word="wrote">');
     expect(html).toContain('<span class="ipa-word-text">wrote</span>');
-    expect(html).toContain('<span class="ipa-word-ipa">roʊt</span>');
+    // The transcription is a data attribute (selection/copy proof via
+    // ::before), not a text child.
+    expect(html).toContain(
+      '<span class="ipa-word-ipa" data-ipa="roʊt"></span>'
+    );
     // Words the dictionary does not know stay plain text inside the line.
     expect(html).toContain(
       '<span class="lookup-word" data-word="Gupta">Gupta</span>'
