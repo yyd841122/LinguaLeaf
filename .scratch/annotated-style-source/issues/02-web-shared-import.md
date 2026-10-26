@@ -1,6 +1,6 @@
 # 02: web 引用半边——style.css 删复述改 @import
 
-Status: ready-for-agent
+Status: done
 
 **What to build:**
 
@@ -31,13 +31,13 @@ app 不消费)。
 
 **Blocked by:** 01(共享区文件先落位)
 
-- [ ] style.css 共享组复述清零;app 独有组与注释原样保留
-- [ ] 级联等价:@import 置于 app-only 之前,hover tint(共享)先于 word-settled 覆盖(app-only)的次序保持
-- [ ] style-locality 测试可红验证:往 style.css 手抄一组共享 selector → 红;删 → 绿
-- [ ] vite build 绿;web vitest 全绿(css 默认 stub,@import 不入测试);server 套件零碰
-- [ ] 行为零变化(渲染等价):app 视觉零变化;字节漂移不破线
-- [ ] 每个 commit typecheck && test && lint 绿(看退出码,不看 tail);收尾 pre-commit 全门禁绿
-- [ ] 基线 = 本票首个实现 commit 之前的 HEAD(钉关系不钉 SHA)
+- [x] style.css 共享组复述清零;app 独有组与注释原样保留
+- [x] 级联等价:@import 置于 app-only 之前,hover tint(共享)先于 word-settled 覆盖(app-only)的次序保持
+- [x] style-locality 测试可红验证:往 style.css 手抄一组共享 selector → 红;删 → 绿
+- [x] vite build 绿;web vitest 全绿(css 默认 stub,@import 不入测试);server 套件零碰
+- [x] 行为零变化(渲染等价):app 视觉零变化;字节漂移不破线
+- [x] 每个 commit typecheck && test && lint 绿(看退出码,不看 tail);收尾 pre-commit 全门禁绿
+- [x] 基线 = 本票首个实现 commit 之前的 HEAD(钉关系不钉 SHA)
 
 ## Comments
 
@@ -66,3 +66,30 @@ word-settled 覆盖、lookup-vocab、translation-line var 规则等 app-only 组
 不受影响。共享头注释摘「app 未消费」+ `::before` 组内「App adoption rides
 with ticket 02」过时句一并更新(app 侧采纳已落地,本地副本随本票删除)。
 评审基线 = 本票首个实现 commit 之前的 HEAD(今日即 52a9b61)。
+
+**收尾 done。** 实现经 cc-suite /implement 一段(Codex gpt-6.1-sol,effort high,
+workspace-write;job `implement-mvov6vfh-aohe63`,thread
+`aa035949-5348-4127-a0a9-4f7ef821f568`),实现提交 `7041dcb`,评审基线 =
+`52a9b61`(票面关系钉,不钉额外 SHA)。
+
+- 门禁:typecheck / test(367 全绿,含新 style-locality 两测试)/ lint /
+  build 全 EXIT=0;commit 时 pre-commit 全链 EXIT=0。
+- 新鲜度 gate 按设计红过一次:共享头注释更新后 committed 生成物过期,照 gate
+  指名命令再生——生成物唯一实质变化 = `::before` 注释随共享源(生成器素来剥
+  共享文件头注释,「app 未消费」措辞从不入导出产物);导出侧渲染等价,
+  server 测试文件零改写。
+- 可红验证 live 实测:手抄 `.sentence-block` 进 style.css → 红且指名多余组;
+  还原 → 绿。
+- 渲染等价双道:认领时逐组声明比对(25/26 逐字同,唯一分歧 = popup 三令牌值)
+  + 实现后机械模拟 @import 展开级联(令牌声明按浏览器错误恢复丢弃),逐
+  selector 逐属性 winner 与 HEAD 零漂移。vite 产物探针:@import 已解析、
+  shared 规则先于 app-only、`.word-settled` 覆盖保持;bundle 含 3 条被浏览器
+  丢弃的 `__POPUP_*__` 声明((b) 已声明形态,本地块 13 属性全量再声明)。
+- 双轴处置:Standards 零硬违规;两 judgement call 均维持——①pin 走 dist 主
+  入口 vs 生成器走 src(根 pretest/pretypecheck 每次重建,dist 陈旧已有守卫);
+  ②exports 指 src / files 只带 dist(private 包不打包,先于本票的形状)。
+  Spec 轴 conforming:零缺失、零 scope creep、零实现错误;一条非阻塞记档——
+  style-locality 为组级粒度,共享组单个成员(如单独 `.lookup-word:hover`)
+  复制回潮暂不红(整组照抄必红);若要加强为逐成员,例外集需另加
+  `.translation-line`(app-only 拆半,理由不同),留维护者裁量。
+- 本票无人工验收项(全程渲染零变化,票 01 的过目项已在其票内闭环)。
