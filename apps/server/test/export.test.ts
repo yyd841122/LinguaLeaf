@@ -910,6 +910,23 @@ describe("exported file behavior (jsdom)", () => {
     dom.window.close();
   });
 
+  it("declares border-box on the shared lookup popup rule", async () => {
+    const bookId = await importSampleBookReady(app);
+    const response = await request(app).get(`/api/books/${bookId}/export`);
+    expect(response.status).toBe(200);
+
+    const dom = new JSDOM(response.text);
+    const styleText =
+      dom.window.document.querySelector("style")?.textContent ?? "";
+    const popupRule = (
+      styleText.match(/\.lookup-popup\s*\{([^}]*)\}/)?.[1] ?? ""
+    ).replace(/\/\*[\s\S]*?\*\//g, "");
+    // Pin the declaration on the popup itself: the app has no universal
+    // reset, even though the export's reset already renders it border-box.
+    expect(popupRule).toMatch(/(?:^|;)\s*box-sizing:\s*border-box\s*(?:;|$)/);
+    dom.window.close();
+  });
+
   it("ships exactly one executable script beside the vocabulary data channel, and styles that never hide the original line or word stems", async () => {
     const bookId = await importSampleBookReady(app);
     const html = (await request(app).get(`/api/books/${bookId}/export`)).text;

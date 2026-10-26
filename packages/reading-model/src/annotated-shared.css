@@ -62,6 +62,26 @@
   background: #ecefe6;
 }
 
+/* @shared lookup-popup */
+.lookup-popup {
+  /* border-box keeps the rendered outer box at the shared POPUP_WIDTH_PX.
+     The app has no universal reset, so this declaration must live on the
+     element: content-box added padding and border beyond the clamp's width
+     (audit 2026-10-23). The export's universal reset covers its other elements. */
+  box-sizing: border-box;
+  position: fixed;
+  z-index: 20;
+  width: __POPUP_WIDTH_REM__;
+  max-width: calc(100vw - __POPUP_MARGIN_TWICE_REM__);
+  max-height: __POPUP_MAX_HEIGHT_REM__;
+  overflow-y: auto;
+  background: #ffffff;
+  border: 1px solid #dde3d8;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+}
+
 /* @shared lookup-head */
 /* The lookup card presents the word, lemma and actions on one row. */
 .lookup-head {

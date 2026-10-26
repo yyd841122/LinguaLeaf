@@ -71,19 +71,7 @@ body {
 /* @shared ipa-word-ipa */
 /* @shared lookup-word */
 /* @shared lookup-word-hover */
-.lookup-popup {
-  position: fixed;
-  z-index: 20;
-  width: __POPUP_WIDTH_REM__;
-  max-width: calc(100vw - __POPUP_MARGIN_TWICE_REM__);
-  max-height: __POPUP_MAX_HEIGHT_REM__;
-  overflow-y: auto;
-  background: #ffffff;
-  border: 1px solid #dde3d8;
-  border-radius: 0.5rem;
-  padding: 0.6rem 0.9rem;
-  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
-}
+/* @shared lookup-popup */
 /* @shared lookup-head */
 /* @shared lookup-head-word */
 /* @shared lookup-lemma */
