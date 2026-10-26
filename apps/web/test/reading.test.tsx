@@ -1048,14 +1048,15 @@ describe("ReadingPage's translate button through the component boundary", () => 
       });
       expect(screen.getByRole("button", { name: "翻译中 44%" })).toBeTruthy();
 
-      // Poll two: the chapter settled — the button is back, and the fresh
-      // translation line rides the same response.
+      // Poll two: the chapter settled — the fresh translation line rides
+      // the same response. The button is back as 重新翻译 but disabled:
+      // translated chapters don't re-translate.
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1500);
       });
       const again = screen.getByRole("button", { name: "重新翻译" });
       expect(again).toBeTruthy();
-      expect((again as HTMLButtonElement).disabled).toBe(false);
+      expect((again as HTMLButtonElement).disabled).toBe(true);
       expect(screen.getByText("古普塔先生醒得很早。")).toBeTruthy();
       // The poll stops with the lifecycle: no further chapter GETs.
       const chapterGets = calls.filter(
@@ -1251,7 +1252,10 @@ describe("ReadingPage's translate button through the component boundary", () => 
         await vi.advanceTimersByTimeAsync(1500);
       });
       expect(screen.getByText("古普塔先生醒得很早。")).toBeTruthy();
-      expect(screen.getByRole("button", { name: "重新翻译" })).toBeTruthy();
+      const settled = screen.getByRole("button", {
+        name: "重新翻译",
+      }) as HTMLButtonElement;
+      expect(settled.disabled).toBe(true);
       expect(screen.queryByRole("alert")).toBeNull();
     } finally {
       vi.useRealTimers();

@@ -158,12 +158,15 @@ export function ReadingPage() {
             {/* The third toolbar button, acting on the current chapter
                 (ADR-0004): the shape keys on the payload's
                 translationStatus — 翻译本章 / 翻译中 N% (disabled) /
-                重新翻译. A failed chapter keeps 重新翻译: re-running is
-                the recovery. */}
+                重新翻译 (disabled). A translated chapter is final —
+                re-running is off the table (acceptance feedback
+                2026-10-26); a failed chapter has no translation yet, so
+                its 重新翻译 stays enabled: re-running is the recovery. */}
             <button
               type="button"
               disabled={
                 content.translationStatus === "translating" ||
+                content.translationStatus === "translated" ||
                 !content.translationAvailable
               }
               onClick={startTranslation}

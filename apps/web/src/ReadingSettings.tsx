@@ -177,11 +177,11 @@ export function ReadingSettings({
         />
         译文行
       </label>
-      <IpaSizeControl size={ipaSize} onChange={onIpaSizeChange} />
       <OriginalSizeControl
         size={originalSize}
         onChange={onOriginalSizeChange}
       />
+      <IpaSizeControl size={ipaSize} onChange={onIpaSizeChange} />
       <TranslationSizeControl
         size={translationSize}
         onChange={onTranslationSizeChange}
