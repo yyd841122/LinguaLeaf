@@ -48,6 +48,8 @@ app 不消费)。
 票 01 收尾后的追加约束:音标转写已改 data-ipa + `::before` 伪元素渲染(选原文
 复制不带音标;user-select:none 挡不住 copy 范围),**app 侧已提前同翻**
 (ReadingView 属性渲染 + style.css 本地 `::before` 镜像,88c593c 之后的采纳
-commit)。02 收口时:style-locality 的例外组在 popup 之外再加
-`.ipa-word-ipa::before`(app 本地镜像组,随共享消费一并删除);共享头注释
-更新时一并摘掉「app 未消费」措辞。
+commit)。02 收口时:style-locality 的例外组以认领时实际比对为准(app 本地镜像组:
+popup、`.ipa-word`、`.ipa-word-ipa`、`.ipa-word-ipa::before`、
+`.original-line` 行距等,均随共享消费一并删除);共享头注释更新时一并摘掉
+「app 未消费」措辞。另:词单元已去原子化(ipa-word 回 inline、音标绝对定位
+浮层,选原文整句连续复制),镜像两侧同形,02 无需额外处置。
