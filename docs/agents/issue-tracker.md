@@ -7,6 +7,7 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 - One feature per directory: `.scratch/<feature-slug>/`
 - The spec is `.scratch/<feature-slug>/spec.md`
 - Implementation issues are one file per ticket at `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01`, never a single combined tickets file
+- Single-ticket features may skip `issues/` entirely: the spec itself is the ticket, with its own `Status:` line near the top of `spec.md` (examples: `task-follower`, `wire-payload-shapes`) — frontier, triage, and closure scans read both locations, not `issues/` alone
 - Triage state is recorded as a `Status:` line near the top of each issue file (see `triage-labels.md` for the role strings)
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 - Closure flips the line: when an implementation ticket finishes, its `Status:` becomes `done` — the wrap-up report stays under `## Comments`. `ready-for-agent` means nobody has picked it up yet; frontier and triage scans read it as open work.
