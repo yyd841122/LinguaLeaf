@@ -1,6 +1,6 @@
 # 01: 弹窗四态操作 back edge——onStatusApplied 出参 + 页面载荷 patch
 
-Status: ready-for-agent
+Status: done
 
 **What to build:**
 
@@ -34,17 +34,17 @@ status;200 后**无条件**调 `onStatusApplied`(spec 决策 3:stale() 只继续
 
 **Blocked by:** None(wire 载荷单源已落地,前置就位)
 
-- [ ] 出参在 200 后无条件触发(换词不吞、失败不发),载荷三字段与 PUT 同源
-- [ ] 页面 patch:同形 + 引理字符串两路匹配,被点词底色即时收回无需路由;屈折
+- [x] 出参在 200 后无条件触发(换词不吞、失败不发),载荷三字段与 PUT 同源
+- [x] 页面 patch:同形 + 引理字符串两路匹配,被点词底色即时收回无需路由;屈折
       变体行为与今日一致(下次路由生效),票面不夸大
-- [ ] 既有弱化 fixture / pressed 用例零改写跑绿;新增三态测试(200 触发 /
+- [x] 既有弱化 fixture / pressed 用例零改写跑绿;新增三态测试(200 触发 /
       失败不发 / 换词仍发)可红验证
-- [ ] server 套件零碰;wire.ts 零碰
-- [ ] 每个 commit typecheck && test && lint 绿(看退出码,不看 tail);收尾
+- [x] server 套件零碰;wire.ts 零碰
+- [x] 每个 commit typecheck && test && lint 绿(看退出码,不看 tail);收尾
       pre-commit 全门禁绿
-- [ ] 行为变化记档:被点词底色收回即时化 = 本票产品语义补全(spec 决策 7),
+- [x] 行为变化记档:被点词底色收回即时化 = 本票产品语义补全(spec 决策 7),
       收尾时在票 Comments 写明
-- [ ] 基线 = 本票首个实现 commit 之前的 HEAD(钉关系不钉 SHA)
+- [x] 基线 = 本票首个实现 commit 之前的 HEAD(钉关系不钉 SHA)
 
 ## Comments
 
@@ -56,3 +56,27 @@ status;200 后**无条件**调 `onStatusApplied`(spec 决策 3:stale() 只继续
 (surface + 引理字符串):客户端无词典引理数据,屈折变体 index 找不全,诚实
 可实现域见 spec 决策 2;②出参载荷较口头的 `(lemma, status)` 多 surface word
 一项——同形词全 index patch 需要。「不捆候选 5」维持,无异议。
+
+**收官(2026-10-27,编排会话)**:实现 commit de39045(cc-suite `/implement`,
+gpt-6.1-sol / high / workspace-write;Codex 沙箱禁网,门禁与提交由编排侧补)。
+prop 名维持 `onStatusApplied`,页面 handler 留 ReadingPage 局部——零改名零挪动。
+门禁:`npm run verify` 全链 EXIT=0,pre-commit 全链绿。
+
+- **行为变化记档(spec 决策 7)**:被点词底色收回从「等下次路由重取载荷」变
+  「PUT 200 即时」——GLOSSARY「已掌握」语义的兑现,非改口;页面级测试直接
+  断言 `/chapters/2` 仅 fetch 一次(无路由重取)。
+- **编排侧修正一处(Codex 测试踩 jsdom 引擎坑,实现无误)**:jsdom 的选择器
+  引擎对属性值大小写不敏感(`[data-word="Woke"]` 命中小写 "woke" 的已 settled
+  span;真实浏览器按 CSS 规范大小写敏感),reading.test.tsx 页面级用例改
+  `getAttribute` 精确过滤并附注释记因;DOM dump 实证 patch 本身精确命中。
+- **红验证**:四条新测试(200 触发 / 换词仍发 / 失败不发 / 页面级即时收回)
+  对基线源文件逐一转红实测。
+- **双轴 review(基线 50f18a3)**:Standards 零硬违规,三条 judgement call
+  记档不阻塞——①word↔wordStatuses 位置配对出第二处客户端推导(与本
+  ReadingView 游走同源 segmentOriginal,无错位实证;若收敛,共享 helper 落
+  reading-model,触本票零碰面);②载荷三字段内联类型两源文件重复(若收型,
+  wire.ts 或 reading-model 命名导出,同触零碰面);③必填 prop 致既有弹窗用例
+  九处补 noop(测试内既有形态,LookupHarness 已示范默认值收法)。Spec 判定
+  clean:决策 1–5、7 逐条对上,零触碰清单零违,测试不夸大;一条非阻塞观察——
+  翻译 tick `onTick` 整载荷 setContent 属既有 last-write-wins 形态,可在瞬态上
+  盖回本票 patch(spec 决策 2 循 :97 先例所定,非本 diff 引入),如需收编另立票。
