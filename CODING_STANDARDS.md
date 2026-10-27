@@ -344,3 +344,28 @@ pinned it.
 At review: for every `useState` reading through a param or prop, name the
 event that re-reads it when that value changes. "It remounts" is a claim to
 check against the route table, not an assumption.
+
+## Cleanup flags revoke once; key comparison can revive
+
+An effect-cleanup `cancelled` flag and a comparison-based staleness token (key
+parts, a version counter, an owner ticket) are not interchangeable mechanisms:
+the flag revokes that effect instance's responses permanently, while a token
+goes stale only while the key differs — navigate A→B→A and the first pass's
+ticket is valid again. Replacing one with the other is behavior-safe only
+where the passes' responses cannot interleave into different final state
+(same data every pass, or no re-entrant cycle), not wherever "the key covers
+it" reads plausibly.
+
+Why: the owner-token spec (decision 5) locked "the route-keyed token covers
+it, cleanup becomes empty" for the reading page's load effect; the
+implementation's per-site simpler-bar gate caught the revival — two passes
+over route A with a server-side change between them could settle in the
+wrong order, and the site kept its cleanup
+(.scratch/owner-token/spec.md, 2026-10-27). The premise was locked wrong at
+grilling time; the gate, not the review, is what held.
+
+At review: when a diff deletes an effect cleanup flag or swaps it for a
+comparison-based guard, trace the guard through a re-entrant key cycle
+(A→B→A; a popup word visited, left, revisited): when the earlier pass's
+response lands after the later pass's, who wins, and can the two passes'
+data differ? "The key covers it" is the claim to check, not the proof.
