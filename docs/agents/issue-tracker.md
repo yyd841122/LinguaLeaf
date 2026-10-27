@@ -32,3 +32,9 @@ Used by `/wayfinder`. The **map** is a file with one **child** file per ticket.
 - **Frontier**: scan `.scratch/<effort>/issues/` for files that are open, unblocked, and unclaimed; first by number wins.
 - **Claim**: set `Status: claimed` and save before any work.
 - **Resolve**: append the answer under an `## Answer` heading, set `Status: resolved`, then append a context pointer (gist + link) to the map's Decisions-so-far in `map.md`.
+- Findings surfaced mid-implementation or mid-review (另票候选) land as their
+  own `Status: needs-triage` stub tickets (spec-as-ticket form is fine), not
+  only as `## Comments` notes on the source ticket — Comments are read by no
+  scan, so a candidate recorded only there is lost work. The stub states the
+  problem and the open decision; triage promotes it to `ready-for-agent` once
+  decisions are locked.
