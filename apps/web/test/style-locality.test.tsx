@@ -52,12 +52,29 @@ const sharedBlocks = topLevelBlocks(
 );
 
 describe("annotation style locality", () => {
-  it("keeps shared selectors out of the app except the declared popup exception", () => {
-    // __POPUP_*__ tokens need export-side interpolation; the app keeps resolved
-    // values per .scratch/annotated-style-source/issues/02-web-shared-import.md.
-    const declaredExceptions = new Set([".lookup-popup"]);
+  it("keeps shared selectors out of the app except the declared exceptions", () => {
+    // Membership-level check (selector lists split on commas): re-adding a
+    // whole shared group or any single constituent of one both turn this red.
+    const declaredExceptions = new Set([
+      // __POPUP_*__ tokens need export-side interpolation; the app keeps
+      // resolved values per .scratch/annotated-style-source/issues/02-web-shared-import.md.
+      ".lookup-popup",
+      // The spec keeps this hook app-side on purpose: lifting the var() into
+      // the shared .ipa-line, .translation-line group would make .ipa-line
+      // follow --translation-size (a rendering change).
+      ".translation-line",
+    ]);
+    const members = (selectors: Iterable<string>) =>
+      new Set(
+        [...selectors].flatMap((selector) =>
+          selector.split(",").map((part) => part.trim())
+        )
+      );
+    const sharedMembers = members(sharedBlocks.keys());
     const overlap = new Set(
-      [...appBlocks.keys()].filter((selector) => sharedBlocks.has(selector))
+      [...members(appBlocks.keys())].filter((member) =>
+        sharedMembers.has(member)
+      )
     );
     expect(overlap).toEqual(declaredExceptions);
   });

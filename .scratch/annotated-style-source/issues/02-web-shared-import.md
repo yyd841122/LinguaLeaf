@@ -93,3 +93,9 @@ workspace-write;job `implement-mvov6vfh-aohe63`,thread
   复制回潮暂不红(整组照抄必红);若要加强为逐成员,例外集需另加
   `.translation-line`(app-only 拆半,理由不同),留维护者裁量。
 - 本票无人工验收项(全程渲染零变化,票 01 的过目项已在其票内闭环)。
+
+**收尾后追加(2026-10-27)。** 维护者采纳记档中的加强选项:style-locality
+升级为逐成员比较(selector 列表按逗号拆开求交集),例外集扩为两项各记因
+——`.lookup-popup`(令牌约束)、`.translation-line`(spec 实现既定的
+app-only 拆半,var() 钩留 app 侧)。可红验证补第三态:单成员抄回
+(裸 `.lookup-word:hover`,旧组级比较下绿)→ 红;整组抄回 → 红;还原 → 绿。
