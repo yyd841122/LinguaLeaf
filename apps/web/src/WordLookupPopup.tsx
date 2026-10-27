@@ -46,9 +46,15 @@ function anchoredStyle(point: ClickPoint): CSSProperties {
 export function WordLookupPopup({
   click,
   onClose,
+  onStatusApplied,
 }: {
   click: WordClick;
   onClose: () => void;
+  onStatusApplied: (applied: {
+    word: string;
+    lemma: string | null;
+    status: WordStatus;
+  }) => void;
 }) {
   const { word, point } = click;
   const [state, setState] = useState<LookupState>({ phase: "loading" });
@@ -92,10 +98,18 @@ export function WordLookupPopup({
     setSaving(true);
     // States key on the lemma — the same key the lookup wrote server-side.
     const key = state.lookup.lemma ?? state.lookup.word;
+    const applied = {
+      word: state.lookup.word,
+      lemma: state.lookup.lemma,
+      status,
+    };
     const wordAtClick = state.lookup.word;
     const stale = () => currentWordRef.current !== wordAtClick;
     putWordStatus(key, status)
       .then(() => {
+        // The saved fact belongs to the word even after the popup moves
+        // (popup-status-backedge spec, decision 3).
+        onStatusApplied(applied);
         // A click since this PUT started moved the popup to another word:
         // the stale verdict must not patch it (the reading page's rule for
         // a navigation's stale trigger response).

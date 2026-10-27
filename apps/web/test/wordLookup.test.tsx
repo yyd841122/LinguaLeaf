@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ReadingView, type Block, type WordClick } from "../src/ReadingView";
@@ -7,7 +7,13 @@ import { speakWord } from "../src/wordLookup";
 
 // How ReadingPage wires the two seams together: the view reports clicks, the
 // popup renders for the current word.
-function LookupHarness({ blocks }: { blocks: Block[] }) {
+function LookupHarness({
+  blocks,
+  onStatusApplied = () => {},
+}: {
+  blocks: Block[];
+  onStatusApplied?: ComponentProps<typeof WordLookupPopup>["onStatusApplied"];
+}) {
   const [click, setClick] = useState<WordClick | null>(null);
   return (
     <>
@@ -16,7 +22,11 @@ function LookupHarness({ blocks }: { blocks: Block[] }) {
         onWordClick={setClick}
       />
       {click ? (
-        <WordLookupPopup click={click} onClose={() => setClick(null)} />
+        <WordLookupPopup
+          click={click}
+          onClose={() => setClick(null)}
+          onStatusApplied={onStatusApplied}
+        />
       ) : null}
     </>
   );
@@ -102,6 +112,7 @@ it("shows IPA, part of speech, translation, and the lemma for a found word", asy
       <WordLookupPopup
         click={{ word: "wrote", point: { x: 100, y: 100 } }}
         onClose={() => {}}
+        onStatusApplied={() => {}}
       />
     );
 
@@ -134,6 +145,7 @@ it("omits the IPA, part-of-speech, and lemma rows when the entry lacks them", as
     <WordLookupPopup
       click={{ word: "iguana", point: { x: 100, y: 100 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   expect(await screen.findByText("n. 鬣蜥")).toBeInTheDocument();
@@ -149,6 +161,7 @@ it("reports a word missing from the dictionary without failing", async () => {
     <WordLookupPopup
       click={{ word: "iguana", point: { x: 100, y: 100 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   expect(await screen.findByText("词库中未收录这个词。")).toBeInTheDocument();
@@ -161,6 +174,7 @@ it("reports a failed lookup as a failure, not as a missing word", async () => {
     <WordLookupPopup
       click={{ word: "iguana", point: { x: 100, y: 100 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   expect(await screen.findByText("查询失败，请稍后再试。")).toBeInTheDocument();
@@ -200,6 +214,7 @@ it("speaks the word through browser speech synthesis from the 发音 button", as
       <WordLookupPopup
         click={{ word: "wrote", point: { x: 100, y: 100 } }}
         onClose={() => {}}
+        onStatusApplied={() => {}}
       />
     );
     await screen.findByText("/roʊt/");
@@ -227,6 +242,7 @@ it("stays silent when the environment has no speech synthesis", () => {
       <WordLookupPopup
         click={{ word: "iguana", point: { x: 100, y: 100 } }}
         onClose={() => {}}
+        onStatusApplied={() => {}}
       />
     );
     expect(() =>
@@ -298,6 +314,7 @@ it("anchors the popup at the click and clamps it inside the viewport", () => {
     <WordLookupPopup
       click={{ word: "x", point: { x: 40, y: 60 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   const popup = screen.getByRole("dialog");
@@ -307,6 +324,7 @@ it("anchors the popup at the click and clamps it inside the viewport", () => {
     <WordLookupPopup
       click={{ word: "x", point: { x: 5000, y: 5000 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   expect(screen.getByRole("dialog")).toHaveStyle({
@@ -353,6 +371,7 @@ it("offers the three 生词本 operations and marks the current state", async ()
     <WordLookupPopup
       click={{ word: "wrote", point: { x: 100, y: 100 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   await screen.findByText("/roʊt/");
@@ -387,6 +406,7 @@ it("sets a state through PUT keyed on the lemma and moves the pressed state", as
     <WordLookupPopup
       click={{ word: "wrote", point: { x: 100, y: 100 } }}
       onClose={() => {}}
+      onStatusApplied={() => {}}
     />
   );
   await screen.findByText("/roʊt/");
@@ -443,6 +463,7 @@ it("shows a notice when the state save fails and clears it when a retry lands", 
       <WordLookupPopup
         click={{ word: "wrote", point: { x: 100, y: 100 } }}
         onClose={() => {}}
+        onStatusApplied={() => {}}
       />
     );
     await screen.findByText("/roʊt/");
@@ -498,6 +519,152 @@ const BOOK_ENTRY = {
   status: "learning",
 };
 
+it("reports a successful PUT once with the captured surface, lemma, and status", async () => {
+  const put = deferredResponse();
+  const onStatusApplied = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") return put.promise;
+      return new Response(
+        JSON.stringify({
+          word: "wrote",
+          lemma: "write",
+          ipa: "roʊt",
+          pos: "v.",
+          translation: "v. 写, 作曲, 写信",
+          status: "learning",
+        })
+      );
+    })
+  );
+  try {
+    render(
+      <WordLookupPopup
+        click={{ word: "wrote", point: { x: 100, y: 100 } }}
+        onClose={() => {}}
+        onStatusApplied={onStatusApplied}
+      />
+    );
+    await screen.findByText("原形 write");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    expect(onStatusApplied).not.toHaveBeenCalled();
+    put.resolve(
+      new Response(JSON.stringify({ lemma: "write", status: "known" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled()
+    );
+    expect(onStatusApplied).toHaveBeenCalledExactlyOnceWith({
+      word: "wrote",
+      lemma: "write",
+      status: "known",
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("reports the original word's saved fact after the popup moves without patching the new word", async () => {
+  const put = deferredResponse();
+  const onStatusApplied = vi.fn();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PUT") return put.promise;
+      const entry = url.endsWith("/lookup/woke") ? WOKE_ENTRY : BOOK_ENTRY;
+      return new Response(JSON.stringify(entry));
+    })
+  );
+  try {
+    render(
+      <LookupHarness blocks={lookupBlocks} onStatusApplied={onStatusApplied} />
+    );
+    fireEvent.click(screen.getByText("woke"));
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    fireEvent.click(screen.getByText("book"));
+    await screen.findByText("/bʊk/");
+    expect(onStatusApplied).not.toHaveBeenCalled();
+    put.resolve(
+      new Response(JSON.stringify({ lemma: "wake", status: "known" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(onStatusApplied).toHaveBeenCalledExactlyOnceWith({
+        word: "woke",
+        lemma: "wake",
+        status: "known",
+      })
+    );
+    expect(screen.getByRole("dialog", { name: "词详情：book" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("keeps failed PUTs inside the popup and reports only the successful retry", async () => {
+  const onStatusApplied = vi.fn();
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce(new Response(JSON.stringify(WOKE_ENTRY)))
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: "boom" }), { status: 500 })
+    )
+    .mockResolvedValueOnce(
+      new Response(JSON.stringify({ lemma: "wake", status: "known" }), {
+        status: 200,
+      })
+    );
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(
+      <WordLookupPopup
+        click={{ word: "woke", point: { x: 100, y: 100 } }}
+        onClose={() => {}}
+        onStatusApplied={onStatusApplied}
+      />
+    );
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    expect(
+      await screen.findByText("状态保存失败，请重试。")
+    ).toBeInTheDocument();
+    expect(onStatusApplied).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    // Recovery also pins the positive path, so omitting the callback cannot
+    // make this failure test pass vacuously.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    await waitFor(() =>
+      expect(onStatusApplied).toHaveBeenCalledExactlyOnceWith({
+        word: "woke",
+        lemma: "wake",
+        status: "known",
+      })
+    );
+    expect(screen.queryByText("状态保存失败，请重试。")).toBeNull();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("disables the state row while a save is in flight", async () => {
   const put = deferredResponse();
   const fetchMock = vi.fn<
@@ -514,6 +681,7 @@ it("disables the state row while a save is in flight", async () => {
       <WordLookupPopup
         click={{ word: "woke", point: { x: 100, y: 100 } }}
         onClose={() => {}}
+        onStatusApplied={() => {}}
       />
     );
     await screen.findByText("/ˈwoʊk/");
@@ -653,6 +821,7 @@ it("closes when the reader scrolls or the viewport resizes", async () => {
     <WordLookupPopup
       click={{ word: "woke", point: { x: 100, y: 100 } }}
       onClose={onClose}
+      onStatusApplied={() => {}}
     />
   );
   await screen.findByText("/ˈwoʊk/");

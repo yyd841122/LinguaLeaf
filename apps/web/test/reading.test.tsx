@@ -8,7 +8,10 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError, fetchJson } from "../src/api";
-import type { ChapterTranslationState } from "../../server/src/wire";
+import type {
+  ChapterPayload,
+  ChapterTranslationState,
+} from "../../server/src/wire";
 import { ReadingPage } from "../src/ReadingPage";
 import { ReadingView, type Block } from "../src/ReadingView";
 import {
@@ -786,6 +789,128 @@ describe("ReadingPage through the component boundary", () => {
     );
     return { calls };
   }
+
+  it("withdraws the tint from all surface and lemma matches immediately after a popup save", async () => {
+    const chapter: ChapterPayload = {
+      position: 2,
+      title: "Chapter Two",
+      level: null,
+      translationStatus: "untranslated",
+      translationPercent: null,
+      translationError: null,
+      translationAvailable: true,
+      blocks: [
+        {
+          position: 1,
+          kind: "sentence",
+          originalText: "Mr. Gupta woke early.",
+          ipaSlots: ["", "ˈɡʊptə", "ˈwoʊk", "ˈɝːli"],
+          ipaText: "ˈɡʊptə ˈwoʊk ˈɝːli",
+          translationText: null,
+          wordStatuses: [null, null, null, "ignored"],
+        },
+        { position: 2, kind: "code", originalText: "wake woke" },
+        {
+          position: 3,
+          kind: "sentence",
+          originalText: "They woke, wake waking Woke.",
+          ipaSlots: null,
+          ipaText: null,
+          translationText: null,
+          wordStatuses: [null, "learning", null, "learning", null],
+        },
+        { position: 4, kind: "image", originalText: "woke" },
+        { position: 5, kind: "raw", originalText: "wake" },
+      ],
+    };
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/api/lookup/woke")) {
+        return new Response(
+          JSON.stringify({
+            word: "woke",
+            lemma: "wake",
+            ipa: "ˈwoʊk",
+            pos: "v.",
+            translation: "v. 醒来, 唤醒",
+            status: "learning",
+          })
+        );
+      }
+      if (url.endsWith("/api/vocab/lemmas/wake") && init?.method === "PUT") {
+        return new Response(JSON.stringify({ lemma: "wake", status: "known" }));
+      }
+      if (url.endsWith("/chapters/2")) {
+        return new Response(JSON.stringify(chapter));
+      }
+      if (url.endsWith("/progress")) {
+        return init?.method === "PUT"
+          ? new Response(null, { status: 204 })
+          : new Response(JSON.stringify({ chapter: 1, block: 2 }));
+      }
+      if (url.endsWith("/api/books/7")) {
+        return new Response(
+          JSON.stringify({
+            id: 7,
+            title: "Probe Book",
+            chapters: [{ position: 2, title: "Two", level: 1 }],
+          })
+        );
+      }
+      return new Response(null, { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      clearAnnotationToggles();
+      window.HTMLElement.prototype.scrollIntoView = vi.fn();
+      const view = renderReadingPage();
+      const reading = await screen.findByRole("region", {
+        name: "Chapter Two",
+      });
+      // jsdom's selector engine matches attribute values case-insensitively
+      // ([data-word="Woke"] resolves to the lowercase "woke" span; real
+      // browsers are case-sensitive), so exact-name lookups go through
+      // getAttribute instead of the selector.
+      const wordByExactName = (name: string) =>
+        [...reading.querySelectorAll("[data-word]")].find(
+          (el) => el.getAttribute("data-word") === name
+        );
+      const matches = [...reading.querySelectorAll("[data-word]")].filter(
+        (el) => {
+          const name = el.getAttribute("data-word");
+          return name === "woke" || name === "wake";
+        }
+      );
+      expect(matches).toHaveLength(3);
+      for (const word of matches) {
+        expect(word).not.toHaveClass("word-settled");
+      }
+      fireEvent.click(matches[0]!);
+      await screen.findByText("原形 wake");
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+      });
+      for (const word of matches) {
+        expect(word).toHaveClass("word-settled");
+      }
+      // Exact strings only (spec decision 2): other inflections and case
+      // variants keep their existing affordance, as do unrelated words.
+      for (const word of ["waking", "Woke", "Gupta"]) {
+        expect(wordByExactName(word)).not.toHaveClass("word-settled");
+      }
+      expect(reading.querySelector('[data-word="early"]')).toHaveClass(
+        "word-settled"
+      );
+      expect(
+        fetchMock.mock.calls.filter(([url]) =>
+          String(url).endsWith("/chapters/2")
+        )
+      ).toHaveLength(1);
+      view.unmount();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("jumps to the saved block of this chapter on open", async () => {
     const jump = vi.fn();

@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
+import { segmentOriginal } from "@lingualeaf/reading-model";
 import { fetchJson } from "./api";
 import { useChapterTranslation } from "./chapterTranslation";
-import type { BookToc, ChapterPayload } from "../../server/src/wire";
+import type {
+  BookToc,
+  ChapterPayload,
+  WordStatus,
+} from "../../server/src/wire";
 import { useIpaSize } from "./IpaSizeControl";
 import {
   ReadingSettings,
@@ -97,6 +102,39 @@ export function ReadingPage() {
       setContent((current) => (current ? { ...current, ...state } : current)),
     onTick: (chapterData) => setContent(chapterData),
   });
+
+  const handleStatusApplied = (applied: {
+    word: string;
+    lemma: string | null;
+    status: WordStatus;
+  }) => {
+    setContent((current) =>
+      current
+        ? {
+            ...current,
+            blocks: current.blocks.map((block) => {
+              if (block.kind !== "sentence") return block;
+              const words = segmentOriginal(
+                block.originalText,
+                block.ipaSlots
+              ).segments.filter((segment) => segment.kind === "word");
+              return {
+                ...block,
+                // Exact surface and lemma strings only: the client has no
+                // lemmatizer (popup-status-backedge spec, decision 2).
+                wordStatuses: block.wordStatuses.map((status, index) => {
+                  const word = words[index]?.word;
+                  return word === applied.word ||
+                    (applied.lemma !== null && word === applied.lemma)
+                    ? applied.status
+                    : status;
+                }),
+              };
+            }),
+          }
+        : current
+    );
+  };
 
   if (error) {
     return (
@@ -239,7 +277,11 @@ export function ReadingPage() {
         onWordClick={setLookup}
       />
       {lookup ? (
-        <WordLookupPopup click={lookup} onClose={() => setLookup(null)} />
+        <WordLookupPopup
+          click={lookup}
+          onClose={() => setLookup(null)}
+          onStatusApplied={handleStatusApplied}
+        />
       ) : null}
       {saveFailed ? (
         <p role="status" className="save-warning">
