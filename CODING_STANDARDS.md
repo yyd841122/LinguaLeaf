@@ -111,6 +111,25 @@ skips.
 At review: a component test mixing waitFor with fake timers, or clicking
 submit on a required form, walks a path that already failed once.
 
+## Exact-name attribute assertions go through getAttribute
+
+jsdom's selector engine matches attribute values case-insensitively —
+`querySelector('[data-word="Woke"]')` resolves to the lowercase "woke" span
+— while real browsers are case-sensitive, so a case-variant fixture turns a
+selector query into a wrong-element result that never reproduces outside
+jsdom. `apps/web/test/domQueries.ts` exports `dataWordEl(scope, name)` /
+`dataWordEls(scope)`: selectors narrow the element set, `getAttribute`
+compares the exact value.
+
+Why: the popup-status-backedge page test asserted "Woke keeps its
+affordance" through a selector, received the settled lowercase "woke" span,
+and took three debug round-trips to localize — a DOM dump placed outside the
+assertion loop showed clean elements and deepened the confusion.
+
+At review: a test querying `[data-…]` with a literal value to assert on one
+named element walks a shape that already failed once; the exact-name form is
+the helper.
+
 ## Per-entity async UI state keys by entity
 
 Async UI state tracking work on a list of entities — in-flight markers,

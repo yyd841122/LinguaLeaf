@@ -36,6 +36,7 @@ import {
   readStoredTranslationSize,
 } from "../src/ReadingSettings";
 import { fetchReadingProgress } from "../src/readingProgress";
+import { dataWordEl, dataWordEls } from "./domQueries";
 
 const blocks: Block[] = [
   {
@@ -867,20 +868,10 @@ describe("ReadingPage through the component boundary", () => {
       const reading = await screen.findByRole("region", {
         name: "Chapter Two",
       });
-      // jsdom's selector engine matches attribute values case-insensitively
-      // ([data-word="Woke"] resolves to the lowercase "woke" span; real
-      // browsers are case-sensitive), so exact-name lookups go through
-      // getAttribute instead of the selector.
-      const wordByExactName = (name: string) =>
-        [...reading.querySelectorAll("[data-word]")].find(
-          (el) => el.getAttribute("data-word") === name
-        );
-      const matches = [...reading.querySelectorAll("[data-word]")].filter(
-        (el) => {
-          const name = el.getAttribute("data-word");
-          return name === "woke" || name === "wake";
-        }
-      );
+      const matches = dataWordEls(reading).filter((el) => {
+        const name = el.getAttribute("data-word");
+        return name === "woke" || name === "wake";
+      });
       expect(matches).toHaveLength(3);
       for (const word of matches) {
         expect(word).not.toHaveClass("word-settled");
@@ -896,11 +887,9 @@ describe("ReadingPage through the component boundary", () => {
       // Exact strings only (spec decision 2): other inflections and case
       // variants keep their existing affordance, as do unrelated words.
       for (const word of ["waking", "Woke", "Gupta"]) {
-        expect(wordByExactName(word)).not.toHaveClass("word-settled");
+        expect(dataWordEl(reading, word)).not.toHaveClass("word-settled");
       }
-      expect(reading.querySelector('[data-word="early"]')).toHaveClass(
-        "word-settled"
-      );
+      expect(dataWordEl(reading, "early")).toHaveClass("word-settled");
       expect(
         fetchMock.mock.calls.filter(([url]) =>
           String(url).endsWith("/chapters/2")
