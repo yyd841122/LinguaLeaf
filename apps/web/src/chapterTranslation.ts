@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type {
   ChapterPayload,
   ChapterTranslationState,
 } from "../../server/src/wire";
 import { fetchJson } from "./api";
 import { useTaskFollower } from "./taskFollower";
+import { useOwner } from "./useOwner";
 
 // The chapter translation trigger state machine (ADR-0004): owns the POST,
 // the stale-response discard after navigation, the startFailed lifecycle,
@@ -48,8 +49,7 @@ export function useChapterTranslation(options: {
   const [startFailed, setStartFailed] = useState(false);
   // The route as of the latest render: a trigger's 202 that resolves after
   // a navigation is stale and must not patch the new chapter's state.
-  const currentRouteRef = useRef({ bookId, chapterNumber });
-  currentRouteRef.current = { bookId, chapterNumber };
+  const owner = useOwner(bookId, chapterNumber);
 
   useEffect(() => {
     setStartFailed(false);
@@ -63,15 +63,10 @@ export function useChapterTranslation(options: {
   // POST having returned.
   const start = () => {
     setStartFailed(false);
-    const route = { bookId, chapterNumber };
-    // A navigation since the click makes the response stale: the page is
-    // another chapter's now, and its own state must not be patched.
-    const stale = () =>
-      currentRouteRef.current.bookId !== route.bookId ||
-      currentRouteRef.current.chapterNumber !== route.chapterNumber;
+    const ticket = owner.mark();
     translateChapter(bookId, chapterNumber)
       .then((state) => {
-        if (stale()) return;
+        if (ticket.stale()) return;
         // A landed trigger is the start-failure's recovery: in the
         // double-click race the losing 409's notice must not outlive the
         // translating state this response patches in.
@@ -81,7 +76,7 @@ export function useChapterTranslation(options: {
       .catch(() => {
         // The endpoint's 409s (already translating / no service) and every
         // other failure land here: a catchable notice, not a white screen.
-        if (stale()) return;
+        if (ticket.stale()) return;
         setStartFailed(true);
       });
   };

@@ -9,6 +9,7 @@ import {
   type WordLookupResponse,
 } from "./wordLookup";
 import type { ClickPoint, WordClick } from "./ReadingView";
+import { useOwner } from "./useOwner";
 
 // The 生词本 state the popup manages (ADR-0005): the three buttons are the
 // whole operation set — any state from any other state, no hidden matrix.
@@ -64,10 +65,7 @@ export function WordLookupPopup({
   // the same rule — both reset when the word changes.
   const [saveFailed, setSaveFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  // The word this popup currently shows, readable from async callbacks
-  // (the render-time adjust idiom — the closures below capture stale words).
-  const currentWordRef = useRef(word);
-  currentWordRef.current = word;
+  const owner = useOwner(word);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -103,8 +101,7 @@ export function WordLookupPopup({
       lemma: state.lookup.lemma,
       status,
     };
-    const wordAtClick = state.lookup.word;
-    const stale = () => currentWordRef.current !== wordAtClick;
+    const ticket = owner.mark();
     putWordStatus(key, status)
       .then(() => {
         // The saved fact belongs to the word even after the popup moves
@@ -113,7 +110,7 @@ export function WordLookupPopup({
         // A click since this PUT started moved the popup to another word:
         // the stale verdict must not patch it (the reading page's rule for
         // a navigation's stale trigger response).
-        if (stale()) return;
+        if (ticket.stale()) return;
         setState((current) =>
           current.phase === "found"
             ? { ...current, lookup: { ...current.lookup, status } }
@@ -123,7 +120,7 @@ export function WordLookupPopup({
       .catch(() => {
         // Nor does a failed attempt's notice follow the reader to the
         // next word.
-        if (!stale()) setSaveFailed(true);
+        if (!ticket.stale()) setSaveFailed(true);
       })
       .finally(() => setSaving(false));
   };

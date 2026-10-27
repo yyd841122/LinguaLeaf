@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useOwner } from "./useOwner";
 
 // The one follower for server-side background tasks (spec:
 // .scratch/task-follower/spec.md): while `active`, re-asks `fetchTick` on
@@ -30,11 +31,7 @@ export function useTaskFollower<T>(options: {
 }): TaskFollower {
   const { active, fetchTick, onTick, intervalMs } = options;
   const [outage, setOutage] = useState(false);
-  const versionRef = useRef(0);
-
-  const invalidate = useCallback(() => {
-    versionRef.current += 1;
-  }, []);
+  const owner = useOwner();
 
   // The interval re-arms only on active/intervalMs; the callbacks ride
   // refs so a page re-render (new inline closures) never resets the
@@ -51,11 +48,11 @@ export function useTaskFollower<T>(options: {
     setOutage(false);
     let cancelled = false;
     const interval = window.setInterval(() => {
-      const versionAtRequest = versionRef.current;
+      const ticket = owner.mark();
       fetchTickRef
         .current()
         .then((data) => {
-          if (cancelled || versionAtRequest !== versionRef.current) return;
+          if (cancelled || ticket.stale()) return;
           setOutage(false);
           onTickRef.current(data);
         })
@@ -69,7 +66,7 @@ export function useTaskFollower<T>(options: {
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [active, intervalMs]);
+  }, [active, intervalMs, owner]);
 
-  return { outage, invalidate };
+  return { outage, invalidate: owner.invalidate };
 }
