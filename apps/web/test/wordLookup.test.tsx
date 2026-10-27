@@ -753,6 +753,71 @@ it("does not patch a save's verdict onto a word the popup moved to", async () =>
   }
 });
 
+it("keeps the new word's row disabled when the previous word's save settles first", async () => {
+  const wokePut = deferredResponse();
+  const bookPut = deferredResponse();
+  const onStatusApplied = vi.fn();
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<Response>
+  >((url, init) => {
+    if (init?.method === "PUT") {
+      return String(url).endsWith("/lemmas/wake")
+        ? wokePut.promise
+        : bookPut.promise;
+    }
+    const entry = String(url).endsWith("/lookup/woke")
+      ? WOKE_ENTRY
+      : BOOK_ENTRY;
+    return Promise.resolve(
+      new Response(JSON.stringify(entry), { status: 200 })
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(
+      <LookupHarness blocks={lookupBlocks} onStatusApplied={onStatusApplied} />
+    );
+    fireEvent.click(screen.getByText("woke"));
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // The reader saves book before woke's PUT lands: two writes in flight
+    // at once, each keyed by the lemma its PUT addresses.
+    fireEvent.click(screen.getByText("book"));
+    await screen.findByText("/bʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "学习中" }));
+    // woke settles first; its finally may only retire woke's own entry.
+    wokePut.resolve(
+      new Response(JSON.stringify({ lemma: "wake", status: "known" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(onStatusApplied).toHaveBeenCalledExactlyOnceWith({
+        word: "woke",
+        lemma: "wake",
+        status: "known",
+      })
+    );
+    // woke's settle must not re-enable book's row mid-write.
+    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "已掌握" })).toBeDisabled();
+    bookPut.resolve(
+      new Response(JSON.stringify({ lemma: "book", status: "learning" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "学习中" })).toBeEnabled()
+    );
+    expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("leaves a failed save's notice behind when the reader moves to another word", async () => {
   const fetchMock = vi
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()

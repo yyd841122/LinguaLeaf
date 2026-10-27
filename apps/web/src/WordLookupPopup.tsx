@@ -30,6 +30,9 @@ type LookupState =
   | { phase: "missing" }
   | { phase: "error" };
 
+// States key on the lemma — the same key the lookup wrote server-side.
+const statusKey = (lookup: WordLookupResponse) => lookup.lemma ?? lookup.word;
+
 // The popup's box constants and the clamp math are the reading model's
 // (packages/reading-model, popup-anchor); the .lookup-* stylesheet in
 // style.css mirrors the box by hand. The anchoring clamps the popup inside
@@ -61,10 +64,15 @@ export function WordLookupPopup({
   const [state, setState] = useState<LookupState>({ phase: "loading" });
   // A save failure belongs to the word it was attempted for: clicking
   // another word restarts the popup's story, and the old notice must not
-  // outlive it (CODING_STANDARDS, credibility). The in-flight fact follows
-  // the same rule — both reset when the word changes.
+  // outlive it (CODING_STANDARDS, credibility).
   const [saveFailed, setSaveFailed] = useState(false);
-  const [saving, setSaving] = useState(false);
+  // In-flight saves follow their own PUT, not the word change: markers key
+  // by statusKey and live exactly as long as that PUT, so an old save
+  // settling cannot erase the new word's marker mid-write
+  // (CODING_STANDARDS, per-entity async UI state keys by entity). A word
+  // revisited while its write is still in flight shows its row disabled
+  // until the write lands — the owner token's key-comparison revival rule.
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const owner = useOwner(word);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
@@ -72,7 +80,6 @@ export function WordLookupPopup({
     let cancelled = false;
     setState({ phase: "loading" });
     setSaveFailed(false);
-    setSaving(false);
     fetchWordLookup(word)
       .then((lookup) => {
         if (cancelled) return;
@@ -91,11 +98,11 @@ export function WordLookupPopup({
   // beside a notice — the last rendered state must not outlive its
   // credibility (CODING_STANDARDS), and the next attempt clears it.
   const applyStatus = (status: WordStatus) => {
-    if (state.phase !== "found" || saving) return;
+    if (state.phase !== "found") return;
+    const key = statusKey(state.lookup);
+    if (savingKeys.has(key)) return;
     setSaveFailed(false);
-    setSaving(true);
-    // States key on the lemma — the same key the lookup wrote server-side.
-    const key = state.lookup.lemma ?? state.lookup.word;
+    setSavingKeys((keys) => new Set(keys).add(key));
     const applied = {
       word: state.lookup.word,
       lemma: state.lookup.lemma,
@@ -122,7 +129,13 @@ export function WordLookupPopup({
         // next word.
         if (!ticket.stale()) setSaveFailed(true);
       })
-      .finally(() => setSaving(false));
+      .finally(() =>
+        setSavingKeys((keys) => {
+          const next = new Set(keys);
+          next.delete(key);
+          return next;
+        })
+      );
   };
 
   // Dismiss on Escape, on scroll/resize (the anchor goes stale the moment
@@ -215,7 +228,7 @@ export function WordLookupPopup({
                 type="button"
                 className="lookup-vocab-option"
                 aria-pressed={state.lookup.status === status}
-                disabled={saving}
+                disabled={savingKeys.has(statusKey(state.lookup))}
                 onClick={() => applyStatus(status)}
               >
                 {WORD_STATUS_LABELS[status]}
