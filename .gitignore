@@ -57,3 +57,5 @@ dist/
 # Baked offline dictionary asset — built locally from the server's
 # .data/dictionary.sqlite by apps/extension/scripts/bake-dictionary.ts.
 apps/extension/public/dictionary.json
+# PDF spike verification build (ticket 01)
+dist-spike/

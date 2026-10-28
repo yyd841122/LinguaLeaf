@@ -22,6 +22,7 @@ export default tseslint.config(
     ignores: [
       ".output/**",
       "**/dist/**",
+      "**/dist-spike/**",
       "apps/server/src/export/file-script.generated.ts",
       "apps/server/src/export/style.generated.ts",
       ".data/**",

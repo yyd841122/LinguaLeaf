@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 依据：spec（.scratch/extension-reader/spec.md）PDF 决策；判据三轴=遮挡/对齐/开关。
 

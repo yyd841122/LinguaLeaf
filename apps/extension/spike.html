@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>PDF 词级坐标验证页（spike）</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 1rem;
+      }
+      .controls {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 0.75rem;
+      }
+      .stage {
+        position: relative;
+        display: inline-block;
+      }
+      canvas {
+        display: block;
+      }
+      /* Word hit targets sit exactly on their text; IPA hangs under the
+         baseline band, one div per word, positioned from the pdf.js
+         transform. The 判据 reads these boxes. */
+      .spike-word {
+        position: absolute;
+      }
+      .spike-ipa {
+        position: absolute;
+        color: #6a4fa3;
+        font-size: 0.62em;
+        line-height: 1;
+        white-space: nowrap;
+        transform: translateX(-50%);
+        /* Tight leading (16pt/11pt = 1.45) gives the IPA no free band of
+           its own — the transcription crosses the next line's ascender
+           zone. The translucent chip is the mitigation under test: body
+           text stays legible through it (furigana-reader practice). */
+        background: rgba(255, 255, 255, 0.85);
+        border-radius: 2px;
+        padding: 0 1px;
+      }
+      body.hide-ipa .spike-ipa {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>PDF 词级坐标验证页</h1>
+    <p>
+      回答一个问题：pdf.js 渲染的 PDF 上，词级音标行叠加是否可行（判据：
+      不遮挡正文、词对齐正确、可开关；样本含多栏、断字、缩放）。
+    </p>
+    <div class="controls">
+      <input type="file" accept=".pdf" aria-label="选择 PDF" />
+      <button type="button" data-zoom="0.75">75%</button>
+      <button type="button" data-zoom="1">100%</button>
+      <button type="button" data-zoom="1.5">150%</button>
+      <label> <input type="checkbox" id="show-ipa" checked /> 音标行 </label>
+    </div>
+    <div class="stage" id="stage"><canvas id="canvas"></canvas></div>
+    <script type="module" src="/src/spike/main.ts"></script>
+  </body>
+</html>
