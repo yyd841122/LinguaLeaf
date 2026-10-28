@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LinguaLeaf",
   "version": "0.1.0",
-  "description": "打开 EPUB 即得音标标注的扩展阅读页——无服务、离线可用。",
+  "description": "打开 EPUB 与 PDF 即得音标标注的扩展阅读页——无服务、离线可用。",
   "action": {
     "default_title": "打开 LinguaLeaf 阅读页"
   },
@@ -10,5 +10,5 @@
     "service_worker": "service-worker.js",
     "type": "module"
   },
-  "permissions": ["contextMenus"]
+  "permissions": ["contextMenus", "storage", "tabs"]
 }

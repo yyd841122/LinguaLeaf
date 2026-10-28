@@ -8,6 +8,7 @@ import { Util } from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import type { IpaLookup } from "@lingualeaf/import-core";
+import { WORD_PATTERN } from "@lingualeaf/reading-model";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -82,9 +83,33 @@ export async function sampleTextLengths(
 export type PdfRender = { wordCount: number; ipaCount: number };
 
 // Render one page onto the canvas and lay the word/IPA overlay over it.
-// renderToken drops stale renders (zoom/page flips outrun pdf.js); the
-// word spans carry data-word so the popup seam (ticket 04) works verbatim.
-export async function renderPdfPage(
+// Renders serialize on one promise chain — pdf.js rejects a render()
+// while the same canvas has one running, and a page flip or zoom click
+// can easily outrun the previous render; the token then drops stale
+// applications. Word spans carry data-word so the popup seam (ticket 04)
+// works verbatim.
+let renderQueue = Promise.resolve();
+
+export function renderPdfPage(
+  canvas: HTMLCanvasElement,
+  overlay: HTMLElement,
+  doc: PDFDocumentProxy,
+  pageNumber: number,
+  scale: number,
+  lookup: IpaLookup,
+  showIpa: boolean
+): Promise<PdfRender> {
+  const run = renderQueue.then(() =>
+    renderPdfPageStep(canvas, overlay, doc, pageNumber, scale, lookup, showIpa)
+  );
+  renderQueue = run.then(
+    () => undefined,
+    () => undefined
+  );
+  return run;
+}
+
+async function renderPdfPageStep(
   canvas: HTMLCanvasElement,
   overlay: HTMLElement,
   doc: PDFDocumentProxy,
@@ -118,15 +143,15 @@ export async function renderPdfPage(
     const tx = Util.transform(viewport.transform, text.transform);
     const fontPx = Math.hypot(tx[2], tx[3]);
     const charWidth = (text.width * scale) / text.str.length;
-    let offset = 0;
-    for (const piece of text.str.split(/(\s+)/)) {
-      if (piece.trim() === "") {
-        offset += piece.length * charWidth;
-        continue;
-      }
+    // Words are the reading model's matches (WORD_PATTERN), not
+    // whitespace runs: punctuation-joined fragments ("hello—world") stay
+    // two lookup targets exactly as the EPUB pipeline tokenizes them.
+    for (const match of text.str.matchAll(WORD_PATTERN)) {
+      const piece = match[0];
+      const left = tx[4] + match.index * charWidth;
       const word = document.createElement("span");
       word.className = "pdf-word";
-      word.style.left = `${tx[4] + offset}px`;
+      word.style.left = `${left}px`;
       word.style.top = `${tx[5] - fontPx}px`;
       word.style.fontSize = `${fontPx}px`;
       word.dataset.pdfWord = piece;
@@ -139,7 +164,7 @@ export async function renderPdfPage(
         const ipaEl = document.createElement("span");
         ipaEl.className = "pdf-ipa";
         ipaEl.dataset.ipa = ipa ?? "";
-        ipaEl.style.left = "50%";
+        ipaEl.style.left = `${(piece.length * charWidth) / 2}px`;
         ipaEl.style.top = `${fontPx + 2}px`;
         ipaEl.textContent = ipa ?? "";
         if (ipa) ipaCount += 1;
@@ -147,7 +172,6 @@ export async function renderPdfPage(
       }
       overlay.appendChild(word);
       wordCount += 1;
-      offset += piece.length * charWidth;
     }
   }
   page.cleanup();

@@ -10,6 +10,7 @@ import type { ReactNode } from "react";
 import {
   IMPORT_ERROR_COPY,
   importBookFromFile,
+  readAsArrayBuffer,
   type ExtBlock,
   type ExtBook,
 } from "./import-book";
@@ -250,7 +251,9 @@ export function ReaderPage({
     try {
       const offline: OfflineDictionary = await dictionary;
       if (/\.pdf$/i.test(file.name)) {
-        const bytes = await file.arrayBuffer();
+        // The shared read shape (import-book's readAsArrayBuffer): the one
+        // FileReader form both jsdom and Edge implement.
+        const bytes = await readAsArrayBuffer(file);
         let session: PdfSession;
         try {
           session = await openPdf(bytes, file.name);
@@ -312,9 +315,13 @@ export function ReaderPage({
 
   // 重开扩展回到原处: a recents click opens the stored book at its saved
   // position (GLOSSARY: 扩展阅读页 remembers, the storage seam persists).
+  // The open is async; only the latest click's answer may land — a slow
+  // A must not replace a B the reader already chose.
+  const reopenSeq = useRef(0);
   const reopenDocument = async (entry: LibraryEntry) => {
+    const seq = ++reopenSeq.current;
     const book = await library.openDocument(entry.id);
-    if (!book) return;
+    if (!book || seq !== reopenSeq.current) return;
     setWordStates(new Map());
     restoreRef.current = entry.progress;
     setState({
@@ -657,7 +664,7 @@ export function ReaderPage({
         <input
           type="file"
           accept=".epub,.pdf"
-          aria-label="选择 EPUB 文件"
+          aria-label="选择 EPUB 或 PDF 文件"
           onChange={onPick}
         />
       </label>

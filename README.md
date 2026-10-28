@@ -61,6 +61,9 @@ npm run lint
 
 - `apps/server`：Express、better-sqlite3；`test/api.test.ts` 用 Supertest 从 HTTP API 验证行为，每个测试使用独立的内存 SQLite。
 - `apps/web`：React、Vite；`test/reading.test.tsx` 用 Testing Library + jsdom 验证阅读界面组件的可见输出。
-- `npm run test:watch`：监听两条测试缝；`npm test -- --project api` 或 `--project reading`：单独运行一条测试缝。
+- `apps/extension`：浏览器扩展（MV3，Edge load-unpacked）——扩展阅读页，本地标注（ADR-0006）；加载与边界见 [apps/extension/README.md](apps/extension/README.md)。
+- `packages/reading-model`：两个阅读前端共享的模型与规则（分词、音标配对、弹卡定位、发音）。
+- `packages/import-core`：导入链的浏览器安全半（EPUB 解包/HTML 抽取/分句/音标槽/拒绝词表），服务端与扩展共用。
+- `npm run test:watch`：监听各测试缝；`npm test -- --project api` 等按名单独运行。
 
-后续测试延续这两条缝，覆盖外部可观察的输入和输出。
+后续测试延续这些缝，覆盖外部可观察的输入和输出。

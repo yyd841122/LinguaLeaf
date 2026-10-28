@@ -178,7 +178,7 @@ export function WordLookupPopup({
         {state.phase === "found" &&
         state.lookup.lemma &&
         state.lookup.lemma !== state.lookup.word ? (
-          <span className="lookup-lemma">原形 {state.lookup.lemma}</span>
+          <span className="lookup-lemma">词元 {state.lookup.lemma}</span>
         ) : null}
         <span className="lookup-head-actions">
           <button
@@ -218,7 +218,7 @@ export function WordLookupPopup({
               surface form's own. */}
           {state.lookup.ipa && state.lookup.ipaSource === "lemma" ? (
             <p className="lookup-status">
-              音标为原形 {state.lookup.lemma} 的读音。
+              音标为词元 {state.lookup.lemma} 的读音。
             </p>
           ) : null}
           {state.lookup.pos ? (

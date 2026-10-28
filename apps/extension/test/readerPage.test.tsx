@@ -237,6 +237,7 @@ import {
   memoryBackend,
   type StateBackend,
   type VocabularyStore,
+  type VocabState,
 } from "../src/store/vocabulary-store";
 
 const POPUP_DICT: BakedDictionary = {
@@ -288,6 +289,32 @@ export function deferredBackend() {
       byKey.push({ resolve });
       pending.set(key, byKey);
       return promise.then(() => memory.put(key, status));
+    },
+    // Enrollment defers only when it would WRITE: a lookup whose state
+    // already exists answers immediately (the real backend's read is
+    // instant), so a re-visited word's found phase does not hang on the
+    // deferred gate while an unrelated put of its key is in flight.
+    enroll(key) {
+      const existing = memory.map.get(key) ?? null;
+      if (existing) return Promise.resolve(existing);
+      let resolve!: (state: VocabState) => void;
+      const promise = new Promise<VocabState>((r) => {
+        resolve = r;
+      });
+      const byKey = pending.get(key) ?? [];
+      byKey.push({
+        resolve: () => {
+          const existing = memory.map.get(key) ?? null;
+          if (existing) {
+            resolve(existing);
+            return;
+          }
+          void memory.put(key, "learning");
+          resolve("learning");
+        },
+      });
+      pending.set(key, byKey);
+      return promise;
     },
   };
   const tick = () => Promise.resolve();
@@ -355,10 +382,10 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
 
     // Five elements: head word, lemma, IPA, pos, translation — plus the
     // disclosure line (runs reads via run; 不冒充词形读音).
-    expect(await screen.findByText("原形 run")).toBeInTheDocument();
+    expect(await screen.findByText("词元 run")).toBeInTheDocument();
     expect(screen.getByText("/rʌn/")).toBeInTheDocument();
     expect(screen.getByText("v. 跑")).toBeInTheDocument();
-    expect(screen.getByText("音标为原形 run 的读音。")).toBeInTheDocument();
+    expect(screen.getByText("音标为词元 run 的读音。")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "发音" })).toBeInTheDocument();
     // 查词即状态: the first lookup enrolled run as Learning in the same
     // call, and the row shows it pressed.
@@ -384,10 +411,9 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
 
     await openPopupFor("Woke", harness);
-    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
-      "aria-pressed",
-      "true"
-    );
+    expect(
+      await screen.findByRole("button", { name: "已掌握", pressed: true })
+    ).toBeInTheDocument();
     expect(harness.memory.map.get("woke")).toBe("known");
 
     await openPopupFor("far", harness);
@@ -506,8 +532,15 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     await screen.findByRole("button", { name: "已掌握" });
     fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
     // run is the same state key (runs → run): its row shares the entry.
-    await openPopupFor("run", harness);
-    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    // Direct click, no settle — the known-put from runs must still be in
+    // flight here, and run's own lookup answers instantly (its state
+    // already exists, nothing to defer).
+    fireEvent.click(wordEl("run")!);
+    await screen.findByRole("dialog", { name: "词详情：run" });
+    await screen.findByRole("button", { name: "学习中" });
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled()
+    );
     await harness.settleAll();
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "学习中" })).toBeEnabled()

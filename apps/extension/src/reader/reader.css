@@ -122,6 +122,40 @@ body {
 .reader-recent:hover {
   text-decoration: underline;
 }
+/* The PDF in-place overlay (ticket 06, geometry per ticket 01): word hit
+   targets sit exactly on their text over the canvas; each IPA hangs below
+   its word's baseline band in the translucent chip the spike proved —
+   tight leading gives the transcription no free band of its own. */
+.pdf-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.pdf-stage canvas {
+  display: block;
+}
+.pdf-word {
+  position: absolute;
+  cursor: pointer;
+  border-radius: 0.1rem;
+}
+.pdf-word:hover {
+  background: #ecefe6;
+}
+.pdf-ipa {
+  position: absolute;
+  color: #6a4fa3;
+  font-size: 0.62em;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  padding: 0 1px;
+  pointer-events: none;
+  user-select: none;
+}
 .reader-toc ol {
   list-style: none;
   margin: 0.75rem 0;

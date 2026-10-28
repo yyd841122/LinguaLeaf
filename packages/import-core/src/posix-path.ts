@@ -16,6 +16,10 @@ export function dirname(path: string): string {
 export function join(...segments: string[]): string {
   const joined = segments.filter((segment) => segment !== "").join("/");
   const absolute = joined.startsWith("/");
+  // node keeps a trailing slash through normalization ("a/b/" stays
+  // "a/b/") — an EPUB href ending in "/" must keep failing the archive
+  // lookup exactly as it did under node:path (review 2026-10-28).
+  const trailing = joined.endsWith("/") && joined.trim() !== "/";
   const out: string[] = [];
   for (const segment of joined.split("/")) {
     if (segment === "" || segment === ".") continue;
@@ -31,6 +35,8 @@ export function join(...segments: string[]): string {
     }
     out.push(segment);
   }
-  const joined2 = (absolute ? "/" : "") + out.join("/");
-  return joined2 === "" ? "." : joined2;
+  let result = (absolute ? "/" : "") + out.join("/");
+  if (result === "") return ".";
+  if (trailing && result !== "/" && result !== ".") result += "/";
+  return result;
 }

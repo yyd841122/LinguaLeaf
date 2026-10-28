@@ -4,7 +4,7 @@
 
 **Blocked by:** 04、05、06
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] 从零加载到断网复验的完整验收路径走通，记录进本票 ## Comments
 - [ ] PDF 路径按 01/06 判定走通

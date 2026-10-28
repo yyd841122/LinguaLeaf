@@ -44,7 +44,7 @@ export const IMPORT_ERROR_COPY: Record<ImportErrorCode, string> = {
 // FileReader, not File.arrayBuffer(): the read shape every jsdom version
 // implements, so the page's tests drive real File objects without
 // shimming the platform.
-function readAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+export function readAsArrayBuffer(file: File): Promise<ArrayBuffer> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as ArrayBuffer);

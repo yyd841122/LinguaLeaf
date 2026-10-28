@@ -16,11 +16,16 @@ export type LookupWithState = OfflineLookup & { status: VocabState };
 // and chrome.storage.local (the real one). Everything above this seam —
 // the 查词即状态 flow, the popup's operations — is shared code below, so
 // the whole behavior surface is tested against the memory backend and the
-// chrome one stays thin (types + atomic reads/writes).
+// chrome one stays thin (types + serialized atomic reads/writes).
 export interface StateBackend {
   get(key: string): Promise<VocabState | null>;
   getMany(keys: string[]): Promise<Map<string, VocabState>>;
   put(key: string, status: VocabState): Promise<void>;
+  // 查词即状态's write: set Learning only when the key has no state, and
+  // return the settled state. Atomic with respect to every other write —
+  // a delayed lookup can never overwrite an explicit status that landed
+  // while the lookup was reading.
+  enroll(key: string): Promise<VocabState>;
 }
 
 // The extension's one new storage seam (spec): the 生词本 semantics the
@@ -48,10 +53,8 @@ async function lookupFlow(
   const entry = dictionary.lookup(rawWord);
   if (!entry) return null;
   const key = dictionary.stateKey(rawWord);
-  const existing = await backend.get(key);
-  if (existing) return { ...entry, status: existing };
-  await backend.put(key, "learning");
-  return { ...entry, status: "learning" };
+  const status = await backend.enroll(key);
+  return { ...entry, status };
 }
 
 export function createVocabularyStore(
@@ -88,20 +91,39 @@ export function memoryBackend(): StateBackend & {
     async put(key, status) {
       map.set(key, status);
     },
+    async enroll(key) {
+      // Synchronous map: read and set are one step, the serialize-by-
+      // construction twin of the chrome backend's write queue.
+      const existing = map.get(key) ?? null;
+      if (existing) return existing;
+      map.set(key, "learning");
+      return "learning";
+    },
   };
 }
 
 // The real backend: one namespace record in chrome.storage.local. The
 // reader page is single-tab (the service worker focuses the existing
-// one), so read-modify-write races do not arise in practice; each
-// operation is still an atomic get-then-set. Deliberately thin — the
-// behavior surface above is what tests cover.
+// one), but two async writes of the SAME page can still interleave
+// (popup saves for two words overlap freely), and chrome.storage is
+// read-modify-write over a whole record — so every write runs on one
+// promise chain. The chain is the mutex; nothing else may write.
 const STORAGE_NAMESPACE = "vocabulary";
 
 export function chromeBackend(): StateBackend {
   const readAll = async (): Promise<Record<string, VocabState>> => {
     const bag = await chrome.storage.local.get(STORAGE_NAMESPACE);
     return (bag[STORAGE_NAMESPACE] as Record<string, VocabState>) ?? {};
+  };
+  let writeQueue = Promise.resolve();
+  // One serialized read-modify-write step.
+  const enqueue = <T>(step: () => Promise<T>): Promise<T> => {
+    const run = writeQueue.then(step);
+    writeQueue = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
   };
   return {
     async get(key) {
@@ -115,10 +137,22 @@ export function chromeBackend(): StateBackend {
       }
       return found;
     },
-    async put(key, status) {
-      const all = await readAll();
-      all[key] = status;
-      await chrome.storage.local.set({ [STORAGE_NAMESPACE]: all });
+    put(key, status) {
+      return enqueue(async () => {
+        const all = await readAll();
+        all[key] = status;
+        await chrome.storage.local.set({ [STORAGE_NAMESPACE]: all });
+      });
+    },
+    enroll(key) {
+      return enqueue(async () => {
+        const all = await readAll();
+        const existing = all[key] ?? null;
+        if (existing) return existing;
+        all[key] = "learning";
+        await chrome.storage.local.set({ [STORAGE_NAMESPACE]: all });
+        return "learning";
+      });
     },
   };
 }
