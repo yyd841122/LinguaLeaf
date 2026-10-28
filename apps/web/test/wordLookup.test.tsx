@@ -818,6 +818,137 @@ it("keeps the new word's row disabled when the previous word's save settles firs
   }
 });
 
+it("keeps a revisited word's row disabled until its in-flight write lands", async () => {
+  const wokePut = deferredResponse();
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<Response>
+  >((url, init) => {
+    if (init?.method === "PUT") return wokePut.promise;
+    const entry = String(url).endsWith("/lookup/woke")
+      ? WOKE_ENTRY
+      : BOOK_ENTRY;
+    return Promise.resolve(
+      new Response(JSON.stringify(entry), { status: 200 })
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    render(<LookupHarness blocks={lookupBlocks} />);
+    fireEvent.click(screen.getByText("woke"));
+    await screen.findByText("/ˈwoʊk/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // The reader moves to book while woke's write is in flight: book's
+    // row reads only its own key, so it stays usable.
+    fireEvent.click(screen.getByText("book"));
+    expect(
+      await screen.findByRole("dialog", { name: "词详情：book" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled();
+    // Then the reader comes back: the write never stopped being in
+    // flight, and the owner token's key-comparison revival rule puts
+    // woke's ticket back in charge — the row is disabled again.
+    // Characterization: flip this test if the revival rule is ever
+    // deliberately changed.
+    fireEvent.click(screen.getByText("woke"));
+    await screen.findByText("/ˈwoʊk/");
+    expect(screen.getByRole("button", { name: "已掌握" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    wokePut.resolve(
+      new Response(JSON.stringify({ lemma: "wake", status: "known" }), {
+        status: 200,
+      })
+    );
+    // The landing write re-enables the row and patches the shown state:
+    // the verdict belongs to the word, and the popup is back on it.
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled()
+    );
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("shares one in-flight save across word forms of the same lemma", async () => {
+  const runPut = deferredResponse();
+  const onStatusApplied = vi.fn();
+  const RUNS_ENTRY = {
+    word: "runs",
+    lemma: "run",
+    ipa: "rʌnz",
+    pos: "v.",
+    translation: "v. 跑",
+    status: "learning",
+  };
+  const RUN_ENTRY = {
+    word: "run",
+    lemma: "run",
+    ipa: "rʌn",
+    pos: "v. n.",
+    translation: "v. 跑; n. 跑",
+    status: "learning",
+  };
+  const fetchMock = vi.fn<
+    (url: string, init?: RequestInit) => Promise<Response>
+  >((url, init) => {
+    if (init?.method === "PUT") return runPut.promise;
+    const entry = String(url).endsWith("/lookup/runs") ? RUNS_ENTRY : RUN_ENTRY;
+    return Promise.resolve(
+      new Response(JSON.stringify(entry), { status: 200 })
+    );
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  try {
+    const view = render(
+      <WordLookupPopup
+        click={{ word: "runs", point: { x: 100, y: 100 } }}
+        onClose={() => {}}
+        onStatusApplied={onStatusApplied}
+      />
+    );
+    await screen.findByText("/rʌnz/");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // A same-instance word change — the popup's whole story: run folds
+    // to the same lemma, so it reads the same entry's key.
+    // Characterization: the write is per server word, not per surface —
+    // run's row waits on runs' PUT. Flip this test if that sharing is
+    // ever deliberately changed.
+    view.rerender(
+      <WordLookupPopup
+        click={{ word: "run", point: { x: 100, y: 100 } }}
+        onClose={() => {}}
+        onStatusApplied={onStatusApplied}
+      />
+    );
+    await screen.findByText("/rʌn/");
+    expect(screen.getByRole("button", { name: "已掌握" })).toBeDisabled();
+    runPut.resolve(
+      new Response(JSON.stringify({ lemma: "run", status: "known" }), {
+        status: 200,
+      })
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "已掌握" })).toBeEnabled()
+    );
+    // The verdict stays with the word it was saved from: run's shown
+    // state is its own lookup's, not runs' patch.
+    expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(onStatusApplied).toHaveBeenCalledExactlyOnceWith({
+      word: "runs",
+      lemma: "run",
+      status: "known",
+    });
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 it("leaves a failed save's notice behind when the reader moves to another word", async () => {
   const fetchMock = vi
     .fn<(url: string, init?: RequestInit) => Promise<Response>>()
