@@ -4,7 +4,7 @@
 
 **Blocked by:** 02、03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 依据：spec 进度记忆与右键入口故事；数据自决（卸载即清）。
 

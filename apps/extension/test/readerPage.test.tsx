@@ -66,7 +66,7 @@ const ipaValues = (): (string | null)[] =>
 
 describe("ReaderPage — the EPUB skeleton", () => {
   it("imports a fixture EPUB and reads it chapter by chapter", async () => {
-    render(<ReaderPage />);
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
     await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
 
     expect(
@@ -84,7 +84,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
   });
 
   it("reports a broken archive with the invalid-epub copy and keeps the entry usable", async () => {
-    render(<ReaderPage />);
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
     const garbage = await fixtureFile(
       "broken.epub",
       new TextEncoder().encode("this is not a zip file")
@@ -102,7 +102,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
   });
 
   it("declines non-EPUB files with the unsupported copy", async () => {
-    render(<ReaderPage />);
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
     const pdf = await fixtureFile("paper.pdf", new Uint8Array([1, 2, 3]));
     await pickFile(pdf);
 
@@ -130,7 +130,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         },
       ],
     });
-    render(<ReaderPage />);
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
     await pickFile(await fixtureFile("book.epub", bytes));
 
     // Slots land in word order: form hits and the lemma fallback (runs →
@@ -150,7 +150,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         { href: "text/c.xhtml", body: "<h1>C</h1><p>Woke runs today.</p>" },
       ],
     });
-    render(<ReaderPage />);
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
     await pickFile(await fixtureFile("book.epub", bytes));
     await screen.findByText("Woke");
     expect(ipaValues()).toEqual(["woʊk", "rʌn", "təˈdeɪ"]);
@@ -174,7 +174,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         { href: "text/c.xhtml", body: "<h1>C</h1><p>Woke runs today.</p>" },
       ],
     });
-    render(<ReaderPage />);
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
     await pickFile(await fixtureFile("book.epub", bytes));
 
     await screen.findByText("Woke");
@@ -220,6 +220,7 @@ import {
   createVocabularyStore,
   memoryBackend,
   type StateBackend,
+  type VocabularyStore,
 } from "../src/store/vocabulary-store";
 
 const POPUP_DICT: BakedDictionary = {
@@ -326,6 +327,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -356,6 +358,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     harness.memory.map.set("woke", "known");
     render(
       <ReaderPage
+        library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -380,6 +383,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -408,6 +412,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -440,6 +445,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -471,6 +477,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -491,5 +498,112 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     );
     // And the write landed once, under the shared key.
     expect(harness.memory.map.get("run")).toBe("known");
+  });
+});
+
+// ─── ticket 05: progress memory + recents ───
+
+import {
+  createMemoryLibraryStore,
+  type LibraryStore,
+} from "../src/store/library-store";
+
+const TOC_EPUB = () =>
+  buildEpub({
+    title: "Journey Book",
+    docs: [
+      {
+        href: "text/one.xhtml",
+        body: "<h1>North</h1><p>First chapter words.</p>",
+      },
+      {
+        href: "text/two.xhtml",
+        body: "<h2>South</h2><p>Second chapter words.</p>",
+      },
+    ],
+  });
+
+function renderWithSeams({
+  store,
+  library,
+}: {
+  store?: VocabularyStore;
+  library?: LibraryStore;
+} = {}) {
+  // Concrete seams for the page: chrome.* never enters a test.
+  const vocab =
+    store ??
+    createVocabularyStore(
+      new OfflineDictionary({ ipa: {}, inflections: {}, entries: {} }),
+      memoryBackend()
+    );
+  return render(
+    <ReaderPage store={vocab} library={library ?? createMemoryLibraryStore()} />
+  );
+}
+
+describe("ReaderPage — progress memory + recents (ticket 05)", () => {
+  beforeEach(() => {
+    stubDictionaryFetch({});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("reopens a recent document at its saved chapter", async () => {
+    const library = createMemoryLibraryStore();
+    renderWithSeams({ library });
+    await pickFile(await fixtureFile("book.epub", await TOC_EPUB()));
+    await screen.findByText("First");
+
+    // Read on into the second chapter, then leave to the picker.
+    fireEvent.click(screen.getByRole("button", { name: "South" }));
+    await screen.findByText("Second");
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+
+    // The landing lists the document with its position.
+    const recent = await screen.findByRole("button", { name: "Journey Book" });
+    expect(screen.getByText("第 2 章")).toBeInTheDocument();
+    fireEvent.click(recent);
+
+    // Reopened straight into the saved chapter.
+    expect(await screen.findByText("Second")).toBeInTheDocument();
+    expect(screen.queryByText("First chapter words.")).not.toBeInTheDocument();
+  });
+
+  it("keeps per-document progress independent across books", async () => {
+    const library = createMemoryLibraryStore();
+    renderWithSeams({ library });
+
+    await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
+    await screen.findByText("First");
+    fireEvent.click(screen.getByRole("button", { name: "South" }));
+    await screen.findByText("Second");
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+
+    const other = await buildEpub({
+      title: "Other Book",
+      docs: [
+        { href: "text/x.xhtml", body: "<h1>Only</h1><p>Other words.</p>" },
+      ],
+    });
+    await pickFile(await fixtureFile("b.epub", other));
+    await screen.findByText("Other");
+
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    // Both recents listed; each shows its own chapter.
+    expect(
+      await screen.findByRole("button", { name: "Journey Book" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("第 2 章")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Other Book" }));
+    expect(await screen.findByText("Other")).toBeInTheDocument();
+
+    // And the first book still restores to its own chapter.
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Journey Book" })
+    );
+    expect(await screen.findByText("Second")).toBeInTheDocument();
   });
 });

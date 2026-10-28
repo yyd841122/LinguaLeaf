@@ -36,7 +36,19 @@ export type OfflineLookup = {
 // lemma). A word no table knows resolves to null: its slot stays empty
 // (缺词一律留空).
 export class OfflineDictionary {
-  constructor(private readonly data: BakedDictionary) {}
+  private readonly data: BakedDictionary;
+
+  constructor(data: BakedDictionary) {
+    // A truncated asset behaves as empty tables, not a crash: the first
+    // lookup against a missing table answered `undefined[word]` and took
+    // the import down (ticket 05's stub caught it; a machine-written
+    // asset gets the same tolerance).
+    this.data = {
+      ipa: data.ipa ?? {},
+      inflections: data.inflections ?? {},
+      entries: data.entries ?? {},
+    };
+  }
 
   resolveIpa(token: string): IpaResolution | null {
     const word = normalizeLookupToken(token);

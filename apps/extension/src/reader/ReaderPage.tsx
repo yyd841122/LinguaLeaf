@@ -24,6 +24,12 @@ import {
   type VocabularyStore,
   type VocabState,
 } from "../store/vocabulary-store";
+import {
+  createChromeLibraryStore,
+  type ChapterProgress,
+  type LibraryEntry,
+  type LibraryStore,
+} from "../store/library-store";
 import { WordLookupPopup } from "./WordLookupPopup";
 import "./reader.css";
 
@@ -37,7 +43,12 @@ type ReaderState =
   | { phase: "empty" }
   | { phase: "importing" }
   | { phase: "error"; copy: string }
-  | { phase: "reading"; book: ExtBook; chapterIndex: number };
+  | {
+      phase: "reading";
+      docId: string;
+      book: ExtBook;
+      chapterIndex: number;
+    };
 
 // Relative to the extension origin (and true over file:// too).
 const DICTIONARY_URL = "./dictionary.json";
@@ -158,7 +169,11 @@ function BlockView({
 
 export function ReaderPage({
   store: injectedStore,
-}: { store?: VocabularyStore } = {}) {
+  library: injectedLibrary,
+}: {
+  store?: VocabularyStore;
+  library?: LibraryStore;
+} = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
   const dropDepth = useRef(0);
@@ -198,6 +213,16 @@ export function ReaderPage({
     word: string;
     point: { x: number; y: number };
   } | null>(null);
+  // The library seam: documents, positions, recents. Injectable like the
+  // vocabulary store; the real one is chrome-backed.
+  const library = useMemo(
+    () => injectedLibrary ?? createChromeLibraryStore(),
+    [injectedLibrary]
+  );
+  const [recents, setRecents] = useState<LibraryEntry[] | null>(null);
+  // The position a reopened document should restore to, consumed by the
+  // scroll effect after the chapter renders.
+  const restoreRef = useRef<ChapterProgress | null>(null);
 
   const handleFile = async (file: File | undefined | null) => {
     if (!file || state.phase === "importing") return;
@@ -205,11 +230,49 @@ export function ReaderPage({
     try {
       const offline: OfflineDictionary = await dictionary;
       const book = await importBookFromFile(file, offline.ipaLookup());
+      // The document id is its title: re-importing a book updates it in
+      // place instead of duplicating the shelf entry.
+      const docId = `doc:${book.title}`;
+      await library.saveDocument({ id: docId, title: book.title, book });
       setWordStates(new Map());
-      setState({ phase: "reading", book, chapterIndex: 0 });
+      restoreRef.current = null;
+      setState({ phase: "reading", docId, book, chapterIndex: 0 });
     } catch (error) {
       setState({ phase: "error", copy: copyFor(error) });
     }
+  };
+
+  // The landing's recents: loaded whenever the picker shows.
+  useEffect(() => {
+    if (state.phase !== "empty") return;
+    let cancelled = false;
+    library
+      .listDocuments()
+      .then((entries) => {
+        if (!cancelled) setRecents(entries);
+      })
+      .catch((error: unknown) => {
+        console.warn("recents load failed", error);
+        if (!cancelled) setRecents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.phase, library]);
+
+  // 重开扩展回到原处: a recents click opens the stored book at its saved
+  // position (GLOSSARY: 扩展阅读页 remembers, the storage seam persists).
+  const reopenDocument = async (entry: LibraryEntry) => {
+    const book = await library.openDocument(entry.id);
+    if (!book) return;
+    setWordStates(new Map());
+    restoreRef.current = entry.progress;
+    setState({
+      phase: "reading",
+      docId: entry.id,
+      book,
+      chapterIndex: entry.progress.chapterIndex,
+    });
   };
 
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
@@ -256,6 +319,52 @@ export function ReaderPage({
       cancelled = true;
     };
   }, [book, chapterIndex, resolvedStore]);
+
+  // Progress persistence: on a scroll, the topmost visible block index is
+  // written to the seam, throttled — a closed tab loses at most one
+  // throttle window of drift.
+  const scrollSaveAt = useRef(0);
+  const readingKey =
+    state.phase === "reading" ? `${state.docId}:${state.chapterIndex}` : "idle";
+  useEffect(() => {
+    if (state.phase !== "reading") return;
+    const onScroll = () => {
+      const now = Date.now();
+      if (now - scrollSaveAt.current < 400) return;
+      scrollSaveAt.current = now;
+      let current = 0;
+      for (const block of document.querySelectorAll<HTMLElement>(
+        "[data-block-index]"
+      )) {
+        if (block.getBoundingClientRect().top <= 96) {
+          current = Number(block.dataset.blockIndex ?? 0);
+        }
+      }
+      void library.setProgress(state.docId, {
+        chapterIndex: state.chapterIndex,
+        blockIndex: current,
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [readingKey, library, state]);
+
+  // 重开扩展回到原处: after a reopened document's chapter renders, jump to
+  // its saved block. restoreRef is a deliberate one-shot channel, not
+  // reactive state; "idle" keys the effect off the reading phase without
+  // extra deps.
+  useEffect(() => {
+    const restore = restoreRef.current;
+    if (readingKey === "idle" || !restore) return;
+    restoreRef.current = null;
+    const raf = requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(
+        `[data-block-index='${restore.blockIndex}']`
+      );
+      el?.scrollIntoView?.();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [readingKey]);
 
   // The popup's status operation lands here first: the tint updates with
   // the write (即时生效), keyed by the store's one state-key rule.
@@ -320,7 +429,7 @@ export function ReaderPage({
   };
 
   if (state.phase === "reading") {
-    const { book: currentBook, chapterIndex } = state;
+    const { book: currentBook, docId, chapterIndex } = state;
     const chapter = currentBook.chapters[chapterIndex];
     // The tint walk reads the merged map through the store's one key rule.
     const stateOf = (word: string): VocabState | null =>
@@ -330,6 +439,9 @@ export function ReaderPage({
     const goChapter = (index: number) => {
       if (index >= 0 && index < currentBook.chapters.length) {
         setState({ ...state, chapterIndex: index });
+        // The chapter switch is itself a position fact — written straight
+        // to the seam (scroll writes below cover the within-chapter drift).
+        void library.setProgress(docId, { chapterIndex: index, blockIndex: 0 });
       }
     };
     return (
@@ -381,12 +493,9 @@ export function ReaderPage({
           >
             <h2>{chapter.title}</h2>
             {chapter.blocks.map((block, index) => (
-              <BlockView
-                key={index}
-                block={block}
-                showIpa={showIpa}
-                stateOf={stateOf}
-              />
+              <div key={index} data-block-index={index}>
+                <BlockView block={block} showIpa={showIpa} stateOf={stateOf} />
+              </div>
             ))}
           </section>
         ) : null}
@@ -440,6 +549,26 @@ export function ReaderPage({
         <p className="reader-error" role="alert">
           {state.copy}
         </p>
+      ) : null}
+      {recents && recents.length > 0 ? (
+        <nav className="reader-recents" aria-label="最近文档">
+          <ol>
+            {recents.map((entry) => (
+              <li key={entry.id}>
+                <button
+                  type="button"
+                  className="reader-recent"
+                  onClick={() => void reopenDocument(entry)}
+                >
+                  {entry.title}
+                </button>
+                <span className="reader-hint">
+                  第 {entry.progress.chapterIndex + 1} 章
+                </span>
+              </li>
+            ))}
+          </ol>
+        </nav>
       ) : null}
       <label className="reader-picker">
         <span>选择一个 EPUB 文件，或把它拖进本页。</span>
