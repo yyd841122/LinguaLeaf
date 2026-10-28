@@ -140,6 +140,34 @@ describe("useTaskFollower outage", () => {
     expect(result.current.outage).toBe(false);
   });
 
+  it("does not light outage when an invalidated tick's failure arrives", async () => {
+    const pending = deferred<{ n: number }>();
+    const fetchTick = vi
+      .fn<() => Promise<{ n: number }>>()
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue({ n: 2 });
+    const onTick = vi.fn();
+    const { result } = renderHook(() =>
+      useTaskFollower({ active: true, fetchTick, onTick, intervalMs: INTERVAL })
+    );
+
+    await actAdvance(INTERVAL);
+    expect(fetchTick).toHaveBeenCalledTimes(1);
+
+    // The mutation invalidates the in-flight tick; when its failure
+    // arrives anyway it must not speak — the round's success is
+    // discarded, and so is its failure. The next fresh tick re-asks
+    // within one interval.
+    act(() => result.current.invalidate());
+    await act(async () => pending.reject(new Error("server gone")));
+    expect(result.current.outage).toBe(false);
+
+    await actAdvance(INTERVAL);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    expect(onTick).toHaveBeenCalledWith({ n: 2 });
+    expect(result.current.outage).toBe(false);
+  });
+
   it("starts each fresh follow with a clean outage slate", async () => {
     const fetchTick = vi
       .fn<() => Promise<{ n: number }>>()

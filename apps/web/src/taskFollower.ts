@@ -58,8 +58,10 @@ export function useTaskFollower<T>(options: {
         })
         .catch(() => {
           // Keep the page as-is; the next tick retries. But say so — a
-          // frozen progress label alone would hide the outage.
-          if (!cancelled) setOutage(true);
+          // frozen progress label alone would hide the outage. A stale
+          // round never speaks: its success is discarded, and so is its
+          // failure — the next fresh tick re-asks within one interval.
+          if (!cancelled && !ticket.stale()) setOutage(true);
         });
     }, intervalMs);
     return () => {
