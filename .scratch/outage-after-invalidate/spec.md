@@ -1,6 +1,6 @@
 # outage-after-invalidate:被 invalidate() 作废的在途 tick 失败仍置 outage
 
-Status: ready-for-agent
+Status: done
 
 来源:owner-token 收编途中发现的既有问题(.scratch/owner-token/spec.md
 Comments,2026-10-27);非该票引入,按决策 6 零搭车记档后另票。triage 一轮
@@ -63,3 +63,23 @@ taskFollower seam 红绿各一片(钉子修前红,catch 加 stale 守卫修后�
 > 「回归测试(红验证)」两节(本仓 spec 即票,正文为契约);out of scope
 > 即「零触碰」清单。载体由实现会话自选(单行守卫 + 单条钉子,tdd 直接做
 > 亦可,不必走编排)。
+
+**收官(2026-10-28,实现会话,本机直跑)**:实现 commit b648a61。tdd 于
+taskFollower seam 红绿各一片:钉子「does not light outage when an
+invalidated tick's failure arrives」修前红(invalidate 后 reject 断言
+outage=false,现状置 true → expected true to be false),catch 加守卫修后
+绿。门禁:实现 commit pre-commit 全链绿(prettier、四 workspace tsc、
+eslint --max-warnings 0、vitest 384 全过、三项 locality check);既有 5 条
+零改写(diff 纯增)。
+
+- **决策落法**:catch 守卫
+  `if (!cancelled && !ticket.stale()) setOutage(true)`——与 then 支
+  `if (cancelled || ticket.stale()) return` 精确德摩根对称;effect 级
+  `cancelled` 保留(零触碰);决策 2 零调用点改动兑现。
+- **双轴 review(基线 = 0f39d57,钉关系)**:Standards 零硬违规,三条
+  judgement call 记档:①新钉子与既有 invalidate-discard 测试形状重复
+  (test-local 可读性取舍,不抽 helper);②源码与测试注释近逐字(minor);
+  ③「invalidate 后连续鲜 tick 失败仍升级 outage」未单独钉(既有
+  no-invalidate 变体已钉,守卫对鲜票无作用力,行为无险,日后可补)。
+  Spec 轴:缺失零(唯一 open item 即本收官记档)、越界零、错误零;引文
+  逐字核对通过。

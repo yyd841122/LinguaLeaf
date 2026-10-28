@@ -1,6 +1,6 @@
 # popup-saving-comeback-pin:切回在途词(A→B→A)的行禁用行为无测试钉
 
-Status: ready-for-agent
+Status: done
 
 来源:stale-put-saving-clobber 收官双轴 review 的 Standards 轴 judgement
 call(2026-10-27)。行为本身是那票 spec 决策 3 明文断言的正确行为:切回在途
@@ -57,3 +57,26 @@ Status 翻 done。
 > 「验证」「决策(锁定)」两节(本仓 spec 即票,正文为契约);out of
 > scope 即「零触碰」;注意 characterization 应直接绿,红 = 行为与断言
 > 不符,停下上报勿凑绿。
+
+**收官(2026-10-28,实现会话,本机直跑)**:实现 commit 4d54d28。两条
+characterization 按现状行为直接绿(无红片,characterization 不修行为,
+符合门禁预期)。门禁:实现 commit pre-commit 全链绿(prettier、四
+workspace tsc、eslint --max-warnings 0、vitest 386 全过、三项 locality
+check);源码零 diff(单文件纯增 131 行),既有 22 条零改写。
+
+- **两钉落法**:「keeps a revisited word's row disabled until its
+  in-flight write lands」——woke PUT 在途 → 切 book(book 行自启,单字
+  视野读成员)→ 切回 woke 行禁用 → woke settle 自启且 pressed 落
+  known(键比较复活,verdict 回到眼前的词);「shares one in-flight save
+  across word forms of the same lemma」——runs/run 同 lemma stub,run 行
+  随 runs 的 PUT 禁用、落地同启,verdict 不跟到切走的词形
+  (onStatusApplied 仍捕获 runs 恰一次)。
+- **双轴 review(基线 = b648a61,钉关系)**:Standards 零硬违规,一条
+  judgement call:fetch-mock 脚手架第四份(possible Duplicated Code,被
+  文件 per-test 内联惯例压掉,记档不动)。Spec 轴两处记档:①决策 1
+  「测试名自认翻转」落成测试体内 Characterization 注释而非 it 名(it 名
+  保持行为描述式循既有命名,翻转声明体内更显眼)——letter 偏差接受记档;
+  ②钉子各带超决策字面的断言(book 行中途自启、verdict 不跟词形、
+  onStatusApplied 恰一次)——服务 characterization 叙事,commit message
+  明写,判良性。决策 3「直接加第三幕」字面与零触碰冲突,按另落独立钉子
+  解,review 采纳。
