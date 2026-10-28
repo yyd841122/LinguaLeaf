@@ -1,4 +1,5 @@
 import { normalizeLookupToken } from "@lingualeaf/reading-model";
+import { posFromTranslation } from "@lingualeaf/import-core";
 
 // The baked offline asset's shape (scripts/bake-dictionary.ts writes it):
 // American IPA per word form, the inflection index (form → lemma), and the
@@ -16,6 +17,17 @@ export type BakedDictionary = {
 export type IpaSource = "form" | "lemma";
 
 export type IpaResolution = { ipa: string; source: IpaSource };
+
+// The popup's entry shape: the server's WordLookup fields plus where the
+// IPA came from — the card must disclose lemma answers (不冒充词形读音).
+export type OfflineLookup = {
+  word: string;
+  lemma: string | null;
+  ipa: string | null;
+  ipaSource: IpaSource | null;
+  pos: string | null;
+  translation: string | null;
+};
 
 // The offline dictionary (GLOSSARY): IPA lookups resolve locally, never
 // through network or service. Resolution order mirrors the server's
@@ -50,6 +62,37 @@ export class OfflineDictionary {
   // slots are the pairing truth source, not the popup.
   ipaLookup(): (token: string) => string | null {
     return (token) => this.resolveIpa(token)?.ipa ?? null;
+  }
+
+  // The popup's entry — the server lookupWord contract over baked tables:
+  // the lemma's own entry outranks the surface form's thin pointer, the
+  // IPA stays the surface form's own reading (with its provenance for the
+  // card's disclosure), and a word with no entry answers null — the
+  // popup's 未收录, and the store's zero-write territory.
+  lookup(token: string): OfflineLookup | null {
+    const word = normalizeLookupToken(token);
+    if (!word) return null;
+    const lemma = this.data.inflections[word] ?? null;
+    const entry =
+      (lemma ? this.data.entries[lemma] : undefined) ?? this.data.entries[word];
+    if (!entry) return null;
+    const resolution = this.resolveIpa(word);
+    return {
+      word,
+      lemma,
+      ipa: resolution?.ipa ?? null,
+      ipaSource: resolution?.source ?? null,
+      pos: posFromTranslation(entry.t),
+      translation: entry.t || null,
+    };
+  }
+
+  // The vocabulary state key of a word (the server's vocabularyStateKey):
+  // the lemma the inflection index folds it to, or the folded form itself.
+  // One rule for the popup's writes and the reading walk's tints.
+  stateKey(token: string): string {
+    const word = normalizeLookupToken(token);
+    return this.data.inflections[word] ?? word;
   }
 }
 

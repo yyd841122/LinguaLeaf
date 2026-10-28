@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { importBook } from "../src/reader/import-book";
@@ -207,5 +207,289 @@ describe("importBook — slot assembly (ticket 03)", () => {
       text: "Words arrive on the page.",
       ipaSlots: ["", "", "", "", ""],
     });
+  });
+});
+
+// ─── ticket 04: the word popup + 生词本 four states ───
+
+import {
+  OfflineDictionary,
+  type BakedDictionary,
+} from "../src/dict/offline-dictionary";
+import {
+  createVocabularyStore,
+  memoryBackend,
+  type StateBackend,
+} from "../src/store/vocabulary-store";
+
+const POPUP_DICT: BakedDictionary = {
+  ipa: { woke: "woʊk", run: "rʌn", book: "bʊk", today: "təˈdeɪ" },
+  inflections: { runs: "run" },
+  entries: {
+    woke: { p: "", t: "v. 醒来" },
+    run: { p: "", t: "v. 跑" },
+    book: { p: "", t: "n. 书" },
+  },
+};
+
+const POPUP_EPUB = () =>
+  buildEpub({
+    title: "Popup Book",
+    docs: [
+      {
+        href: "text/c.xhtml",
+        body: "<h1>C</h1><p>Woke runs today.</p><p>They run far. The book stays.</p>",
+      },
+    ],
+  });
+
+// Word units by their exact data-word (getAttribute — jsdom's selector
+// engine matches attribute values case-insensitively, and the popup's
+// head echoes the raw clicked word, so text queries would double-match).
+const wordEl = (word: string): HTMLElement | undefined =>
+  [...document.querySelectorAll<HTMLElement>("[data-word]")].find(
+    (el) => el.getAttribute("data-word") === word
+  );
+
+// A backend whose puts hang until the test settles them — the deferred
+// PUT pattern from the web popup's characterization nails, over the store
+// seam instead of the wire.
+export function deferredBackend() {
+  const memory = memoryBackend();
+  const pending = new Map<string, Array<{ resolve: () => void }>>();
+  const backend: StateBackend = {
+    async get(key) {
+      return memory.get(key);
+    },
+    getMany: (keys) => memory.getMany(keys),
+    put(key, status) {
+      let resolve!: () => void;
+      const promise = new Promise<void>((r) => {
+        resolve = r;
+      });
+      const byKey = pending.get(key) ?? [];
+      byKey.push({ resolve });
+      pending.set(key, byKey);
+      return promise.then(() => memory.put(key, status));
+    },
+  };
+  const tick = () => Promise.resolve();
+  return {
+    memory,
+    // Settling is async (the put queues a microtask after its lookup
+    // begins) and key-addressed — a FIFO would settle whichever write the
+    // microtask ordering happened to queue first, not the one the test
+    // means (the web nails defer per URL; here per state key).
+    settleKey: async (key: string) => {
+      const entry = pending.get(key)?.shift();
+      entry?.resolve();
+      await tick();
+    },
+    settleAll: async () => {
+      for (const byKey of pending.values()) {
+        for (const entry of byKey) entry.resolve();
+      }
+      pending.clear();
+      await tick();
+    },
+    backend,
+  };
+}
+
+async function openPopupFor(
+  word: string,
+  harness?: ReturnType<typeof deferredBackend>
+): Promise<void> {
+  // The import is async — wait for the word unit to exist, then click it.
+  const unit = await waitFor(() => {
+    const found = wordEl(word);
+    if (!found) throw new Error(word + " not rendered yet");
+    return found;
+  });
+  fireEvent.click(unit);
+  await screen.findByRole("dialog", { name: `词详情：${word}` });
+  // The enrollment write of 查词即状态 rides the same backend; the
+  // deferred harness holds it until the test lets it land, so the popup's
+  // lookup answer (and its state row) needs the settle to resolve.
+  if (harness) await harness.settleAll();
+}
+
+describe("ReaderPage — the word popup (ticket 04)", () => {
+  beforeEach(() => {
+    stubDictionaryFetch(POPUP_DICT);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("renders the five elements and discloses a lemma-sourced IPA", async () => {
+    const harness = deferredBackend();
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+    await openPopupFor("runs", harness);
+
+    // Five elements: head word, lemma, IPA, pos, translation — plus the
+    // disclosure line (runs reads via run; 不冒充词形读音).
+    expect(await screen.findByText("原形 run")).toBeInTheDocument();
+    expect(screen.getByText("/rʌn/")).toBeInTheDocument();
+    expect(screen.getByText("v. 跑")).toBeInTheDocument();
+    expect(screen.getByText("音标为原形 run 的读音。")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "发音" })).toBeInTheDocument();
+    // 查词即状态: the first lookup enrolled run as Learning in the same
+    // call, and the row shows it pressed.
+    expect(screen.getByRole("button", { name: "学习中" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(harness.memory.map.get("run")).toBe("learning");
+  });
+
+  it("a recorded state stands; a miss writes nothing", async () => {
+    const harness = deferredBackend();
+    harness.memory.map.set("woke", "known");
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+
+    await openPopupFor("Woke", harness);
+    expect(screen.getByRole("button", { name: "已掌握" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(harness.memory.map.get("woke")).toBe("known");
+
+    await openPopupFor("far", harness);
+    expect(screen.getByText("词库中未收录这个词。")).toBeInTheDocument();
+    expect(harness.memory.map.has("far")).toBe(false);
+  });
+
+  it("an explicit state change tints the word immediately", async () => {
+    const harness = deferredBackend();
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+
+    await openPopupFor("Woke", harness);
+    // The state row renders once the settled lookup's answer flushes.
+    await screen.findByRole("button", { name: "已掌握" });
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    await harness.settleKey("woke");
+    // 即时生效: the word span drops the lookup affordance (word-settled).
+    await waitFor(() => expect(wordEl("Woke")).toHaveClass("word-settled"));
+    expect(harness.memory.map.get("woke")).toBe("known");
+    // The states are keyed by lemma — runs shares run's entry.
+    await openPopupFor("runs", harness);
+    await screen.findByRole("button", { name: "已掌握" });
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    await harness.settleKey("run");
+    await waitFor(() => expect(wordEl("run")).toHaveClass("word-settled"));
+  });
+
+  it("keeps the new word's row disabled when the previous word's save settles first", async () => {
+    const harness = deferredBackend();
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+
+    await openPopupFor("Woke", harness);
+    await screen.findByRole("button", { name: "已掌握" });
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // The reader moves to book before woke's write lands: two writes in
+    // flight, each keyed by its own status key.
+    await openPopupFor("book", harness);
+    await screen.findByRole("button", { name: "已掌握" });
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // woke settles first; its patch moves to the page's tint map, and its
+    // finally retires only woke's own key.
+    await harness.settleKey("woke");
+    await waitFor(() => expect(wordEl("Woke")).toHaveClass("word-settled"));
+    // book's row must still be disabled mid-write.
+    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    await harness.settleKey("book");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "学习中" })).toBeEnabled()
+    );
+  });
+
+  it("A→B→A re-entry shows the row disabled until the first write lands", async () => {
+    const harness = deferredBackend();
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+
+    await openPopupFor("Woke", harness);
+    await screen.findByRole("button", { name: "已掌握" });
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // Away to book, back to woke while woke's write is still in flight:
+    // the key comparison revives, and the row reads disabled — the write
+    // is genuinely not landed yet. Book's own lookup stays pending on the
+    // deferred backend; its state row is irrelevant here.
+    fireEvent.click(wordEl("book")!);
+    await screen.findByRole("dialog", { name: "词详情：book" });
+    fireEvent.click(wordEl("Woke")!);
+    await screen.findByRole("dialog", { name: "词详情：Woke" });
+    await screen.findByRole("button", { name: "学习中" });
+    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    await harness.settleKey("woke");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "学习中" })).toBeEnabled()
+    );
+  });
+
+  it("same-lemma word forms share one in-flight entry", async () => {
+    const harness = deferredBackend();
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+
+    await openPopupFor("runs", harness);
+    await screen.findByRole("button", { name: "已掌握" });
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    // run is the same state key (runs → run): its row shares the entry.
+    await openPopupFor("run", harness);
+    expect(screen.getByRole("button", { name: "学习中" })).toBeDisabled();
+    await harness.settleAll();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "学习中" })).toBeEnabled()
+    );
+    // And the write landed once, under the shared key.
+    expect(harness.memory.map.get("run")).toBe("known");
   });
 });

@@ -1,5 +1,10 @@
-import { useMemo, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent, KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  ChangeEvent,
+  DragEvent,
+  KeyboardEvent as ReactKeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+} from "react";
 import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
 import type { ReactNode } from "react";
 import {
@@ -13,13 +18,21 @@ import {
   loadOfflineDictionary,
   type OfflineDictionary,
 } from "../dict/offline-dictionary";
+import {
+  createVocabularyStore,
+  chromeBackend,
+  type VocabularyStore,
+  type VocabState,
+} from "../store/vocabulary-store";
+import { WordLookupPopup } from "./WordLookupPopup";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
 // → reading, with errors as a phase that keeps the entry usable. The
-// offline dictionary loads once per mount, before any book can need it.
-// No persistence yet (tickets 04/05 introduce the storage seam) — a closed
-// tab forgets the book, and re-entry starts at the file picker.
+// offline dictionary and the vocabulary store resolve once per mount; the
+// store is injectable so tests drive the memory backend. Reading progress
+// itself arrives with ticket 05's storage work — a closed tab forgets the
+// book, and re-entry starts at the file picker.
 type ReaderState =
   | { phase: "empty" }
   | { phase: "importing" }
@@ -40,16 +53,20 @@ function copyFor(error: unknown): string {
 }
 
 // The original line's word units — the web reader's WordSegments shape,
-// driven by the same segmentOriginal walk, so word/slot pairing (and the
-// data-word click targets of ticket 04) are identical across frontends.
-// An empty slot renders the word as a plain lookup target: the gap is
-// invisible, the line stays aligned.
+// driven by the same segmentOriginal walk, so word/slot pairing and the
+// data-word click targets are identical across frontends. An empty slot
+// renders the word as a plain lookup target: the gap is invisible, the
+// line stays aligned. 生词本 tints ride per word (ADR-0005): Learning
+// keeps the lookup affordance (查词底色), Known/Ignored drop it
+// (word-settled — the affordance withdraws from words the reader has).
 function WordSegments({
   segments,
   showSlots,
+  stateOf,
 }: {
   segments: Segment[];
   showSlots: boolean;
+  stateOf: (word: string) => VocabState | null;
 }) {
   const nodes: ReactNode[] = [];
   let index = 0;
@@ -59,10 +76,12 @@ function WordSegments({
       continue;
     }
     const ipa = showSlots ? segment.ipa : undefined;
+    const settled =
+      stateOf(segment.word) === "known" || stateOf(segment.word) === "ignored";
     nodes.push(
       ipa ? (
         <span
-          className="ipa-word"
+          className={settled ? "ipa-word word-settled" : "ipa-word"}
           data-word={segment.word}
           key={index}
           role="button"
@@ -76,7 +95,7 @@ function WordSegments({
         </span>
       ) : (
         <span
-          className="lookup-word"
+          className={settled ? "lookup-word word-settled" : "lookup-word"}
           data-word={segment.word}
           key={index}
           role="button"
@@ -91,7 +110,15 @@ function WordSegments({
   return <>{nodes}</>;
 }
 
-function BlockView({ block, showIpa }: { block: ExtBlock; showIpa: boolean }) {
+function BlockView({
+  block,
+  showIpa,
+  stateOf,
+}: {
+  block: ExtBlock;
+  showIpa: boolean;
+  stateOf: (word: string) => VocabState | null;
+}) {
   if (block.kind === "sentence") {
     // Two separate facts: whether slots pair with the words (same walk as
     // the import that built them — they always do here), and whether the
@@ -100,7 +127,11 @@ function BlockView({ block, showIpa }: { block: ExtBlock; showIpa: boolean }) {
     return (
       <div className="sentence-block">
         <p className="original-line">
-          <WordSegments segments={segments} showSlots={showIpa} />
+          <WordSegments
+            segments={segments}
+            showSlots={showIpa}
+            stateOf={stateOf}
+          />
         </p>
       </div>
     );
@@ -125,12 +156,48 @@ function BlockView({ block, showIpa }: { block: ExtBlock; showIpa: boolean }) {
   return <p className="raw-block">{block.text}</p>;
 }
 
-export function ReaderPage() {
+export function ReaderPage({
+  store: injectedStore,
+}: { store?: VocabularyStore } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
   const dropDepth = useRef(0);
-  // One dictionary load per mount; a file picked mid-load simply awaits it.
+  // One dictionary + one store per mount; a file picked mid-load simply
+  // awaits them. The store composes the loaded dictionary with the chrome
+  // backend unless a store was injected (tests drive the memory one) —
+  // the page itself never touches chrome.*.
   const dictionary = useMemo(() => loadOfflineDictionary(DICTIONARY_URL), []);
+  const storePromise = useMemo(
+    () =>
+      dictionary.then(
+        (offline) =>
+          injectedStore ?? createVocabularyStore(offline, chromeBackend())
+      ),
+    [dictionary, injectedStore]
+  );
+  const [resolvedStore, setResolvedStore] = useState<VocabularyStore | null>(
+    null
+  );
+  useEffect(() => {
+    let cancelled = false;
+    storePromise.then((store) => {
+      if (!cancelled) setResolvedStore(store);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [storePromise]);
+
+  // The reading walk's tint source: state key → 生词本 state, loaded per
+  // chapter (below) and patched by the popup's applyStatus.
+  const [wordStates, setWordStates] = useState<Map<string, VocabState>>(
+    new Map()
+  );
+  // A word click the popup anchors to (GLOSSARY: 点词查详情).
+  const [lookup, setLookup] = useState<{
+    word: string;
+    point: { x: number; y: number };
+  } | null>(null);
 
   const handleFile = async (file: File | undefined | null) => {
     if (!file || state.phase === "importing") return;
@@ -138,6 +205,7 @@ export function ReaderPage() {
     try {
       const offline: OfflineDictionary = await dictionary;
       const book = await importBookFromFile(file, offline.ipaLookup());
+      setWordStates(new Map());
       setState({ phase: "reading", book, chapterIndex: 0 });
     } catch (error) {
       setState({ phase: "error", copy: copyFor(error) });
@@ -147,6 +215,89 @@ export function ReaderPage() {
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
     void handleFile(event.target.files?.[0]);
     event.target.value = "";
+  };
+
+  // Per-chapter 生词本 states for the tints. Bulk reads land by merge:
+  // keys the local map already holds win, so a popup patch (or a bulk read
+  // that began before it) can never revert what the reader just changed.
+  const book = state.phase === "reading" ? state.book : null;
+  const chapterIndex = state.phase === "reading" ? state.chapterIndex : -1;
+  useEffect(() => {
+    if (!book || chapterIndex < 0 || !resolvedStore) return;
+    const chapter = book.chapters[chapterIndex];
+    if (!chapter) return;
+    const keys = new Set<string>();
+    for (const block of chapter.blocks) {
+      if (block.kind !== "sentence") continue;
+      for (const segment of segmentOriginal(block.text, block.ipaSlots)
+        .segments) {
+        if (segment.kind === "word")
+          keys.add(resolvedStore.stateKey(segment.word));
+      }
+    }
+    let cancelled = false;
+    resolvedStore
+      .statesFor([...keys])
+      .then((found) => {
+        if (cancelled) return;
+        setWordStates((current) => {
+          const next = new Map(current);
+          for (const [key, value] of found) {
+            if (!next.has(key)) next.set(key, value);
+          }
+          return next;
+        });
+      })
+      .catch(() => {
+        // The tint read is best-effort: a failed read leaves the words
+        // untinted rather than crashing the reading view.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [book, chapterIndex, resolvedStore]);
+
+  // The popup's status operation lands here first: the tint updates with
+  // the write (即时生效), keyed by the store's one state-key rule.
+  const handleStatusApplied = (applied: {
+    word: string;
+    lemma: string | null;
+    status: VocabState;
+  }) => {
+    if (!resolvedStore) return;
+    const key = resolvedStore.stateKey(applied.word);
+    setWordStates((current) => {
+      const next = new Map(current);
+      next.set(key, applied.status);
+      return next;
+    });
+  };
+
+  // One delegated click listener for the chapter: word units carry
+  // data-word, everything else stays inert. Clicks carry 0/0 in synthetic
+  // environments; real clicks carry the pointer position.
+  const onSectionClick = (event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    if (word) {
+      setLookup({ word, point: { x: event.clientX, y: event.clientY } });
+    }
+  };
+  // Keyboard reaches the same words: Enter/Space on a focused word runs
+  // the same lookup, anchored to the word's own box.
+  const onWordKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    if (!word) return;
+    event.preventDefault();
+    const box = target.getBoundingClientRect();
+    setLookup({
+      word,
+      point: { x: box.left + box.width / 2, y: box.bottom },
+    });
   };
 
   // Dragover must be cancelled for drop to fire; dragenter/leave counting
@@ -169,27 +320,22 @@ export function ReaderPage() {
   };
 
   if (state.phase === "reading") {
-    const { book, chapterIndex } = state;
-    const chapter = book.chapters[chapterIndex];
+    const { book: currentBook, chapterIndex } = state;
+    const chapter = currentBook.chapters[chapterIndex];
+    // The tint walk reads the merged map through the store's one key rule.
+    const stateOf = (word: string): VocabState | null =>
+      resolvedStore?.stateKey(word) != null
+        ? (wordStates.get(resolvedStore.stateKey(word)) ?? null)
+        : null;
     const goChapter = (index: number) => {
-      if (index >= 0 && index < book.chapters.length) {
+      if (index >= 0 && index < currentBook.chapters.length) {
         setState({ ...state, chapterIndex: index });
       }
-    };
-    // Keyboard reaches the words the same way the web reader does: the
-    // word spans are buttons, Enter/Space triggers the click (ticket 04's
-    // popup will anchor there).
-    const onWordKeyDown = (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key !== "Enter" && event.key !== " ") return;
-      const target = event.target as HTMLElement;
-      if (!target.matches("[data-word]")) return;
-      event.preventDefault();
-      target.click();
     };
     return (
       <main className="reader" aria-label="扩展阅读页">
         <header className="reader-head">
-          <h1 className="reader-title">{book.title}</h1>
+          <h1 className="reader-title">{currentBook.title}</h1>
           <div className="reader-tools">
             {/* 显示开关 (GLOSSARY): hides the transcription line while the
                 word units stay — clean reading and annotated reading
@@ -213,7 +359,7 @@ export function ReaderPage() {
         </header>
         <nav className="reader-toc" aria-label="目录">
           <ol>
-            {book.chapters.map((entry, index) => (
+            {currentBook.chapters.map((entry, index) => (
               <li key={index}>
                 <button
                   type="button"
@@ -230,13 +376,27 @@ export function ReaderPage() {
           <section
             className="reader-chapter"
             aria-label={chapter.title}
+            onClick={onSectionClick}
             onKeyDown={onWordKeyDown}
           >
             <h2>{chapter.title}</h2>
             {chapter.blocks.map((block, index) => (
-              <BlockView key={index} block={block} showIpa={showIpa} />
+              <BlockView
+                key={index}
+                block={block}
+                showIpa={showIpa}
+                stateOf={stateOf}
+              />
             ))}
           </section>
+        ) : null}
+        {lookup && resolvedStore ? (
+          <WordLookupPopup
+            click={lookup}
+            store={resolvedStore}
+            onClose={() => setLookup(null)}
+            onStatusApplied={handleStatusApplied}
+          />
         ) : null}
         <footer className="reader-pager">
           <button
@@ -247,11 +407,11 @@ export function ReaderPage() {
             上一章
           </button>
           <span className="reader-position">
-            {chapterIndex + 1} / {book.chapters.length}
+            {chapterIndex + 1} / {currentBook.chapters.length}
           </span>
           <button
             type="button"
-            disabled={chapterIndex === book.chapters.length - 1}
+            disabled={chapterIndex === currentBook.chapters.length - 1}
             onClick={() => goChapter(chapterIndex + 1)}
           >
             下一章

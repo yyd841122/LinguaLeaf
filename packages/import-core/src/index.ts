@@ -27,4 +27,5 @@ export {
   type ImportErrorCode,
   type ImportRejection,
 } from "./rejection.js";
+export { posFromTranslation } from "./pos.js";
 export type { PreparedBook, BookFormat } from "./types.js";

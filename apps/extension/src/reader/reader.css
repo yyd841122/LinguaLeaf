@@ -64,6 +64,38 @@ body {
   font-weight: bold;
   color: #6a4fa3;
 }
+/* The 生词本 state row: the web reader's local vocabulary styles,
+   hand-mirrored here (the shared annotated sheet carries the popup box
+   itself; this row lives app-side on both hosts). */
+.lookup-vocab {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #ecefe6;
+}
+.lookup-vocab-label {
+  color: #5c6f64;
+  font-size: 0.8rem;
+}
+.lookup-vocab-option {
+  border: 1px solid #dde3d8;
+  background: none;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+  color: #22342a;
+}
+.lookup-vocab-option:hover {
+  background: #ecefe6;
+}
+.lookup-vocab-option[aria-pressed="true"] {
+  background: #ecefe6;
+  border-color: #5c6f64;
+}
 .reader-toc ol {
   list-style: none;
   margin: 0.75rem 0;

@@ -6,13 +6,15 @@ import {
 
 // Fixture mirrors the baked asset's real shapes: mixed-case forms,
 // inflected forms riding the inflection index, ECDICT-phonetic-only words,
-// and words no table knows (CODING_STANDARDS: fixtures mirror real data).
+// thin pointer entries on inflected forms, and words no table knows
+// (CODING_STANDARDS: fixtures mirror real data).
 const FIXTURE: BakedDictionary = {
   ipa: { woke: "woʊk", calm: "kɑːm", run: "rʌn" },
   inflections: { runs: "run", books: "book" },
   entries: {
-    woke: { p: "wəʊk", t: "v. 醒来" },
+    woke: { p: "wəʊk", t: "v. 醒来\nn. 醒来后的状态" },
     serene: { p: "səˈriːn", t: "adj. 平静的" },
+    run: { p: "", t: "v. 跑" },
   },
 };
 const dictionary = () => new OfflineDictionary(FIXTURE);
@@ -62,5 +64,43 @@ describe("OfflineDictionary — resolveIpa", () => {
       entries: {},
     });
     expect(empty.resolveIpa("woke")).toBeNull();
+  });
+});
+
+describe("OfflineDictionary — lookup (ticket 04 popup entry)", () => {
+  it("returns word, lemma, IPA with provenance, pos, translation", () => {
+    expect(dictionary().lookup("Woke")).toEqual({
+      word: "woke",
+      lemma: null,
+      ipa: "woʊk",
+      ipaSource: "form",
+      pos: "v. n.",
+      translation: "v. 醒来\nn. 醒来后的状态",
+    });
+  });
+
+  it("resolves inflected forms through the lemma (runs → run)", () => {
+    expect(dictionary().lookup("runs")).toEqual({
+      word: "runs",
+      lemma: "run",
+      ipa: "rʌn",
+      ipaSource: "lemma",
+      pos: "v.",
+      translation: "v. 跑",
+    });
+  });
+
+  it("answers null when no entry exists — zero-write territory", () => {
+    // IPA alone is not an entry: the server's lookupWord contract is the
+    // ECDICT entry (lemma's own first), so the popup can report 未收录
+    // and the store writes nothing.
+    expect(dictionary().lookup("calm")).toBeNull();
+    expect(dictionary().lookup("xqzzz")).toBeNull();
+    expect(dictionary().lookup("")).toBeNull();
+  });
+
+  it("stateKey folds to the lemma — states go cross-form", () => {
+    expect(dictionary().stateKey("runs")).toBe("run");
+    expect(dictionary().stateKey("Woke")).toBe("woke");
   });
 });

@@ -4,7 +4,7 @@
 
 **Blocked by:** 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 依据：ADR-0005（四态词元）、GLOSSARY 生词本/属主令牌/点词查详情；spec 存储 seam（唯一新 seam）。
 
