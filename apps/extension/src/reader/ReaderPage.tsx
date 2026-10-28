@@ -13,6 +13,16 @@ import {
   type ExtBlock,
   type ExtBook,
 } from "./import-book";
+import {
+  classifyPdfError,
+  destroyPdf,
+  detectScanned,
+  openPdf,
+  renderPdfPage,
+  sampleTextLengths,
+  type PdfSession,
+} from "./pdf";
+import type { IpaLookup } from "@lingualeaf/import-core";
 import { UploadRejected } from "@lingualeaf/import-core";
 import {
   loadOfflineDictionary,
@@ -48,6 +58,16 @@ type ReaderState =
       docId: string;
       book: ExtBook;
       chapterIndex: number;
+    }
+  // The PDF session: pages render on demand (原位叠加 per ticket 01), so
+  // a thousand-page book costs one page at a time — 渐进加载 by shape.
+  | {
+      phase: "pdf";
+      title: string;
+      session: PdfSession;
+      page: number;
+      scale: number;
+      lookup: IpaLookup;
     };
 
 // Relative to the extension origin (and true over file:// too).
@@ -229,6 +249,36 @@ export function ReaderPage({
     setState({ phase: "importing" });
     try {
       const offline: OfflineDictionary = await dictionary;
+      if (/\.pdf$/i.test(file.name)) {
+        const bytes = await file.arrayBuffer();
+        let session: PdfSession;
+        try {
+          session = await openPdf(bytes, file.name);
+        } catch (error) {
+          // pdf.js's native failures ride the shared rejection vocabulary;
+          // anything unmapped keeps its own story (the 意外 copy).
+          const reason = classifyPdfError(error);
+          if (!reason) throw error;
+          throw new UploadRejected(reason, String(error));
+        }
+        const lengths = await sampleTextLengths(session.doc);
+        if (detectScanned(lengths)) {
+          await destroyPdf(session);
+          throw new UploadRejected(
+            "scanned-pdf",
+            "image-only PDF has no text layer"
+          );
+        }
+        setState({
+          phase: "pdf",
+          title: session.title,
+          session,
+          page: 1,
+          scale: 1,
+          lookup: offline.ipaLookup(),
+        });
+        return;
+      }
       const book = await importBookFromFile(file, offline.ipaLookup());
       // The document id is its title: re-importing a book updates it in
       // place instead of duplicating the shelf entry.
@@ -428,6 +478,38 @@ export function ReaderPage({
     void handleFile(event.dataTransfer.files?.[0]);
   };
 
+  if (state.phase === "pdf") {
+    return (
+      <>
+        {lookup && resolvedStore ? (
+          <WordLookupPopup
+            click={lookup}
+            store={resolvedStore}
+            onClose={() => setLookup(null)}
+            onStatusApplied={handleStatusApplied}
+          />
+        ) : null}
+        <PdfReader
+          key={state.title}
+          title={state.title}
+          session={state.session}
+          page={state.page}
+          scale={state.scale}
+          lookup={state.lookup}
+          showIpa={showIpa}
+          onPage={(page) => setState({ ...state, page })}
+          onScale={(scale) => setState({ ...state, scale })}
+          onToggleIpa={() => setShowIpa((shown) => !shown)}
+          onWordClick={(word, point) => setLookup({ word, point })}
+          onReopen={() => {
+            void destroyPdf(state.session);
+            setState({ phase: "empty" });
+          }}
+        />
+      </>
+    );
+  }
+
   if (state.phase === "reading") {
     const { book: currentBook, docId, chapterIndex } = state;
     const chapter = currentBook.chapters[chapterIndex];
@@ -571,17 +653,141 @@ export function ReaderPage({
         </nav>
       ) : null}
       <label className="reader-picker">
-        <span>选择一个 EPUB 文件，或把它拖进本页。</span>
+        <span>选择一个 EPUB 或 PDF 文件，或把它拖进本页。</span>
         <input
           type="file"
-          accept=".epub"
+          accept=".epub,.pdf"
           aria-label="选择 EPUB 文件"
           onChange={onPick}
         />
       </label>
       <p className="reader-hint">
-        标注在浏览器本地完成：无网络、无服务进程。加密或损坏的档案无法导入。
+        标注在浏览器本地完成：无网络、无服务进程。加密、损坏的档案与扫描版
+        PDF（无文本层）无法导入。
       </p>
+    </main>
+  );
+}
+
+// The PDF reading view (ticket 06): one page on canvas at a time — a big
+// book is progressive by shape — with the proven word/IPA overlay. Word
+// units carry data-word, so the popup seam is the EPUB one verbatim.
+function PdfReader({
+  title,
+  session,
+  page,
+  scale,
+  lookup,
+  showIpa,
+  onPage,
+  onScale,
+  onToggleIpa,
+  onWordClick,
+  onReopen,
+}: {
+  title: string;
+  session: PdfSession;
+  page: number;
+  scale: number;
+  lookup: IpaLookup;
+  showIpa: boolean;
+  onPage: (page: number) => void;
+  onScale: (scale: number) => void;
+  onToggleIpa: () => void;
+  onWordClick: (word: string, point: { x: number; y: number }) => void;
+  onReopen: () => void;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const overlay = overlayRef.current;
+    if (!canvas || !overlay) return;
+    let cancelled = false;
+    renderPdfPage(
+      canvas,
+      overlay,
+      session.doc,
+      page,
+      scale,
+      lookup,
+      showIpa
+    ).catch((error: unknown) => {
+      if (!cancelled) console.warn("pdf page render failed", error);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session, page, scale, lookup, showIpa]);
+
+  // One delegated click for the overlay: word spans carry data-word,
+  // everything else stays inert — the same seam the chapter view uses.
+  const onOverlayClick = (event: ReactMouseEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    if (word) {
+      onWordClick(word, { x: event.clientX, y: event.clientY });
+    }
+  };
+
+  return (
+    <main className="reader" aria-label="扩展阅读页">
+      <header className="reader-head">
+        <h1 className="reader-title">{title}</h1>
+        <div className="reader-tools">
+          <button
+            type="button"
+            className="reader-toggle"
+            aria-pressed={showIpa}
+            onClick={onToggleIpa}
+          >
+            音标
+          </button>
+          {[0.75, 1, 1.5].map((zoom) => (
+            <button
+              key={zoom}
+              type="button"
+              className="reader-toggle"
+              aria-pressed={scale === zoom}
+              onClick={() => onScale(zoom)}
+            >
+              {zoom * 100}%
+            </button>
+          ))}
+          <button type="button" className="reader-reopen" onClick={onReopen}>
+            打开其他文件
+          </button>
+        </div>
+      </header>
+      <div
+        className="pdf-stage"
+        ref={overlayRef}
+        onClick={onOverlayClick}
+        role="presentation"
+      >
+        <canvas ref={canvasRef} />
+      </div>
+      <footer className="reader-pager">
+        <button
+          type="button"
+          disabled={page <= 1}
+          onClick={() => onPage(page - 1)}
+        >
+          上一页
+        </button>
+        <span className="reader-position">
+          {page} / {session.pageCount}
+        </span>
+        <button
+          type="button"
+          disabled={page >= session.pageCount}
+          onClick={() => onPage(page + 1)}
+        >
+          下一页
+        </button>
+      </footer>
     </main>
   );
 }

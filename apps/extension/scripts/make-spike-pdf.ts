@@ -11,16 +11,30 @@ const out = resolve(
 );
 
 const doc = await PDFDocument.create({ updateMetadata: false });
+doc.setTitle("Two columns, one question");
 const font = await doc.embedFont(StandardFonts.Helvetica);
 const page = doc.addPage([612, 792]);
 const ink = rgb(0.13, 0.2, 0.16);
 const size = 11;
 const leading = 16;
 
-const draw = (text: string, x: number, y: number) =>
-  page.drawText(text, { x, y, size, font, color: ink });
+const draw = (text: string, x: number, y: number, target = page) =>
+  target.drawText(text, { x, y, size, font, color: ink });
 
 draw("Two columns, one question", 72, 740);
+
+// A second, text-less page (ticket 06): the reader's page navigation has
+// something to walk to, and the scan-detection average must survive it.
+const blankish = doc.addPage([612, 792]);
+draw("Page two begins here. The story moves on, quietly.", 72, 740, blankish);
+for (let i = 0; i < 6; i++) {
+  draw(
+    "Filler for the second page of the sample book.",
+    72,
+    660 - i * 16,
+    blankish
+  );
+}
 
 // Column text: the second line ends mid-word with a hyphen ("exam-"), the
 // next line starts with the rest ("ple") — word-level overlay must decide

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01、03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 依据：spec PDF 决策；GLOSSARY 书（文本层完好方可导入）。
 

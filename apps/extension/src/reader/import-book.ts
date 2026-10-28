@@ -33,10 +33,10 @@ export type ExtBook = { title: string; chapters: ExtChapter[] };
 // upload cap and HTTP statuses are server facts — the extension reads the
 // user's own file, so its copy differs where the reasons are server-shaped.
 export const IMPORT_ERROR_COPY: Record<ImportErrorCode, string> = {
-  "unsupported-format": "暂不支持这种文件——扩展阅读页当前支持 EPUB。",
+  "unsupported-format": "暂不支持这种文件——扩展阅读页当前支持 EPUB 与 PDF。",
   "invalid-epub": "导入失败：文件无法解析，可能已损坏。",
-  "invalid-pdf": "暂不支持 PDF——扩展阅读页当前支持 EPUB。",
-  "encrypted-pdf": "暂不支持加密 PDF——扩展阅读页当前支持 EPUB。",
+  "invalid-pdf": "导入失败：PDF 无法解析，可能已损坏。",
+  "encrypted-pdf": "导入失败：加密 PDF 暂不支持。",
   "scanned-pdf": "扫描版 PDF 不支持——《书》只收文本层完好的文档。",
   "file-too-large": "导入失败：文件过大。",
 };

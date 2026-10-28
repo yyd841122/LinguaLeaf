@@ -101,14 +101,30 @@ describe("ReaderPage — the EPUB skeleton", () => {
     ).toBeInTheDocument();
   });
 
-  it("declines non-EPUB files with the unsupported copy", async () => {
+  it("declines unrecognized files with the unsupported copy", async () => {
+    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    const doc = await fixtureFile("paper.docx", new Uint8Array([1, 2, 3]));
+    await pickFile(doc);
+
+    expect(
+      await screen.findByText(
+        "暂不支持这种文件——扩展阅读页当前支持 EPUB 与 PDF。"
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("lands in the error phase — never a dead end — for a broken PDF (ticket 06)", async () => {
+    // The copy depends on pdf.js's own error shape, which differs between
+    // the fake worker (jsdom) and the browser; the phase and the reusable
+    // entry are the page's contract here. The copy-level mapping rides the
+    // real browser smoke (InvalidPDFException is the browser's shape).
     render(<ReaderPage library={createMemoryLibraryStore()} />);
     const pdf = await fixtureFile("paper.pdf", new Uint8Array([1, 2, 3]));
     await pickFile(pdf);
 
-    expect(
-      await screen.findByText("暂不支持这种文件——扩展阅读页当前支持 EPUB。")
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+    const input = document.querySelector('input[type="file"]');
+    expect(input).toBeInTheDocument();
   });
 });
 
