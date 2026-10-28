@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bake:dictionary": "tsx scripts/bake-dictionary.ts"
   },
   "dependencies": {
     "@lingualeaf/import-core": "0.1.0",

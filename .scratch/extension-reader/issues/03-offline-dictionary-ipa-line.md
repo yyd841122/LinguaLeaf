@@ -4,7 +4,7 @@
 
 **Blocked by:** 02
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 依据：spec 离线词典与标注管线决策；GLOSSARY 音标行/离线词典/词元。
 

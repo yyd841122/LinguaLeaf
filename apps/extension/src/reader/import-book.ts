@@ -1,17 +1,23 @@
 import {
+  buildIpaSlots,
   isEpubFilename,
   readEpubBook,
   splitSentences,
   UploadRejected,
   type ImportErrorCode,
+  type IpaLookup,
   type PreparedBook,
 } from "@lingualeaf/import-core";
 
-// The extension's block shapes: the same sentence-split walk as the
-// server's annotation pass (buildChapterBlocks), minus IPA — the offline
-// dictionary (ticket 03) fills the slots this type will grow. Image and
-// passthrough blocks stay unannotated placeholders, mirroring the server.
-export type ExtSentenceBlock = { kind: "sentence"; text: string };
+// The extension's block shapes: the same annotation walk as the server's
+// buildChapterBlocks — sentence blocks carry their IPA slot array, built
+// against the offline dictionary at import time. Image and passthrough
+// blocks stay unannotated placeholders, mirroring the server.
+export type ExtSentenceBlock = {
+  kind: "sentence";
+  text: string;
+  ipaSlots: string[];
+};
 export type ExtPlainBlock = { kind: "code" | "raw" | "image"; text: string };
 export type ExtBlock = ExtSentenceBlock | ExtPlainBlock;
 export type ExtChapter = {
@@ -49,15 +55,19 @@ function readAsArrayBuffer(file: File): Promise<ArrayBuffer> {
 
 // One import entry for the page: a File in, ExtBook out; rejections carry
 // their wire reason so the page can show the matching copy.
-export async function importBookFromFile(file: File): Promise<ExtBook> {
-  return importBook(await readAsArrayBuffer(file), file.name);
+export async function importBookFromFile(
+  file: File,
+  lookup: IpaLookup
+): Promise<ExtBook> {
+  return importBook(await readAsArrayBuffer(file), file.name, lookup);
 }
 
 // Bytes in, ExtBook out — the direct form the tests use beside the File
 // entry point.
 export async function importBook(
   content: ArrayBuffer,
-  filename: string
+  filename: string,
+  lookup: IpaLookup
 ): Promise<ExtBook> {
   if (!isEpubFilename(filename)) {
     throw new UploadRejected(
@@ -65,15 +75,14 @@ export async function importBook(
       "the extension reader accepts EPUB files"
     );
   }
-  return assembleBook(await readEpubBook(content, filename));
+  return assembleBook(await readEpubBook(content, filename), lookup);
 }
 
 // The extension's block assembly over the extracted chapters: sentence
-// blocks per split sentence, images as placeholders, code/passthrough
-// verbatim. The server's buildChapterBlocks walks the identical shapes —
-// and the 03 IPA seam sits exactly at the split, where each sentence block
-// will also carry its slot array.
-function assembleBook(prepared: PreparedBook): ExtBook {
+// blocks per split sentence, each carrying its slot array from the shared
+// builder (the word-pairing truth source — one code path with the server's
+// import), images as placeholders, code/passthrough verbatim.
+function assembleBook(prepared: PreparedBook, lookup: IpaLookup): ExtBook {
   return {
     title: prepared.title,
     chapters: prepared.chapters.map((chapter) => ({
@@ -84,6 +93,7 @@ function assembleBook(prepared: PreparedBook): ExtBook {
           ? splitSentences(item.text).map((text) => ({
               kind: "sentence",
               text,
+              ipaSlots: buildIpaSlots(lookup, text),
             }))
           : [{ kind: item.kind, text: item.text }]
       ),

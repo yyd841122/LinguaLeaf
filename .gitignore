@@ -53,3 +53,7 @@ dist/
 # Architecture-review reports (/improve-codebase-architecture) — dated
 # per-run artifacts written to .scratch so they survive machine restarts.
 .scratch/architecture-review-*.html
+
+# Baked offline dictionary asset — built locally from the server's
+# .data/dictionary.sqlite by apps/extension/scripts/bake-dictionary.ts.
+apps/extension/public/dictionary.json

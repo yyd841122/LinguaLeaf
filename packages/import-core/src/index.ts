@@ -17,6 +17,12 @@ export {
 } from "./extract-html.js";
 export { splitSentences } from "./sentences.js";
 export {
+  tokenizeWords,
+  buildIpaSlots,
+  buildIpaLine,
+  type IpaLookup,
+} from "./ipa-line.js";
+export {
   UploadRejected,
   type ImportErrorCode,
   type ImportRejection,

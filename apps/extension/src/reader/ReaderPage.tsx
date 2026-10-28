@@ -1,23 +1,33 @@
-import { useRef, useState } from "react";
-import type { ChangeEvent, DragEvent } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { ChangeEvent, DragEvent, KeyboardEvent } from "react";
+import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
+import type { ReactNode } from "react";
 import {
   IMPORT_ERROR_COPY,
   importBookFromFile,
+  type ExtBlock,
   type ExtBook,
 } from "./import-book";
-import type { ExtBlock } from "./import-book";
 import { UploadRejected } from "@lingualeaf/import-core";
+import {
+  loadOfflineDictionary,
+  type OfflineDictionary,
+} from "../dict/offline-dictionary";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
-// → reading, with errors as a phase that keeps the entry usable. No
-// persistence yet (tickets 04/05 introduce the storage seam) — a closed
+// → reading, with errors as a phase that keeps the entry usable. The
+// offline dictionary loads once per mount, before any book can need it.
+// No persistence yet (tickets 04/05 introduce the storage seam) — a closed
 // tab forgets the book, and re-entry starts at the file picker.
 type ReaderState =
   | { phase: "empty" }
   | { phase: "importing" }
   | { phase: "error"; copy: string }
   | { phase: "reading"; book: ExtBook; chapterIndex: number };
+
+// Relative to the extension origin (and true over file:// too).
+const DICTIONARY_URL = "./dictionary.json";
 
 function copyFor(error: unknown): string {
   if (error instanceof UploadRejected) {
@@ -29,47 +39,105 @@ function copyFor(error: unknown): string {
   return "导入失败：出了点意外，请重试。";
 }
 
-function BlockView({ block }: { block: ExtBlock }) {
+// The original line's word units — the web reader's WordSegments shape,
+// driven by the same segmentOriginal walk, so word/slot pairing (and the
+// data-word click targets of ticket 04) are identical across frontends.
+// An empty slot renders the word as a plain lookup target: the gap is
+// invisible, the line stays aligned.
+function WordSegments({
+  segments,
+  showSlots,
+}: {
+  segments: Segment[];
+  showSlots: boolean;
+}) {
+  const nodes: ReactNode[] = [];
+  let index = 0;
+  for (const segment of segments) {
+    if (segment.kind === "text") {
+      nodes.push(segment.text);
+      continue;
+    }
+    const ipa = showSlots ? segment.ipa : undefined;
+    nodes.push(
+      ipa ? (
+        <span
+          className="ipa-word"
+          data-word={segment.word}
+          key={index}
+          role="button"
+          tabIndex={0}
+        >
+          <span className="ipa-word-text">{segment.word}</span>
+          {/* Transcription rides as data-ipa and paints via ::before:
+              pseudo-element content never enters a text selection (the
+              shared stylesheet carries the rule). */}
+          <span className="ipa-word-ipa" data-ipa={ipa} />
+        </span>
+      ) : (
+        <span
+          className="lookup-word"
+          data-word={segment.word}
+          key={index}
+          role="button"
+          tabIndex={0}
+        >
+          {segment.word}
+        </span>
+      )
+    );
+    index += 1;
+  }
+  return <>{nodes}</>;
+}
+
+function BlockView({ block, showIpa }: { block: ExtBlock; showIpa: boolean }) {
   if (block.kind === "sentence") {
+    // Two separate facts: whether slots pair with the words (same walk as
+    // the import that built them — they always do here), and whether the
+    // reader wants IPA at all. With IPA hidden the word units stay.
+    const { segments } = segmentOriginal(block.text, block.ipaSlots);
     return (
-      <p className="reader-sentence" data-kind="sentence">
-        {block.text}
-      </p>
+      <div className="sentence-block">
+        <p className="original-line">
+          <WordSegments segments={segments} showSlots={showIpa} />
+        </p>
+      </div>
     );
   }
   if (block.kind === "code") {
     return (
-      <pre className="reader-code" data-kind="code">
+      <pre className="code-block">
         <code>{block.text}</code>
       </pre>
     );
   }
   if (block.kind === "image") {
     return (
-      <figure className="reader-image" data-kind="image">
-        <span className="reader-image-placeholder" aria-hidden="true">
+      <figure className="image-block">
+        <span className="image-placeholder" aria-hidden="true">
           🖼
         </span>
         {block.text ? <figcaption>{block.text}</figcaption> : null}
       </figure>
     );
   }
-  return (
-    <p className="reader-raw" data-kind="raw">
-      {block.text}
-    </p>
-  );
+  return <p className="raw-block">{block.text}</p>;
 }
 
 export function ReaderPage() {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
+  const [showIpa, setShowIpa] = useState(true);
   const dropDepth = useRef(0);
+  // One dictionary load per mount; a file picked mid-load simply awaits it.
+  const dictionary = useMemo(() => loadOfflineDictionary(DICTIONARY_URL), []);
 
   const handleFile = async (file: File | undefined | null) => {
     if (!file || state.phase === "importing") return;
     setState({ phase: "importing" });
     try {
-      const book = await importBookFromFile(file);
+      const offline: OfflineDictionary = await dictionary;
+      const book = await importBookFromFile(file, offline.ipaLookup());
       setState({ phase: "reading", book, chapterIndex: 0 });
     } catch (error) {
       setState({ phase: "error", copy: copyFor(error) });
@@ -108,17 +176,40 @@ export function ReaderPage() {
         setState({ ...state, chapterIndex: index });
       }
     };
+    // Keyboard reaches the words the same way the web reader does: the
+    // word spans are buttons, Enter/Space triggers the click (ticket 04's
+    // popup will anchor there).
+    const onWordKeyDown = (event: KeyboardEvent<HTMLElement>) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      const target = event.target as HTMLElement;
+      if (!target.matches("[data-word]")) return;
+      event.preventDefault();
+      target.click();
+    };
     return (
       <main className="reader" aria-label="扩展阅读页">
         <header className="reader-head">
           <h1 className="reader-title">{book.title}</h1>
-          <button
-            type="button"
-            className="reader-reopen"
-            onClick={() => setState({ phase: "empty" })}
-          >
-            打开其他文件
-          </button>
+          <div className="reader-tools">
+            {/* 显示开关 (GLOSSARY): hides the transcription line while the
+                word units stay — clean reading and annotated reading
+                switch instantly. */}
+            <button
+              type="button"
+              className="reader-toggle"
+              aria-pressed={showIpa}
+              onClick={() => setShowIpa((shown) => !shown)}
+            >
+              音标
+            </button>
+            <button
+              type="button"
+              className="reader-reopen"
+              onClick={() => setState({ phase: "empty" })}
+            >
+              打开其他文件
+            </button>
+          </div>
         </header>
         <nav className="reader-toc" aria-label="目录">
           <ol>
@@ -136,13 +227,15 @@ export function ReaderPage() {
           </ol>
         </nav>
         {chapter ? (
-          <section className="reader-chapter" aria-label={chapter.title}>
+          <section
+            className="reader-chapter"
+            aria-label={chapter.title}
+            onKeyDown={onWordKeyDown}
+          >
             <h2>{chapter.title}</h2>
-            <div className="reader-blocks">
-              {chapter.blocks.map((block, index) => (
-                <BlockView key={index} block={block} />
-              ))}
-            </div>
+            {chapter.blocks.map((block, index) => (
+              <BlockView key={index} block={block} showIpa={showIpa} />
+            ))}
           </section>
         ) : null}
         <footer className="reader-pager">

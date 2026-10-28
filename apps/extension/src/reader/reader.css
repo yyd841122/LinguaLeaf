@@ -1,7 +1,7 @@
-/* The 02 skeleton's shell: layout and reading typography only. The IPA
-   line's pairing styles arrive with ticket 03 through the shared
-   annotated stylesheet (@lingualeaf/reading-model/annotated-shared.css),
-   the same sheet the web reader and the export render from. */
+/* The annotation styles are the shared annotated stylesheet — the same
+   sheet the web reader and the export render from (ipa-word pairing,
+   popup, blocks). Only the extension's shell lives here. */
+@import "@lingualeaf/reading-model/annotated-shared.css";
 :root {
   color-scheme: light dark;
   --reader-max: 44rem;
@@ -54,6 +54,15 @@ body {
   gap: 1rem;
   border-bottom: 1px solid gray;
   padding-bottom: 0.75rem;
+}
+.reader-tools {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+.reader-toggle[aria-pressed="true"] {
+  font-weight: bold;
+  color: #6a4fa3;
 }
 .reader-toc ol {
   list-style: none;
