@@ -1,6 +1,5 @@
-import type { ImportRejection } from "../wire.js";
-import type { PreparedBook } from "./pipeline.js";
-import { isEpubFilename, readEpubBook } from "./epub.js";
+import type { ImportRejection, PreparedBook } from "@lingualeaf/import-core";
+import { isEpubFilename, readEpubBook } from "@lingualeaf/import-core";
 import { isMarkdownFilename, readMarkdownBook } from "./markdown.js";
 import { isPdfFilename, readPdfBook } from "./pdf.js";
 import { UploadRejected } from "./upload-rejection.js";

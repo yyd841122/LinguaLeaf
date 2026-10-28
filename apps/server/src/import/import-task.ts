@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import type { Dictionary } from "../dict/dictionary.js";
-import { buildChapterBlocks, type PreparedBook } from "./pipeline.js";
+import { buildChapterBlocks } from "./pipeline.js";
+import type { PreparedBook } from "@lingualeaf/import-core";
 import { persistBook, setImportProgress, settleImport } from "../book-store.js";
 import { fireTask } from "../task-lifecycle.js";
 

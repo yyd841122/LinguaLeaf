@@ -14,14 +14,12 @@
     "build:export-style": "node scripts/build-export-style.mjs"
   },
   "dependencies": {
+    "@lingualeaf/import-core": "0.1.0",
     "@lingualeaf/reading-model": "0.1.0",
     "better-sqlite3": "^12.11.1",
-    "cheerio": "^1.2.0",
     "express": "^5.2.1",
-    "jszip": "^3.10.2",
     "markdown-it": "^15.0.3",
     "multer": "^2.4.0",
-    "sbd": "^1.0.19",
     "unpdf": "^1.9.1"
   },
   "devDependencies": {

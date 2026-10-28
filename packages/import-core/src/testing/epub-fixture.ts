@@ -1,21 +1,33 @@
 import JSZip from "jszip";
 
+// base64 → bytes without node's Buffer: atob is a global in browsers and
+// node ≥16, so the builder bundles (and runs) under either host.
+function base64Bytes(b64: string): Uint8Array {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 // EPUB fixtures built in-test from their parts: the structure (container,
 // OPF, spine order, XHTML docs, image resources) stays visible and each
 // test assembles exactly the messy shape it needs (encoded hrefs, missing
 // spine resources, absent dc:title). The committed binary sample-book.epub
-// next to this file is `createSampleEpub()` written to disk, for manual
-// acceptance uploads through the UI; a fixture test asserts it stays
-// byte-identical to the builder.
+// (test/fixtures/) is `createSampleEpub()` written to disk; a fixture test
+// asserts it stays byte-identical to the builder. The builder emits
+// Uint8Array so both hosts can use it: node tests wrap Buffer.from() where
+// an upload seam demands a Buffer, the extension passes the bytes to the
+// import chain directly.
 
 // File timestamps are pinned so the builder output is byte-stable.
 const FIXED_DATE = new Date("2026-10-18T00:00:00Z");
 
 // A valid 1×1 PNG; content never leaves the pipeline (images become
 // placeholders), only the manifest entry and the zip path matter.
-const ONE_BY_ONE_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-  "base64"
+const ONE_BY_ONE_PNG = base64Bytes(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
 );
 
 export type EpubDoc = {
@@ -66,7 +78,7 @@ export type EpubPackage = {
   prefixOpf?: boolean;
 };
 
-export async function buildEpub(book: EpubPackage): Promise<Buffer> {
+export async function buildEpub(book: EpubPackage): Promise<Uint8Array> {
   const zip = new JSZip();
   // The mimetype entry is conventionally first and uncompressed.
   zip.file("mimetype", "application/epub+zip", {
@@ -124,12 +136,12 @@ export async function buildEpub(book: EpubPackage): Promise<Buffer> {
   for (const dropped of book.dropFiles ?? []) {
     zip.remove(dropped);
   }
-  return zip.generateAsync({ type: "nodebuffer" });
+  return zip.generateAsync({ type: "uint8array" });
 }
 
 // The seam test's book: title page, an illustrated chapter (paragraph, two
 // images — one bare, one in a figure with caption), a two-sentence chapter.
-export function createSampleEpub(): Promise<Buffer> {
+export function createSampleEpub(): Promise<Uint8Array> {
   return buildEpub({
     title: "Sample EPUB Book",
     docs: [

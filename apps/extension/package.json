@@ -1,0 +1,28 @@
+{
+  "name": "@lingualeaf/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@lingualeaf/import-core": "0.1.0",
+    "@lingualeaf/reading-model": "0.1.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@types/chrome": "^0.3.7",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^5.0.4",
+    "jsdom": "^27.0.1",
+    "vite": "~7.3.6"
+  }
+}

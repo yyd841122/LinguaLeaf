@@ -9,7 +9,7 @@ import {
 } from "../src/book-store.js";
 import { runImportTask } from "../src/import/import-task.js";
 import { drainTasks } from "../src/task-lifecycle.js";
-import type { PreparedBook } from "../src/import/pipeline.js";
+import type { PreparedBook } from "@lingualeaf/import-core";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 
 // Direct import-task tests: no HTTP, no polling — the task's promise is

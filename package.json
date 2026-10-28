@@ -14,9 +14,9 @@
     "dev": "node --env-file-if-exists=.env --import tsx --watch apps/server/src/main.ts --dev",
     "dict:import-ecdict": "npm run dict:import-ecdict --workspace @lingualeaf/server --",
     "dict:import-ipa-dict": "npm run dict:import-ipa-dict --workspace @lingualeaf/server --",
-    "build": "npm run build:file-script --workspace @lingualeaf/server && npm run build:export-style --workspace @lingualeaf/server && npm run typecheck && npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/web && npm run build --workspace @lingualeaf/server",
+    "build": "npm run build:file-script --workspace @lingualeaf/server && npm run build:export-style --workspace @lingualeaf/server && npm run typecheck && npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/import-core && npm run build --workspace @lingualeaf/web && npm run build --workspace @lingualeaf/server && npm run build --workspace @lingualeaf/extension",
     "start": "node --env-file-if-exists=.env .output/server/main.js",
-    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @lingualeaf/reading-model && npm run typecheck --workspace @lingualeaf/server && npm run typecheck --workspace @lingualeaf/web && npm run check:contract-types",
+    "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspace @lingualeaf/reading-model && npm run typecheck --workspace @lingualeaf/import-core && npm run typecheck --workspace @lingualeaf/server && npm run typecheck --workspace @lingualeaf/web && npm run check:contract-types && npm run typecheck --workspace @lingualeaf/extension",
     "test": "vitest run",
     "verify": "npm run typecheck && npm test && npm run lint && npm run check:sql-locality && npm run check:task-lifecycle && npm run check:storage-locality && npm run build",
     "test:watch": "vitest",
@@ -25,8 +25,8 @@
     "check:task-lifecycle": "npm run check:task-lifecycle --workspace @lingualeaf/server",
     "check:storage-locality": "npm run check:storage-locality --workspace @lingualeaf/web",
     "prepare": "husky",
-    "pretypecheck": "npm run build --workspace @lingualeaf/reading-model",
-    "pretest": "npm run build --workspace @lingualeaf/reading-model",
+    "pretypecheck": "npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/import-core",
+    "pretest": "npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/import-core",
     "check:contract-types": "tsc --noEmit -p apps/server/tsconfig.contract-test.json"
   },
   "devDependencies": {

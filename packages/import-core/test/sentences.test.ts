@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { splitSentences } from "../src/import/sentences.js";
+import { splitSentences } from "../src/sentences.js";
 
 describe("splitSentences", () => {
   it("splits on newlines without eating the punctuation beside them", () => {

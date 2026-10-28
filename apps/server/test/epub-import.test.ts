@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import type { Express } from "express";
@@ -9,7 +7,19 @@ import { openDatabase } from "../src/database.js";
 import { openDictionary } from "../src/dict/dictionary.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
-import { buildEpub, createSampleEpub } from "./fixtures/epub.js";
+import {
+  buildEpub as buildEpubBytes,
+  createSampleEpub as createSampleEpubBytes,
+  type EpubPackage,
+} from "@lingualeaf/import-core/testing";
+
+// The shared builder emits browser-safe Uint8Array; the supertest upload
+// seam wants a node Buffer, so these two aliases are the file's only
+// Buffer boundary.
+const buildEpub = (book: EpubPackage): Promise<Buffer> =>
+  buildEpubBytes(book).then(Buffer.from);
+const createSampleEpub = (): Promise<Buffer> =>
+  createSampleEpubBytes().then(Buffer.from);
 
 describe("EPUB import through the HTTP API seam", () => {
   let database: Database.Database;
@@ -368,16 +378,5 @@ describe("messy EPUB shapes through the HTTP API seam", () => {
     expect(created.status).toBe(400);
     expect(created.body.error).toContain("gone.xhtml");
     expect((await request(app).get("/api/books")).body.books).toEqual([]);
-  });
-});
-
-// The committed binary exists for manual acceptance uploads; this keeps it
-// from drifting away from the builder that documents its structure.
-describe("committed sample fixture", () => {
-  it("sample-book.epub is byte-identical to the builder output", async () => {
-    const committed = readFileSync(
-      fileURLToPath(new URL("./fixtures/sample-book.epub", import.meta.url))
-    );
-    expect(committed.equals(await createSampleEpub())).toBe(true);
   });
 });

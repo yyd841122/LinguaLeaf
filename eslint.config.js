@@ -56,11 +56,16 @@ export default tseslint.config(
     rules: noNodeGlobalsInBrowser,
   },
   {
-    // The reading-model package is browser-oriented shared code (its own
-    // vitest config runs under the node block above).
+    // The reading-model and import-core packages are browser-oriented
+    // shared code (their own vitest configs run under the node block
+    // above).
     files: [
       "packages/reading-model/src/**/*.ts",
       "packages/reading-model/test/**/*.ts",
+      "packages/import-core/src/**/*.ts",
+      "packages/import-core/test/**/*.ts",
+      "apps/extension/src/**/*.{ts,tsx}",
+      "apps/extension/test/**/*.{ts,tsx}",
     ],
     languageOptions: { globals: globals.browser },
     rules: noNodeGlobalsInBrowser,
@@ -70,7 +75,11 @@ export default tseslint.config(
     // rules-of-hooks (no conditional hooks) and exhaustive-deps (effect
     // deps complete). Deliberately narrow deps suppress it locally with a
     // justified disable, never by loosening the rule (retro 2026-10-24).
-    files: ["apps/web/**/*.{ts,tsx}", "packages/reading-model/**/*.{ts,tsx}"],
+    files: [
+      "apps/web/**/*.{ts,tsx}",
+      "apps/extension/**/*.{ts,tsx}",
+      "packages/reading-model/**/*.{ts,tsx}",
+    ],
     plugins: { "react-hooks": reactHooks },
     rules: {
       "react-hooks/rules-of-hooks": "error",

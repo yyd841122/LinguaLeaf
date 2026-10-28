@@ -1,22 +1,12 @@
 import type { Dictionary } from "../dict/dictionary.js";
 import { buildIpaSlots } from "../dict/ipa-line.js";
-import type { ExtractedChapter } from "./extract-html.js";
-import { splitSentences } from "./sentences.js";
+import { splitSentences, type PreparedBook } from "@lingualeaf/import-core";
 import type { BlockRow } from "../book-store.js";
 
-export type BookFormat = "markdown" | "epub" | "pdf";
-
-// What the format-specific front halves (markdown.ts, epub.ts, pdf.ts) hand
-// to the shared import: extracted chapters plus the book title. Everything
-// past this type — sentence splitting, IPA, translation, insert — is one
-// path. pageCount is a PDF fact (the shelf's long-book hint rides on it);
-// the other front halves leave it unset.
-export type PreparedBook = {
-  title: string;
-  format: BookFormat;
-  chapters: ExtractedChapter[];
-  pageCount?: number;
-};
+// PreparedBook and the extraction half it names moved to
+// @lingualeaf/import-core (extension-reader ticket 02); the server's half
+// of the pipeline is what remains here: the annotation pass over the
+// extracted chapters, keyed to the server's SQLite dictionary.
 
 // The annotation pass that is pure CPU: sentence splitting plus per-word
 // IPA lookups against the local dictionary (all fast). It is the import's

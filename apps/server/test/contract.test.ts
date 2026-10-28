@@ -28,7 +28,13 @@ import { createFixtureDictionary } from "./fixtures/dictionary.js";
 import { createFakeTranslator } from "./fixtures/translator.js";
 import { waitForShelfBook } from "./fixtures/async-import.js";
 import { createEncryptedPdf, createScannedPdf } from "./fixtures/pdf.js";
-import { buildEpub } from "./fixtures/epub.js";
+import { buildEpub as buildEpubBytes } from "@lingualeaf/import-core/testing";
+import type { EpubPackage } from "@lingualeaf/import-core/testing";
+
+// The shared builder emits browser-safe Uint8Array; the supertest upload
+// seam wants a node Buffer — this alias is the file's only Buffer boundary.
+const buildEpub = (book: EpubPackage): Promise<Buffer> =>
+  buildEpubBytes(book).then(Buffer.from);
 import { ApiError, fetchJson } from "../../../apps/web/src/api";
 import { IMPORT_STAGE_LABELS } from "../../../apps/web/src/importCopy";
 import {

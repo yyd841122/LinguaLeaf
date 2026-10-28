@@ -4,7 +4,7 @@ import {
   getMeta,
   type StructuredTextItem,
 } from "unpdf";
-import type { PreparedBook } from "./pipeline.js";
+import type { PreparedBook } from "@lingualeaf/import-core";
 import { UploadRejected } from "./upload-rejection.js";
 
 // Single source of truth for what counts as a PDF book file.

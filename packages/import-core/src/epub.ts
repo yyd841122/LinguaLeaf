@@ -1,8 +1,8 @@
-import { posix } from "node:path";
-import { UploadRejected } from "./upload-rejection.js";
+import { UploadRejected } from "./rejection.js";
 import JSZip from "jszip";
 import * as cheerio from "cheerio";
-import type { PreparedBook } from "./pipeline.js";
+import { dirname, join } from "./posix-path.js";
+import type { PreparedBook } from "./types.js";
 import {
   deriveBookTitle,
   extractChaptersFromHtml,
@@ -54,8 +54,10 @@ const decodeHref = (href: string) => {
 // boundary (按 spine 顺序抽取章节): a document with headings contributes its
 // chapters in order, a headingless one (covers, title pages) becomes a
 // single chapter titled from its <head><title>.
+// Bytes come as Uint8Array (the browser's File/ArrayBuffer shape) or
+// ArrayBuffer; node's Buffer is a Uint8Array subclass and passes as-is.
 export async function readEpubBook(
-  content: Buffer,
+  content: Uint8Array | ArrayBuffer,
   filename: string
 ): Promise<PreparedBook> {
   let zip: JSZip;
@@ -129,7 +131,7 @@ export async function readEpubBook(
 
   // Manifest maps spine idrefs to hrefs; hrefs resolve against the package
   // document's directory.
-  const packageDir = posix.dirname(packagePath);
+  const packageDir = dirname(packagePath);
   const hrefsById = new Map<string, string>();
   const manifest = firstByLocalName(opf, "manifest");
   if (manifest) {
@@ -165,9 +167,10 @@ export async function readEpubBook(
       throw invalidEpub(`spine references unknown manifest id "${idref}"`);
     }
     // Strip the fragment before resolving; a spine href rarely carries one.
-    const path = posix
-      .join(packageDir, decodeHref(href.replace(/#.*$/, "")))
-      .replace(/^\.\//, "");
+    const path = join(packageDir, decodeHref(href.replace(/#.*$/, ""))).replace(
+      /^\.\//,
+      ""
+    );
     const document = cheerio.load(await zipText(path));
     documents.push({
       title: document("head > title").first().text().trim() || null,

@@ -43,26 +43,15 @@ export type ChapterTranslationState = {
 // for rows older imports wrote; the startup sweep clears it.
 export type ImportStage = "annotating" | "saving";
 
-// Stable machine codes for the upload rejections the shelf branches on.
-// The body's `error` field stays reader-facing prose the server may reword;
-// the code is the contract, so client branches survive copy edits. Each
-// reason's HTTP status lives in one table: REJECTION_STATUS
+// Stable machine codes for the upload rejections the shelf branches on —
+// re-exported from their home in @lingualeaf/import-core (extension-reader
+// ticket 02): the extension branches the same codes into user copy, so the
+// union lives with the import chain both hosts run. The body's `error`
+// field stays reader-facing prose the server may reword; the code is the
+// contract, so client branches survive copy edits. Each reason's HTTP
+// status lives in one table: REJECTION_STATUS
 // (apps/server/src/import/upload-rejection.ts).
-export type ImportErrorCode =
-  | "unsupported-format" // 415 — extension not accepted
-  | "invalid-epub" // 400 — EPUB unparseable
-  | "invalid-pdf" // 400 — PDF unparseable
-  | "encrypted-pdf" // 400 — password-protected PDF
-  | "scanned-pdf" // 422 — image-only PDF
-  | "file-too-large"; // 413 — past the upload limit
-
-// The shape of every coded upload rejection: a stable machine code beside
-// the reader-facing message. The router builds these with `satisfies`, so
-// a typo'd code is a compile error where the body is written.
-export type ImportRejection = {
-  code: ImportErrorCode;
-  error: string;
-};
+export type { ImportErrorCode, ImportRejection } from "@lingualeaf/import-core";
 
 // The vocabulary's stored states (ADR-0005, 生词本四态): a word_states row
 // always carries one of these three. 'New' — never encountered — is the

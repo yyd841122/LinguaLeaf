@@ -1,0 +1,87 @@
+/* The 02 skeleton's shell: layout and reading typography only. The IPA
+   line's pairing styles arrive with ticket 03 through the shared
+   annotated stylesheet (@lingualeaf/reading-model/annotated-shared.css),
+   the same sheet the web reader and the export render from. */
+:root {
+  color-scheme: light dark;
+  --reader-max: 44rem;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", "Songti SC", serif;
+  line-height: 1.7;
+}
+.reader {
+  max-width: var(--reader-max);
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+.reader-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 90vh;
+  justify-content: center;
+}
+.reader-title {
+  font-size: 1.4rem;
+  margin: 0;
+}
+.reader-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 2px dashed gray;
+  border-radius: 8px;
+  padding: 2rem 1.5rem;
+  cursor: pointer;
+}
+.reader-hint,
+.reader-status {
+  color: gray;
+  font-size: 0.9rem;
+}
+.reader-error {
+  color: #b3261e;
+}
+.reader-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid gray;
+  padding-bottom: 0.75rem;
+}
+.reader-toc ol {
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.reader-toc button {
+  background: none;
+  border: none;
+  color: #6a4fa3;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.reader-toc button[aria-current="true"] {
+  font-weight: bold;
+  text-decoration: underline;
+}
+.reader-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2rem;
+}
+.reader-position {
+  color: gray;
+  font-size: 0.9rem;
+}

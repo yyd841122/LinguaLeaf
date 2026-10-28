@@ -3,8 +3,8 @@ import {
   deriveBookTitle,
   extractChaptersFromHtml,
   type ExtractedChapter,
-} from "./extract-html.js";
-import type { PreparedBook } from "./pipeline.js";
+  type PreparedBook,
+} from "@lingualeaf/import-core";
 
 const markdown = new MarkdownIt({ html: false, typographer: false });
 
