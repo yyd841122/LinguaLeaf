@@ -64,3 +64,29 @@ db.close();
 Ticket 08's report dissolved once the row showed a book parked at
 `importing / 0%` with nothing listening on the port: the server was down,
 not the feature broken.
+
+## Extension (MV3) smoke
+
+The extension has a committed harness — `npm run smoke
+--workspace @lingualeaf/extension` — so no session reinvents it:
+
+- **It builds first.** Every stale-dist bug (source changed, old bundle
+  smoked, silent nonsense) dies at this step. Never smoke a dist you did
+  not just build.
+- **Serve `dist/` over loopback**: module CORS blocks `file://`, and the
+  MIME table must carry `.mjs` (pdf.js's worker loads as a module script).
+- **Self-spawn the cached Chromium over CDP** (`--headless=new
+--remote-debugging-port`, `--no-proxy-server`) when the playwright
+  registry mismatches the cached browser. Free the DevTools port before
+  spawning — an orphaned Chromium from a killed run holds it, the new one
+  binds nothing, and every readiness probe answers the ORPHAN (invariant 1
+  above, extension flavor).
+- **Assert geometry, not existence** (CODING_STANDARDS, "Smoke assertions
+  pin the claimed property"): overlay words must land inside the canvas
+  rect, chips below their word's font band, computed `color`/`userSelect`
+  exact.
+- **Known limits**: the script's chrome.storage stub masks
+  manifest-permission gaps — `apps/extension/scripts/
+check-manifest-permissions.mjs` (wired into `verify`) is that class's
+  gate, and load-unpacked stays the human acceptance. Hover/selection
+  pixels likewise.

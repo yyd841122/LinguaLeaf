@@ -369,3 +369,27 @@ comparison-based guard, trace the guard through a re-entrant key cycle
 (A→B→A; a popup word visited, left, revisited): when the earlier pass's
 response lands after the later pass's, who wins, and can the two passes'
 data differ? "The key covers it" is the claim to check, not the proof.
+
+## Smoke assertions pin the claimed property
+
+A test or smoke validating a rendering or platform claim — positioning,
+computed style, visual layering, a granted capability — must assert the
+claimed property itself (geometry against an anchor, computed style values,
+a static reconciliation against the declaration), never mere existence or
+clickability. An element that exists but renders unstyled passes an
+existence check while failing the claim entirely.
+
+Why: the PDF in-place overlay (extension-reader ticket 06) shipped with its
+styles never migrated from the spike — `.pdf-word` had no positioning, so
+nothing actually overlaid — while the smoke stayed green on word counts and
+click-throughs; the real-Edge acceptance caught it as user-visible
+brokenness, and the same round shipped missing manifest permissions because
+the smoke's chrome stub answered what the manifest never granted
+(`.scratch/extension-reader/issues/07-*.md`).
+
+At review: when a diff claims visual or platform behavior and the
+validating assertions check existence or interaction only, that is the
+finding — name the claimed property and ask why the assertion does not read
+it. Platform facts a stub or fixture answers (chrome.*, network, baked
+assets) additionally need a static check against their declaration, because
+no stub can prove a grant.

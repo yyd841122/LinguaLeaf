@@ -8,7 +8,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "bake:dictionary": "tsx scripts/bake-dictionary.ts",
-    "build:spike": "vite build --config spike.vite.config.ts"
+    "build:spike": "vite build --config spike.vite.config.ts",
+    "check:manifest": "node scripts/check-manifest-permissions.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "@lingualeaf/import-core": "0.1.0",
@@ -27,6 +29,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "jsdom": "^27.0.1",
     "vite": "~7.3.6",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "playwright-core": "^1.50.0"
   }
 }

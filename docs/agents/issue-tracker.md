@@ -12,6 +12,9 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
 - Comments and conversation history append to the bottom of the file under a `## Comments` heading
 - Closure flips the line: when an implementation ticket finishes, its `Status:` becomes `done` — the wrap-up report stays under `## Comments`. `ready-for-agent` means nobody has picked it up yet; frontier and triage scans read it as open work.
 - Specs assert facts about the current code: verify those claims against the code when claiming a ticket, and record a drift in the ticket's `## Comments` while correcting the spec (per-book-toggles 01's spec said 两个字号 where the code had three).
+- 收官审查门与 `/implement` 内置 review 的分工:独立门(cc-suite lane)聚焦内置
+  review 看不见的面——真机行为、跨端一致性、独立模型视角;票面确要整 diff 双跑时
+  明说「冗余可接受」(extension-reader 07 双跑重合约六成,成本一次 Codex 全程)。
 - Gate text states relationships, never values: pin a review baseline as "the HEAD before this ticket's first implementation commit", not a SHA — a value written before the work starts is stale by the time the gate runs.
 
 ## When a skill says "publish to the issue tracker"

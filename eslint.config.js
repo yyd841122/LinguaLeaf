@@ -19,6 +19,15 @@ const noNodeGlobalsInBrowser = {
 
 export default tseslint.config(
   {
+    // The extension's smoke driver straddles both worlds: Node drives the
+    // process and serves files; its page.evaluate callbacks run IN the
+    // browser (window/document/MouseEvent). Both global sets apply.
+    files: ["apps/extension/scripts/smoke.mjs"],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+  {
     ignores: [
       ".output/**",
       "**/dist/**",
@@ -44,6 +53,7 @@ export default tseslint.config(
     files: [
       "apps/server/**/*.{js,mjs,ts,tsx}",
       "apps/web/scripts/**/*.{js,mjs}",
+      "apps/extension/scripts/**/*.{js,mjs}",
       "scripts/**/*.{js,mjs}",
       "**/vite.config.ts",
       "**/vitest.config.ts",
