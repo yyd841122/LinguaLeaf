@@ -140,8 +140,13 @@ body {
   /* The canvas already carries the page's own glyphs (in the PDF's
      embedded font); the span's DOM text would paint a second, misfit copy
      over them — the ghosting the real-Edge acceptance caught. Transparent
-     keeps the hit target and screen-reader text without repainting. */
+     keeps the hit target and screen-reader text without repainting.
+     Selection is also off: a drag-select painted the selection rectangle
+     over the span's box, covering the canvas word beneath it — the white
+     bar the acceptance caught next. The canvas text is not selectable
+     anyway, so the overlay offers no selection to lose. */
   color: transparent;
+  user-select: none;
   line-height: 1;
   cursor: pointer;
   border-radius: 0.1rem;
