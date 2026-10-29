@@ -90,6 +90,40 @@ export type PdfRender = { wordCount: number; ipaCount: number };
 // works verbatim.
 let renderQueue = Promise.resolve();
 
+// A line split at its WORD_PATTERN matches, every segment (word or gap)
+// carrying a proportional width share from canvas measureText.
+type LineSegment = { word?: string; share: number };
+
+const measureCanvas =
+  typeof document === "undefined" ? null : document.createElement("canvas");
+const measureContext = measureCanvas?.getContext("2d") ?? null;
+
+function segmentLine(
+  str: string,
+  matches: RegExpMatchArray[],
+  fontPx: number
+): LineSegment[] {
+  const segments: LineSegment[] = [];
+  let cursor = 0;
+  if (measureContext) {
+    measureContext.font = `${fontPx}px Arial, Helvetica, sans-serif`;
+  }
+  const shareOf = (piece: string): number =>
+    measureContext ? measureContext.measureText(piece).width : piece.length;
+  for (const match of matches) {
+    const start = match.index ?? cursor;
+    if (start > cursor) {
+      segments.push({ share: shareOf(str.slice(cursor, start)) });
+    }
+    segments.push({ word: match[0], share: shareOf(match[0]) });
+    cursor = start + match[0].length;
+  }
+  if (cursor < str.length) {
+    segments.push({ share: shareOf(str.slice(cursor)) });
+  }
+  return segments;
+}
+
 export function renderPdfPage(
   canvas: HTMLCanvasElement,
   overlay: HTMLElement,
@@ -154,36 +188,51 @@ async function renderPdfPageStep(
     if (text.str.trim() === "") continue;
     const tx = Util.transform(viewport.transform, text.transform);
     const fontPx = Math.hypot(tx[2], tx[3]);
-    const charWidth = (text.width * scale) / text.str.length;
     // Words are the reading model's matches (WORD_PATTERN), not
     // whitespace runs: punctuation-joined fragments ("hello—world") stay
     // two lookup targets exactly as the EPUB pipeline tokenizes them.
-    for (const match of text.str.matchAll(WORD_PATTERN)) {
-      const piece = match[0];
-      const left = tx[4] + match.index * charWidth;
-      const word = document.createElement("span");
-      word.className = "pdf-word";
-      word.style.left = `${left}px`;
-      word.style.top = `${tx[5] - fontPx}px`;
-      word.style.fontSize = `${fontPx}px`;
-      word.dataset.pdfWord = piece;
-      word.setAttribute("data-word", piece);
-      word.setAttribute("role", "button");
-      word.setAttribute("tabindex", "0");
-      word.textContent = piece;
-      if (showIpa) {
-        const ipa = lookup(piece);
-        const ipaEl = document.createElement("span");
-        ipaEl.className = "pdf-ipa";
-        ipaEl.dataset.ipa = ipa ?? "";
-        ipaEl.style.left = `${(piece.length * charWidth) / 2}px`;
-        ipaEl.style.top = `${fontPx + 2}px`;
-        ipaEl.textContent = ipa ?? "";
-        if (ipa) ipaCount += 1;
-        word.appendChild(ipaEl);
+    const matches = [...text.str.matchAll(WORD_PATTERN)];
+    if (matches.length === 0) continue;
+    // Proportional placement: uniform per-character splitting drifts badly
+    // on proportional fonts (the hover box lands off the word). Measure
+    // every segment (words AND the gaps between them) with an offscreen
+    // canvas and rescale so the line's total stays exactly item.width —
+    // the one exact fact pdf.js gives us. Residual error is only the
+    // metric difference between the measuring font and the embedded one.
+    const segments = segmentLine(text.str, matches, fontPx);
+    const totalShare = segments.reduce((sum, seg) => sum + seg.share, 0);
+    const k = (text.width * scale) / totalShare;
+    let offset = 0;
+    for (const segment of segments) {
+      const width = segment.share * k;
+      if (segment.word) {
+        const piece = segment.word;
+        const left = tx[4] + offset;
+        const word = document.createElement("span");
+        word.className = "pdf-word";
+        word.style.left = `${left}px`;
+        word.style.top = `${tx[5] - fontPx}px`;
+        word.style.fontSize = `${fontPx}px`;
+        word.dataset.pdfWord = piece;
+        word.setAttribute("data-word", piece);
+        word.setAttribute("role", "button");
+        word.setAttribute("tabindex", "0");
+        word.textContent = piece;
+        if (showIpa) {
+          const ipa = lookup(piece);
+          const ipaEl = document.createElement("span");
+          ipaEl.className = "pdf-ipa";
+          ipaEl.dataset.ipa = ipa ?? "";
+          ipaEl.style.left = `${width / 2}px`;
+          ipaEl.style.top = `${fontPx + 2}px`;
+          ipaEl.textContent = ipa ?? "";
+          if (ipa) ipaCount += 1;
+          word.appendChild(ipaEl);
+        }
+        overlay.appendChild(word);
+        wordCount += 1;
       }
-      overlay.appendChild(word);
-      wordCount += 1;
+      offset += width;
     }
   }
   page.cleanup();
