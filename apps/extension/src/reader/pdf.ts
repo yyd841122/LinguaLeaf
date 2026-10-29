@@ -120,12 +120,24 @@ async function renderPdfPageStep(
 ): Promise<PdfRender> {
   const token = ++pdfRenderToken;
   const page = await doc.getPage(pageNumber);
+  // HiDPI: the backing store renders at device pixels while the canvas's
+  // CSS size stays at the viewport's — otherwise a 125%/150% Windows
+  // display scales the 1x bitmap up and the text goes soft (the blur the
+  // real-Edge acceptance caught once the DOM words went transparent).
   const viewport = page.getViewport({ scale });
-  canvas.width = viewport.width;
-  canvas.height = viewport.height;
+  const outputScale = Math.max(1, window.devicePixelRatio || 1);
+  canvas.width = viewport.width * outputScale;
+  canvas.height = viewport.height * outputScale;
+  canvas.style.width = `${viewport.width}px`;
+  canvas.style.height = `${viewport.height}px`;
   const context = canvas.getContext("2d");
   if (!context) throw new Error("canvas 2d context unavailable");
-  await page.render({ canvasContext: context, viewport }).promise;
+  await page.render({
+    canvasContext: context,
+    viewport,
+    transform:
+      outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+  }).promise;
   const content = await page.getTextContent();
   if (token !== pdfRenderToken) {
     page.cleanup();
