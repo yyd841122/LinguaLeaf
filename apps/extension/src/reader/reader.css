@@ -152,7 +152,10 @@ body {
   border-radius: 0.1rem;
 }
 .pdf-word:hover {
-  background: #ecefe6;
+  /* Translucent: the word span owns no visible glyphs (transparent text
+     over the canvas), so an opaque hover tint would read as a solid bar
+     covering the word — the tint must let the canvas glyphs show. */
+  background: rgba(236, 239, 230, 0.55);
 }
 .pdf-ipa {
   position: absolute;
