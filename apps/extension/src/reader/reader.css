@@ -137,6 +137,12 @@ body {
 }
 .pdf-word {
   position: absolute;
+  /* The canvas already carries the page's own glyphs (in the PDF's
+     embedded font); the span's DOM text would paint a second, misfit copy
+     over them — the ghosting the real-Edge acceptance caught. Transparent
+     keeps the hit target and screen-reader text without repainting. */
+  color: transparent;
+  line-height: 1;
   cursor: pointer;
   border-radius: 0.1rem;
 }
