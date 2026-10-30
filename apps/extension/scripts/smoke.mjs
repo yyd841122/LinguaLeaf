@@ -70,6 +70,7 @@ const MIME = {
 };
 const server = createServer(async (req, res) => {
   const path = normalize(
+    // eslint-disable-next-line no-restricted-syntax -- request routing: this pathname IS the URL path (decoded below), not a filesystem path
     decodeURIComponent(new URL(req.url, "http://x").pathname)
   );
   const name = path === "/" || path === "\\" ? "reader.html" : path.slice(1);

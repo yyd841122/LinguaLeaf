@@ -44,6 +44,32 @@ export default tseslint.config(
       "research/**",
     ],
   },
+  {
+    // Two mechanical mistake classes the 2026-10-30 audit hit for real:
+    // waitForFunction's options passed as the page-function argument
+    // (5 instances, silent no-op timeouts) and new URL(...).pathname used
+    // as a filesystem path (breaks on spaces/encoding, two scripts). Both
+    // pass lint and tsc and fail only at runtime — what
+    // no-restricted-syntax exists for.
+    files: ["**/*.{js,mjs,ts,tsx}"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector:
+            "CallExpression[callee.property.name='waitForFunction'][arguments.1.type='ObjectExpression']",
+          message:
+            "waitForFunction's 2nd argument is the page function's argument, not its options — pass undefined there and the options object as the third argument",
+        },
+        {
+          selector:
+            "MemberExpression[property.name='pathname'][object.callee.name='URL']",
+          message:
+            "URL.pathname percent-encodes — for a filesystem path use fileURLToPath(import.meta.url); for HTTP request routing keep it behind an inline disable with the reason",
+        },
+      ],
+    },
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

@@ -393,3 +393,25 @@ finding — name the claimed property and ask why the assertion does not read
 it. Platform facts a stub or fixture answers (chrome.*, network, baked
 assets) additionally need a static check against their declaration, because
 no stub can prove a grant.
+
+## Lookup tables keyed by external strings probe with hasOwn
+
+A plain object used as a lookup table (`ns -> rules`, `code -> label`) is
+probed with `Object.hasOwn(table, key)`, never the `in` operator: `in`
+walks the prototype chain, so an externally-sourced key like "constructor"
+or "valueOf" matches an inherited member and hands back a function where
+the code expects table data — the failure lands far from the lookup, as a
+TypeError or a silently-wrong branch.
+
+Why: the manifest gate's operation table looked its method up with
+`method in table`; the code-review probe `chrome.tabs.constructor` made the
+inherited Object.prototype member satisfy the check and crashed the gate
+with a bare TypeError instead of failing loudly. Fixed with Object.hasOwn
+plus a regression test
+(apps/extension/test/checkManifestPermissions.test.ts, "does not trip on
+Object.prototype names used as operations", 2026-10-30).
+
+At review: when a diff probes a plain-object table with a key from outside
+the module (wire tokens, API names, user input), check the probe is
+hasOwn-guarded — and ask whether a Map is the better table: string keys
+from external sources are its home turf.
