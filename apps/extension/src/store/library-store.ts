@@ -1,4 +1,5 @@
 import type { ExtBook } from "../reader/import-book";
+import { createNamespaceRecord } from "./namespace-record";
 
 // The reading position inside one document: the chapter plus the block the
 // reader's viewport sits on — the same {chapter, block} shape the web
@@ -79,11 +80,12 @@ export function createMemoryLibraryStore(
   };
 }
 
-// The real store: one namespace record in chrome.storage.local. Reads and
-// writes hold the whole library record atomically; the reader page is
-// single-tab (the service worker focuses the existing one), so concurrent
-// writers do not arise. Deliberately thin — behavior lives in the shared
-// semantics above and is tested against the memory twin.
+// The real store: one namespace record in chrome.storage.local through the
+// shared helper — every write (a debounced progress save can overlap a
+// document open, so "single writer" was wishful) runs serialized on the
+// helper's queue. Deliberately thin — behavior lives in the shared
+// semantics above and is tested against the memory twin, plus one
+// serialization pin for the queue itself.
 const STORAGE_NAMESPACE = "library";
 
 export type ChromeLibraryRecord = {
@@ -95,51 +97,47 @@ export type ChromeLibraryRecord = {
 };
 
 export function createChromeLibraryStore(): LibraryStore {
-  const read = async (): Promise<ChromeLibraryRecord> => {
-    const bag = await chrome.storage.local.get(STORAGE_NAMESPACE);
-    return (
-      (bag[STORAGE_NAMESPACE] as ChromeLibraryRecord) ?? {
-        documents: {},
-        progress: {},
-      }
-    );
-  };
-  const write = async (record: ChromeLibraryRecord) =>
-    chrome.storage.local.set({ [STORAGE_NAMESPACE]: record });
+  const record = createNamespaceRecord<ChromeLibraryRecord>(
+    STORAGE_NAMESPACE,
+    () => ({ documents: {}, progress: {} })
+  );
   return {
-    async saveDocument({ id, title, book }) {
-      const record = await read();
-      const existing = record.documents[id];
-      record.documents[id] = {
-        title,
-        book,
-        lastOpenedAt: existing?.lastOpenedAt ?? Date.now(),
-      };
-      await write(record);
+    saveDocument({ id, title, book }) {
+      return record.update(async (r, write) => {
+        const existing = r.documents[id];
+        r.documents[id] = {
+          title,
+          book,
+          lastOpenedAt: existing?.lastOpenedAt ?? Date.now(),
+        };
+        await write(r);
+      });
     },
     async listDocuments() {
-      const record = await read();
-      return Object.entries(record.documents)
+      const r = await record.read();
+      return Object.entries(r.documents)
         .map(([id, doc]) => ({
           id,
           title: doc.title,
           lastOpenedAt: doc.lastOpenedAt,
-          progress: record.progress[id] ?? { chapterIndex: 0, blockIndex: 0 },
+          progress: r.progress[id] ?? { chapterIndex: 0, blockIndex: 0 },
         }))
         .sort((a, b) => b.lastOpenedAt - a.lastOpenedAt);
     },
-    async openDocument(id) {
-      const record = await read();
-      const doc = record.documents[id];
-      if (!doc) return null;
-      doc.lastOpenedAt = Date.now();
-      await write(record);
-      return doc.book;
+    openDocument(id) {
+      return record.update(async (r, write) => {
+        const doc = r.documents[id];
+        if (!doc) return null;
+        doc.lastOpenedAt = Date.now();
+        await write(r);
+        return doc.book;
+      });
     },
-    async setProgress(id, value) {
-      const record = await read();
-      record.progress[id] = value;
-      await write(record);
+    setProgress(id, value) {
+      return record.update(async (r, write) => {
+        r.progress[id] = value;
+        await write(r);
+      });
     },
   };
 }

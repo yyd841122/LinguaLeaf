@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ExtBook } from "../src/reader/import-book";
-import { createMemoryLibraryStore } from "../src/store/library-store";
+import {
+  createChromeLibraryStore,
+  createMemoryLibraryStore,
+} from "../src/store/library-store";
 
 const BOOK = (title: string): ExtBook => ({
   title,
@@ -99,5 +102,74 @@ describe("LibraryStore — progress + recents (ticket 05)", () => {
   it("an unknown document reads back null", async () => {
     const library = createMemoryLibraryStore();
     expect(await library.openDocument("doc:none")).toBeNull();
+  });
+});
+
+// The chrome backend's write queue (ext-reuse-convergence, ticket 07's
+// vocabulary fix made uniform): clone-on-read storage makes the lost-update
+// interleaving deterministic — both writers read the same base snapshot,
+// and without the queue the later set erases the earlier field.
+type ChromeStub = {
+  storage: {
+    local: {
+      get(namespace: string): Promise<Record<string, unknown>>;
+      set(bag: Record<string, unknown>): Promise<void>;
+    };
+  };
+};
+
+function installChrome(stub: ChromeStub | undefined): void {
+  (globalThis as unknown as Record<string, unknown>).chrome = stub;
+}
+
+describe("LibraryStore — chrome backend write serialization", () => {
+  it("serializes overlapping writes so neither save nor progress is lost", async () => {
+    let stored: unknown = undefined;
+    const lag = <T>(value: T): Promise<T> =>
+      new Promise((resolve) => setTimeout(() => resolve(value), 0));
+    installChrome({
+      storage: {
+        local: {
+          async get(namespace) {
+            const snapshot =
+              stored === undefined
+                ? undefined
+                : JSON.parse(JSON.stringify(stored));
+            return lag({ [namespace]: snapshot });
+          },
+          async set(bag) {
+            const [, record] = Object.entries(bag)[0]!;
+            stored = JSON.parse(JSON.stringify(record));
+          },
+        },
+      },
+    });
+    try {
+      const library = createChromeLibraryStore();
+      await library.saveDocument({
+        id: "doc:a",
+        title: "Book A",
+        book: BOOK("Book A"),
+      });
+      // A (debounced-style) progress save overlaps a re-save touching the
+      // entry's other half: both must land.
+      const progress = library.setProgress("doc:a", {
+        chapterIndex: 1,
+        blockIndex: 2,
+      });
+      const resave = library.saveDocument({
+        id: "doc:a",
+        title: "Book A2",
+        book: BOOK("Book A2"),
+      });
+      await Promise.all([progress, resave]);
+      const entry = (await library.listDocuments()).find(
+        (e) => e.id === "doc:a"
+      )!;
+      expect(entry.title).toBe("Book A2");
+      expect(entry.progress).toEqual({ chapterIndex: 1, blockIndex: 2 });
+    } finally {
+      installChrome(undefined);
+    }
   });
 });

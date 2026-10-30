@@ -12,7 +12,7 @@ import {
 // signature while the algorithm stays one code path for both hosts.
 export { tokenizeWords } from "@lingualeaf/import-core";
 
-const ipaLookupOf = (dictionary: Dictionary): IpaLookup => {
+export const ipaLookupOf = (dictionary: Dictionary): IpaLookup => {
   // One resolveIpa closure per call: re-prepared statements live in the
   // dictionary module's WeakMap cache, so the closure is free past the
   // first token.

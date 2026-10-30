@@ -1,9 +1,9 @@
 // The import chain's browser-safe half: EPUB unzipping, HTML chapter
-// extraction, sentence splitting, and the rejection vocabulary. Shared by
-// the server's import pipeline and the extension's local import (ADR-0006)
-// — one chain, two hosts. The annotation pass is NOT here: IPA slots need
-// a dictionary (SQLite server-side, baked offline extension-side), so each
-// host builds its own blocks from a PreparedBook.
+// extraction, sentence splitting, the annotation dispatch, and the
+// rejection vocabulary. Shared by the server's import pipeline and the
+// extension's local import (ADR-0006) — one chain, two hosts. The dispatch
+// lives here; the dictionary binding stays host-side (SQLite server-side,
+// baked offline extension-side) through the IpaLookup the hosts pass in.
 export { readEpubBook, isEpubFilename, EPUB_EXTENSION } from "./epub.js";
 export {
   extractChaptersFromHtml,
@@ -16,6 +16,7 @@ export {
   type ContentItem,
 } from "./extract-html.js";
 export { splitSentences } from "./sentences.js";
+export { walkChapterBlocks, type PlainKind } from "./blocks.js";
 export {
   tokenizeWords,
   buildIpaSlots,

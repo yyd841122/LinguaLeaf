@@ -1,18 +1,19 @@
 import {
-  buildIpaSlots,
   isEpubFilename,
   readEpubBook,
-  splitSentences,
+  walkChapterBlocks,
   UploadRejected,
   type ImportErrorCode,
   type IpaLookup,
   type PreparedBook,
 } from "@lingualeaf/import-core";
 
-// The extension's block shapes: the same annotation walk as the server's
-// buildChapterBlocks — sentence blocks carry their IPA slot array, built
-// against the offline dictionary at import time. Image and passthrough
-// blocks stay unannotated placeholders, mirroring the server.
+// The extension's block shapes: the host mapping over import-core's shared
+// annotation dispatch — sentence blocks carry their IPA slot array, built
+// against the offline dictionary at import time; image and passthrough
+// blocks stay unannotated placeholders. The dispatch itself (split, slot
+// pairing, placeholders) is one code path with the server's import
+// (ext-reuse-convergence).
 export type ExtSentenceBlock = {
   kind: "sentence";
   text: string;
@@ -78,25 +79,18 @@ export async function importBook(
   return assembleBook(await readEpubBook(content, filename), lookup);
 }
 
-// The extension's block assembly over the extracted chapters: sentence
-// blocks per split sentence, each carrying its slot array from the shared
-// builder (the word-pairing truth source — one code path with the server's
-// import), images as placeholders, code/passthrough verbatim.
+// The extension's block assembly over the extracted chapters: the shared
+// dispatch with the UI-side shape as the host mapping.
 function assembleBook(prepared: PreparedBook, lookup: IpaLookup): ExtBook {
   return {
     title: prepared.title,
     chapters: prepared.chapters.map((chapter) => ({
       title: chapter.title,
       level: chapter.level,
-      blocks: chapter.items.flatMap((item): ExtBlock[] =>
-        item.kind === "paragraph"
-          ? splitSentences(item.text).map((text) => ({
-              kind: "sentence",
-              text,
-              ipaSlots: buildIpaSlots(lookup, text),
-            }))
-          : [{ kind: item.kind, text: item.text }]
-      ),
+      blocks: walkChapterBlocks(chapter.items, lookup, {
+        sentence: (text, ipaSlots) => ({ kind: "sentence", text, ipaSlots }),
+        plain: (kind, text) => ({ kind, text }),
+      }),
     })),
   };
 }

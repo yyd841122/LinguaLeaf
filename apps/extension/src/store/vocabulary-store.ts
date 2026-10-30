@@ -2,6 +2,7 @@ import type {
   OfflineDictionary,
   OfflineLookup,
 } from "../dict/offline-dictionary";
+import { createNamespaceRecord } from "./namespace-record";
 
 // ADR-0005's four states, the three stored ones — 'New' is a record's
 // absence, never a stored value (the first lookup migrates it).
@@ -102,35 +103,22 @@ export function memoryBackend(): StateBackend & {
   };
 }
 
-// The real backend: one namespace record in chrome.storage.local. The
-// reader page is single-tab (the service worker focuses the existing
-// one), but two async writes of the SAME page can still interleave
-// (popup saves for two words overlap freely), and chrome.storage is
-// read-modify-write over a whole record — so every write runs on one
-// promise chain. The chain is the mutex; nothing else may write.
+// The real backend: one namespace record in chrome.storage.local, every
+// write serialized by the shared helper's queue (ext-reuse-convergence —
+// the ticket 07 mutex is now the one write path for every chrome backend).
 const STORAGE_NAMESPACE = "vocabulary";
 
 export function chromeBackend(): StateBackend {
-  const readAll = async (): Promise<Record<string, VocabState>> => {
-    const bag = await chrome.storage.local.get(STORAGE_NAMESPACE);
-    return (bag[STORAGE_NAMESPACE] as Record<string, VocabState>) ?? {};
-  };
-  let writeQueue = Promise.resolve();
-  // One serialized read-modify-write step.
-  const enqueue = <T>(step: () => Promise<T>): Promise<T> => {
-    const run = writeQueue.then(step);
-    writeQueue = run.then(
-      () => undefined,
-      () => undefined
-    );
-    return run;
-  };
+  const record = createNamespaceRecord<Record<string, VocabState>>(
+    STORAGE_NAMESPACE,
+    () => ({})
+  );
   return {
     async get(key) {
-      return (await readAll())[key] ?? null;
+      return (await record.read())[key] ?? null;
     },
     async getMany(keys) {
-      const all = await readAll();
+      const all = await record.read();
       const found = new Map<string, VocabState>();
       for (const key of keys) {
         if (all[key]) found.set(key, all[key]);
@@ -138,19 +126,17 @@ export function chromeBackend(): StateBackend {
       return found;
     },
     put(key, status) {
-      return enqueue(async () => {
-        const all = await readAll();
+      return record.update(async (all, write) => {
         all[key] = status;
-        await chrome.storage.local.set({ [STORAGE_NAMESPACE]: all });
+        await write(all);
       });
     },
     enroll(key) {
-      return enqueue(async () => {
-        const all = await readAll();
+      return record.update(async (all, write) => {
         const existing = all[key] ?? null;
         if (existing) return existing;
         all[key] = "learning";
-        await chrome.storage.local.set({ [STORAGE_NAMESPACE]: all });
+        await write(all);
         return "learning";
       });
     },
