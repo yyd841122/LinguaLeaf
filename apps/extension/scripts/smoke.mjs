@@ -116,18 +116,13 @@ const check = (name, ok, detail = "") => {
 let proc;
 let cdpPort = null;
 let profileDir = null;
-try {
-  await new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const port = server.address().port;
 
-  // Ephemeral DevTools port: --remote-debugging-port=0 lets Chromium pick a
-  // free one and publish it as the first line of
-  // <user-data-dir>/DevToolsActivePort. No fixed port to free beforehand, so
-  // an orphaned Chromium (docs/agents/local-e2e.md invariant 1) or a
-  // concurrent run can no longer collide with — or be killed by — this one.
+// Ephemeral DevTools port: --remote-debugging-port=0 lets Chromium pick a
+// free one and publish it as the first line of
+// <user-data-dir>/DevToolsActivePort. No fixed port to free beforehand, so
+// an orphaned Chromium (docs/agents/local-e2e.md invariant 1) or a
+// concurrent run can no longer collide with — or be killed by — this one.
+const startChromium = async () => {
   profileDir = mkdtempSync(join(tmpdir(), "lingualeaf-smoke-profile-"));
   proc = spawn(
     findChrome(),
@@ -145,7 +140,6 @@ try {
   proc.on("error", (err) => {
     failures.push("chrome spawn: " + err.message);
   });
-
   let ready = false;
   for (let i = 0; i < 50 && !ready; i++) {
     if (proc.exitCode !== null)
@@ -167,6 +161,191 @@ try {
     if (!ready) await new Promise((r) => setTimeout(r, 100));
   }
   if (!ready) throw new Error("CDP never became ready" + failureSuffix());
+};
+
+// ---- Step 4: the scenarios. Each asserts its own line through `check`; ----
+// ---- the chore they share is importBook, the reader's reopen →        ----
+// ---- file-input sequence that resets between books.                   ----
+const runScenarios = async (page, port) => {
+  const importBook = async (file) => {
+    await page.click(".reader-reopen");
+    await page.waitForSelector('input[type="file"]');
+    await page.setInputFiles('input[type="file"]', file);
+  };
+
+  const epubScenario = async () => {
+    // EPUB line: import, IPA pairing, popup, 查词即状态.
+    await page.goto(`http://127.0.0.1:${port}/`);
+    await page.waitForSelector('input[type="file"]');
+    await page.setInputFiles('input[type="file"]', {
+      name: "book.epub",
+      mimeType: "application/epub+zip",
+      buffer: epubBytes,
+    });
+    await page.waitForSelector("[data-word='woke']", { timeout: 60000 });
+    check("EPUB: chapters render with word targets", true);
+    // The transcription rides data-ipa and paints via ::before (pseudo-
+    // element content never enters a text selection) — textContent is empty
+    // BY DESIGN; the attribute is the value. The real baked dictionary's
+    // answer is data, not a constant, so the contract is non-empty.
+    const wokeIpa = await page.getAttribute(
+      "[data-word='woke'] .ipa-word-ipa",
+      "data-ipa"
+    );
+    check(
+      "EPUB: IPA pairs with the word",
+      typeof wokeIpa === "string" && wokeIpa.length > 0,
+      wokeIpa ?? "absent"
+    );
+    await page.evaluate(() => {
+      document
+        .querySelector("[data-word='woke']")
+        .dispatchEvent(
+          new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 200 })
+        );
+    });
+    await page.waitForSelector(".lookup-vocab", { timeout: 15000 });
+    check(
+      "EPUB: popup enrolls first lookup as 学习中",
+      (await page.textContent(".lookup-vocab-option[aria-pressed='true']")) ===
+        "学习中"
+    );
+    await page.keyboard.press("Escape");
+  };
+
+  const measurePdfGeometry = () =>
+    page.evaluate(() => {
+      const canvas = document.querySelector("canvas").getBoundingClientRect();
+      const words = [...document.querySelectorAll("[data-pdf-word]")];
+      let positioned = 0,
+        chipped = 0,
+        transparent = 0,
+        noSelect = 0;
+      for (const w of words) {
+        const wb = w.getBoundingClientRect();
+        if (
+          wb.width > 0 &&
+          wb.top >= canvas.top - 2 &&
+          wb.left >= canvas.left - 2 &&
+          wb.right <= canvas.right + 2 &&
+          wb.bottom <= canvas.bottom + 2
+        )
+          positioned += 1;
+        if (getComputedStyle(w).color === "rgba(0, 0, 0, 0)") transparent += 1;
+        if (getComputedStyle(w).userSelect === "none") noSelect += 1;
+        const ipa = w.querySelector(".pdf-ipa");
+        if (!ipa) continue;
+        const fontPx = parseFloat(getComputedStyle(w).fontSize);
+        const ib = ipa.getBoundingClientRect();
+        if (
+          getComputedStyle(ipa).backgroundColor.startsWith(
+            "rgba(255, 255, 255"
+          ) &&
+          ib.top >= wb.top + fontPx
+        )
+          chipped += 1;
+      }
+      return {
+        words: words.length,
+        positioned,
+        chipped,
+        transparent,
+        noSelect,
+        hidpiBacking: `${canvas.width}x${canvas.height}`,
+      };
+    });
+
+  const pdfScenario = async () => {
+    // PDF line: in-place overlay geometry, nav, toggle.
+    await importBook({
+      name: "sample.pdf",
+      mimeType: "application/pdf",
+      buffer: samplePdf,
+    });
+    await page.waitForSelector("[data-pdf-word]", { timeout: 60000 });
+    await page.waitForFunction(
+      () => {
+        const ipa = document.querySelector("[data-word='The'] .pdf-ipa");
+        return ipa && ipa.textContent && ipa.textContent.length > 0;
+      },
+      undefined,
+      { timeout: 20000 }
+    );
+    const geometry = await measurePdfGeometry();
+    check(
+      "PDF: overlay geometry (positioned/chipped/transparent/noSelect)",
+      geometry.positioned === geometry.words &&
+        geometry.chipped === geometry.words &&
+        geometry.transparent === geometry.words &&
+        geometry.noSelect === geometry.words,
+      JSON.stringify(geometry)
+    );
+    await page.click(".reader-pager button:last-child");
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector(".reader-position")
+          ?.textContent?.startsWith("2 /"),
+      undefined,
+      { timeout: 10000 }
+    );
+    await page.click(".reader-pager button:first-child");
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector(".reader-position")
+          ?.textContent?.startsWith("1 /"),
+      undefined,
+      { timeout: 10000 }
+    );
+    check("PDF: page navigation", true);
+    await page.click(".reader-toggle");
+    await page.waitForFunction(
+      () => document.querySelectorAll(".pdf-ipa").length === 0,
+      undefined,
+      { timeout: 15000 }
+    );
+    await page.click(".reader-toggle");
+    await page.waitForFunction(
+      () => document.querySelectorAll(".pdf-ipa").length > 0,
+      undefined,
+      { timeout: 15000 }
+    );
+    check("PDF: IPA toggle", true);
+  };
+
+  const scannedScenario = async () => {
+    // Scanned rejection: an image-only PDF gets the 书-wording error.
+    const { createRequire } = await import("node:module");
+    const pdfLib = createRequire(join(repoRoot, "package.json"))("pdf-lib");
+    const scanned = await pdfLib.PDFDocument.create();
+    scanned
+      .addPage([612, 792])
+      .drawRectangle({ x: 50, y: 400, width: 500, height: 300 });
+    await importBook({
+      name: "scan.pdf",
+      mimeType: "application/pdf",
+      buffer: Buffer.from(await scanned.save()),
+    });
+    await page.waitForSelector(".reader-error", { timeout: 15000 });
+    check(
+      "PDF: scanned gets the 书-wording rejection",
+      (await page.textContent(".reader-error")).includes("扫描版 PDF 不支持")
+    );
+  };
+
+  await epubScenario();
+  await pdfScenario();
+  await scannedScenario();
+};
+
+try {
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const port = server.address().port;
+  await startChromium();
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
   const context = browser.contexts()[0] ?? (await browser.newContext());
   await context.addInitScript(() => {
@@ -200,161 +379,7 @@ try {
     }
   });
 
-  // ---- EPUB line: import, IPA pairing, popup, 查词即状态. ---------------
-  await page.goto(`http://127.0.0.1:${port}/`);
-  await page.waitForSelector('input[type="file"]');
-  await page.setInputFiles('input[type="file"]', {
-    name: "book.epub",
-    mimeType: "application/epub+zip",
-    buffer: epubBytes,
-  });
-  await page.waitForSelector("[data-word='woke']", { timeout: 60000 });
-  check("EPUB: chapters render with word targets", true);
-  // The transcription rides data-ipa and paints via ::before (pseudo-
-  // element content never enters a text selection) — textContent is empty
-  // BY DESIGN; the attribute is the value. The real baked dictionary's
-  // answer is data, not a constant, so the contract is non-empty.
-  const wokeIpa = await page.getAttribute(
-    "[data-word='woke'] .ipa-word-ipa",
-    "data-ipa"
-  );
-  check(
-    "EPUB: IPA pairs with the word",
-    typeof wokeIpa === "string" && wokeIpa.length > 0,
-    wokeIpa ?? "absent"
-  );
-  await page.evaluate(() => {
-    document
-      .querySelector("[data-word='woke']")
-      .dispatchEvent(
-        new MouseEvent("click", { bubbles: true, clientX: 200, clientY: 200 })
-      );
-  });
-  await page.waitForSelector(".lookup-vocab", { timeout: 15000 });
-  check(
-    "EPUB: popup enrolls first lookup as 学习中",
-    (await page.textContent(".lookup-vocab-option[aria-pressed='true']")) ===
-      "学习中"
-  );
-  await page.keyboard.press("Escape");
-
-  // ---- PDF line: in-place overlay geometry, nav, toggle. ----------------
-  await page.click(".reader-reopen");
-  await page.waitForSelector('input[type="file"]');
-  await page.setInputFiles('input[type="file"]', {
-    name: "sample.pdf",
-    mimeType: "application/pdf",
-    buffer: samplePdf,
-  });
-  await page.waitForSelector("[data-pdf-word]", { timeout: 60000 });
-  await page.waitForFunction(
-    () => {
-      const ipa = document.querySelector("[data-word='The'] .pdf-ipa");
-      return ipa && ipa.textContent && ipa.textContent.length > 0;
-    },
-    undefined,
-    { timeout: 20000 }
-  );
-  const geometry = await page.evaluate(() => {
-    const canvas = document.querySelector("canvas").getBoundingClientRect();
-    const words = [...document.querySelectorAll("[data-pdf-word]")];
-    let positioned = 0,
-      chipped = 0,
-      transparent = 0,
-      noSelect = 0;
-    for (const w of words) {
-      const wb = w.getBoundingClientRect();
-      if (
-        wb.width > 0 &&
-        wb.top >= canvas.top - 2 &&
-        wb.left >= canvas.left - 2 &&
-        wb.right <= canvas.right + 2 &&
-        wb.bottom <= canvas.bottom + 2
-      )
-        positioned += 1;
-      if (getComputedStyle(w).color === "rgba(0, 0, 0, 0)") transparent += 1;
-      if (getComputedStyle(w).userSelect === "none") noSelect += 1;
-      const ipa = w.querySelector(".pdf-ipa");
-      if (!ipa) continue;
-      const fontPx = parseFloat(getComputedStyle(w).fontSize);
-      const ib = ipa.getBoundingClientRect();
-      if (
-        getComputedStyle(ipa).backgroundColor.startsWith(
-          "rgba(255, 255, 255"
-        ) &&
-        ib.top >= wb.top + fontPx
-      )
-        chipped += 1;
-    }
-    return {
-      words: words.length,
-      positioned,
-      chipped,
-      transparent,
-      noSelect,
-      hidpiBacking: `${canvas.width}x${canvas.height}`,
-    };
-  });
-  check(
-    "PDF: overlay geometry (positioned/chipped/transparent/noSelect)",
-    geometry.positioned === geometry.words &&
-      geometry.chipped === geometry.words &&
-      geometry.transparent === geometry.words &&
-      geometry.noSelect === geometry.words,
-    JSON.stringify(geometry)
-  );
-  await page.click(".reader-pager button:last-child");
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector(".reader-position")
-        ?.textContent?.startsWith("2 /"),
-    undefined,
-    { timeout: 10000 }
-  );
-  await page.click(".reader-pager button:first-child");
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector(".reader-position")
-        ?.textContent?.startsWith("1 /"),
-    undefined,
-    { timeout: 10000 }
-  );
-  check("PDF: page navigation", true);
-  await page.click(".reader-toggle");
-  await page.waitForFunction(
-    () => document.querySelectorAll(".pdf-ipa").length === 0,
-    undefined,
-    { timeout: 15000 }
-  );
-  await page.click(".reader-toggle");
-  await page.waitForFunction(
-    () => document.querySelectorAll(".pdf-ipa").length > 0,
-    undefined,
-    { timeout: 15000 }
-  );
-  check("PDF: IPA toggle", true);
-
-  // ---- Scanned rejection. ------------------------------------------------
-  const { createRequire } = await import("node:module");
-  const pdfLib = createRequire(join(repoRoot, "package.json"))("pdf-lib");
-  const scanned = await pdfLib.PDFDocument.create();
-  scanned
-    .addPage([612, 792])
-    .drawRectangle({ x: 50, y: 400, width: 500, height: 300 });
-  await page.click(".reader-reopen");
-  await page.waitForSelector('input[type="file"]');
-  await page.setInputFiles('input[type="file"]', {
-    name: "scan.pdf",
-    mimeType: "application/pdf",
-    buffer: Buffer.from(await scanned.save()),
-  });
-  await page.waitForSelector(".reader-error", { timeout: 15000 });
-  check(
-    "PDF: scanned gets the 书-wording rejection",
-    (await page.textContent(".reader-error")).includes("扫描版 PDF 不支持")
-  );
+  await runScenarios(page, port);
 
   // The only tolerable console error is the favicon 404 — identified by its
   // request URL being a favicon AND the error being the expected missing
@@ -378,12 +403,16 @@ try {
   server.close();
   // Let the SIGKILL land before deleting the profile, or a still-dying
   // Chromium can recreate files inside it. A spawn failure never exits,
-  // hence the timeout race.
+  // hence the bounded wait — cleared the moment exit lands so the success
+  // path never lingers (audit 2026-10-30 finding 7 residue).
   if (proc) {
-    await Promise.race([
-      new Promise((resolve) => proc.once("exit", resolve)),
-      new Promise((resolve) => setTimeout(resolve, 2000)),
-    ]);
+    await new Promise((resolve) => {
+      const fallback = setTimeout(resolve, 2000);
+      proc.once("exit", () => {
+        clearTimeout(fallback);
+        resolve();
+      });
+    });
   }
   if (profileDir) {
     try {
