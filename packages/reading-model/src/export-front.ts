@@ -124,7 +124,7 @@ function main(): void {
     if (entry) {
       hideRow("lookup-status");
       if (entry.lemma && entry.lemma !== entry.word) {
-        fillRow("lookup-lemma", "原形 " + entry.lemma);
+        fillRow("lookup-lemma", "词元 " + entry.lemma);
       } else {
         hideRow("lookup-lemma");
       }

@@ -724,7 +724,7 @@ describe("exported file behavior (jsdom)", () => {
     // with the surface form's own IPA — the server lookup's contract,
     // answered offline from the embedded vocabulary.
     expect(document.getElementById("lookup-lemma")?.textContent).toBe(
-      "原形 write"
+      "词元 write"
     );
     expect(document.getElementById("lookup-ipa")?.textContent).toBe("/roʊt/");
     expect(document.getElementById("lookup-pos")?.textContent).toBe("v.");
@@ -743,14 +743,14 @@ describe("exported file behavior (jsdom)", () => {
     const dom = loadExport(html);
     const document = dom.window.document;
 
-    // Plural: the lemma's senses ride under the 原形 badge, IPA stays the
+    // Plural: the lemma's senses ride under the 词元 badge, IPA stays the
     // surface form's own (/bʊks/, not /bʊk/).
     clickWord(document, "books");
     expect(document.getElementById("lookup-head-word")?.textContent).toBe(
       "books"
     );
     expect(document.getElementById("lookup-lemma")?.textContent).toBe(
-      "原形 book"
+      "词元 book"
     );
     expect(document.getElementById("lookup-ipa")?.textContent).toBe("/bʊks/");
     expect(document.getElementById("lookup-pos")?.textContent).toBe("n. v.");
@@ -764,7 +764,7 @@ describe("exported file behavior (jsdom)", () => {
       "Books"
     );
     expect(document.getElementById("lookup-lemma")?.textContent).toBe(
-      "原形 book"
+      "词元 book"
     );
     expect(document.getElementById("lookup-ipa")?.textContent).toBe("/bʊks/");
 

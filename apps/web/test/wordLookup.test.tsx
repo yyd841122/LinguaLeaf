@@ -118,7 +118,7 @@ it("shows IPA, part of speech, translation, and the lemma for a found word", asy
 
     // The lemma chip is the visible half of "点击变形词时展示原型词的释义"
     // (the definition itself comes from the lemma through the API).
-    expect(await screen.findByText("原形 write")).toBeInTheDocument();
+    expect(await screen.findByText("词元 write")).toBeInTheDocument();
     // fetchJson invokes fetch(url, init) — the recorded init is undefined.
     expect(fetchMock.mock.calls).toEqual([["/api/lookup/wrote", undefined]]);
     expect(screen.getByText("/roʊt/")).toBeInTheDocument();
@@ -151,7 +151,7 @@ it("omits the IPA, part-of-speech, and lemma rows when the entry lacks them", as
   expect(await screen.findByText("n. 鬣蜥")).toBeInTheDocument();
   expect(document.querySelector(".lookup-ipa")).toBeNull();
   expect(document.querySelector(".lookup-pos")).toBeNull();
-  expect(screen.queryByText(/原形/)).toBeNull();
+  expect(screen.queryByText(/词元/)).toBeNull();
 });
 
 it("reports a word missing from the dictionary without failing", async () => {
@@ -546,7 +546,7 @@ it("reports a successful PUT once with the captured surface, lemma, and status",
         onStatusApplied={onStatusApplied}
       />
     );
-    await screen.findByText("原形 write");
+    await screen.findByText("词元 write");
     fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
     expect(onStatusApplied).not.toHaveBeenCalled();
     put.resolve(

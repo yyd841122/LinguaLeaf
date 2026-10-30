@@ -179,7 +179,7 @@ export function WordLookupPopup({
         {state.phase === "found" &&
         state.lookup.lemma &&
         state.lookup.lemma !== state.lookup.word ? (
-          <span className="lookup-lemma">原形 {state.lookup.lemma}</span>
+          <span className="lookup-lemma">词元 {state.lookup.lemma}</span>
         ) : null}
         <span className="lookup-head-actions">
           <button

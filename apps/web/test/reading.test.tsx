@@ -877,7 +877,7 @@ describe("ReadingPage through the component boundary", () => {
         expect(word).not.toHaveClass("word-settled");
       }
       fireEvent.click(matches[0]!);
-      await screen.findByText("原形 wake");
+      await screen.findByText("词元 wake");
       await act(async () => {
         fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
       });
