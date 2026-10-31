@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import { segmentOriginal } from "@lingualeaf/reading-model";
 import { fetchJson } from "./api";
 import { useChapterTranslation } from "./chapterTranslation";
+import type { BookmarkTarget } from "./bookmarks";
 import type {
   BookToc,
   BookmarkSummary,
@@ -109,7 +110,36 @@ export function ReadingPage() {
     loadedRoute !== null &&
     loadedRoute.bookId === bookId &&
     loadedRoute.chapterNumber === chapterNumber;
-  const { saveFailed } = useProgressSession({ bookId, chapterNumber, ready });
+  // Explicit jump intents (reading-bookmarks 03, riding 02's target
+  // channel): a panel entry or 回到第一章 arms a target — ops advance per
+  // intent and are never renumbered, so a repeated jump to the same mark
+  // still re-scrolls. The target arms in the same click event as its
+  // navigation, whatever the chapter: React batches them into one render
+  // (02's contract anchor), and the hook is the single coordinator of
+  // where the reader lands.
+  const [jumpTarget, setJumpTarget] = useState<
+    (BookmarkTarget & { op: number }) | null
+  >(null);
+  const jumpOpRef = useRef(0);
+  // A book switch under the mounted route element must not honor the old
+  // book's armed target — the page owns clearing it (02's contract).
+  useEffect(() => {
+    setJumpTarget(null);
+  }, [bookId]);
+  const armJumpTarget = (chapter: number, block: number) => {
+    jumpOpRef.current += 1;
+    setJumpTarget({ chapter, block, op: jumpOpRef.current });
+  };
+  const jumpAndClosePanel = (chapter: number, block: number) => {
+    armJumpTarget(chapter, block);
+    setTocOpen(false);
+  };
+  const { saveFailed } = useProgressSession({
+    bookId,
+    chapterNumber,
+    ready,
+    target: jumpTarget,
+  });
   // The book's manual marks (reading-bookmarks 03): the session fetches
   // once per book arm; create/remove failures speak through the same
   // inline flag as the progress saves.
@@ -323,13 +353,28 @@ export function ReadingPage() {
                     return (
                       <li key={bookmark.id} className="bookmark-item">
                         {bookmark.chapter === chapterNumber ? (
-                          <button type="button" className="bookmark-entry">
+                          <button
+                            type="button"
+                            className="bookmark-entry"
+                            onClick={() =>
+                              jumpAndClosePanel(
+                                bookmark.chapter,
+                                bookmark.block
+                              )
+                            }
+                          >
                             {entryBody}
                           </button>
                         ) : (
                           <Link
                             className="bookmark-entry"
                             to={`/book/${bookId}/${bookmark.chapter}`}
+                            onClick={() =>
+                              jumpAndClosePanel(
+                                bookmark.chapter,
+                                bookmark.block
+                              )
+                            }
                           >
                             {entryBody}
                           </Link>
@@ -346,6 +391,27 @@ export function ReadingPage() {
                     );
                   })}
                 </ul>
+              )}
+              {/* Panel-bottom restart (spec P7): an explicit target at
+                  chapter 1 block 1 — the only shape that survives the
+                  auto-restore, which would otherwise yank the reader back
+                  to the saved block. A jump, never a progress reset. */}
+              {chapterNumber === 1 ? (
+                <button
+                  type="button"
+                  className="bookmark-first"
+                  onClick={() => jumpAndClosePanel(1, 1)}
+                >
+                  回到第一章
+                </button>
+              ) : (
+                <Link
+                  className="bookmark-first"
+                  to={`/book/${bookId}/1`}
+                  onClick={() => jumpAndClosePanel(1, 1)}
+                >
+                  回到第一章
+                </Link>
               )}
             </section>
           </nav>

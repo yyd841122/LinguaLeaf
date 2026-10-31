@@ -1761,33 +1761,47 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     blocks?: Block[];
     rows?: BookmarkRow[];
     postStatus?: number;
+    // Per-chapter payloads for the jump tests: chapter 2 by default, more
+    // when a target crosses into a chapter this test also serves.
+    chapters?: Record<number, Block[]>;
+    progress?: { chapter: number; block: number };
   }): { calls: { url: string; init: RequestInit }[] } {
     const calls: { url: string; init: RequestInit }[] = [];
     const blocks = options.blocks ?? bookmarkBlocks;
+    const chapters: Record<number, Block[]> = options.chapters ?? {
+      2: blocks,
+    };
+    const progress = options.progress ?? { chapter: 1, block: 2 };
+    const chapterResponse = (position: number) =>
+      new Response(
+        JSON.stringify({
+          position,
+          title: position === 1 ? "Chapter One" : "Chapter Two",
+          level: null,
+          translationStatus: "untranslated",
+          translationPercent: null,
+          translationError: null,
+          translationAvailable: true,
+          // Chapters the test did not name still carry content — a jump
+          // into them finds real blocks to land on.
+          blocks: chapters[position] ?? blocks,
+        })
+      );
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: unknown, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
         calls.push({ url, init: init ?? {} });
-        if (url.endsWith("/chapters/2")) {
-          return new Response(
-            JSON.stringify({
-              position: 2,
-              title: "Chapter Two",
-              level: null,
-              translationStatus: "untranslated",
-              translationPercent: null,
-              translationError: null,
-              translationAvailable: true,
-              blocks,
-            })
-          );
+        if (/\/chapters\/\d+$/.test(url)) {
+          const position = Number(url.split("/").pop());
+          return chapterResponse(position);
         }
-        // Saved progress in another chapter: no restore jump muddies the
+        // Saved progress: the default sits in another chapter (and block
+        // 1 keeps chapter 1 quiet too) so no restore jump muddies the
         // bookmark interactions under test.
         if (url.endsWith("/progress")) {
-          return new Response(JSON.stringify({ chapter: 1, block: 2 }));
+          return new Response(JSON.stringify(progress));
         }
         if (url.endsWith("/api/books/7")) {
           return new Response(
@@ -2014,5 +2028,142 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
       })
     ).toBeNull();
     expect(within(area).getByRole("link", { name: "One" })).toBeTruthy();
+  });
+
+  it("jumps inside the chapter through the explicit target when an entry is clicked", async () => {
+    const jump = vi.fn();
+    window.HTMLElement.prototype.scrollIntoView = jump;
+    stubBookmarkFetch({
+      rows: [
+        {
+          id: 11,
+          chapter: 2,
+          block: 3,
+          createdAt: "2026-10-31T00:00:00.000Z",
+        },
+      ],
+    });
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Two · A raw paragraph line…" })
+    );
+
+    // The jump rides the 02 target channel inside the same route: the
+    // panel closes and the block is under the reader.
+    expect(screen.queryByRole("region", { name: "书签" })).toBeNull();
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump.mock.instances[0]).toBe(
+      document.querySelector('.blocks [data-position="3"]')
+    );
+  });
+
+  it("jumps across chapters by routing and lands on the marked block", async () => {
+    vi.useFakeTimers();
+    try {
+      const jump = vi.fn();
+      window.HTMLElement.prototype.scrollIntoView = jump;
+      stubBookmarkFetch({
+        chapters: {
+          1: [
+            {
+              position: 1,
+              kind: "sentence",
+              originalText: "Opening line of the book.",
+              ipaSlots: null,
+              ipaText: null,
+              translationText: null,
+              wordStatuses: [null, null, null, null],
+            },
+            {
+              position: 2,
+              kind: "raw",
+              originalText: "The second block sits here.",
+            },
+          ],
+          2: bookmarkBlocks,
+        },
+        // Block 1 keeps chapter 1's auto-restore quiet: the only jump this
+        // test allows is the entry's explicit target.
+        progress: { chapter: 1, block: 1 },
+        rows: [
+          {
+            id: 12,
+            chapter: 1,
+            block: 2,
+            createdAt: "2026-10-31T00:00:00.000Z",
+          },
+        ],
+      });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByRole("button", { name: "目录" }));
+
+      fireEvent.click(
+        within(screen.getByRole("region", { name: "书签" })).getByRole("link", {
+          name: "One",
+        })
+      );
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      // The route moved and chapter 1's marked block is the landing.
+      expect(screen.getByRole("region", { name: "Chapter One" })).toBeTruthy();
+      expect(jump).toHaveBeenCalledTimes(1);
+      expect(jump.mock.instances[0]).toBe(
+        document.querySelector('.blocks [data-position="2"]')
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("回到第一章 routes to chapter 1 block 1 and lets progress flow on", async () => {
+    vi.useFakeTimers();
+    try {
+      const jump = vi.fn();
+      window.HTMLElement.prototype.scrollIntoView = jump;
+      const { calls } = stubBookmarkFetch({
+        progress: { chapter: 1, block: 1 },
+      });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByRole("button", { name: "目录" }));
+
+      fireEvent.click(screen.getByRole("link", { name: "回到第一章" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(jump.mock.instances[0]).toBe(
+        document.querySelector('.blocks [data-position="1"]')
+      );
+
+      // P7: 只跳转、不清进度 — the landing is an observed act and the
+      // autosave writes it forward; nothing deletes the position. The
+      // chapter-2 start save flushes first at the route switch (02's
+      // ordering); the landing write is the last one out.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+      const puts = calls.filter(
+        (call) => call.url.endsWith("/progress") && call.init.method === "PUT"
+      );
+      expect(puts.length).toBeGreaterThan(0);
+      expect(JSON.parse(String(puts[puts.length - 1]!.init.body))).toEqual({
+        chapter: 1,
+        block: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
