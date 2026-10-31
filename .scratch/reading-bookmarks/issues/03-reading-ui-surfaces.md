@@ -1,6 +1,6 @@
 # 03: 阅读页打点/目录面板书签区 + 书架「继续阅读」
 
-Status: ready-for-agent
+Status: done
 
 **What to build:**
 
@@ -21,12 +21,12 @@ Status: ready-for-agent
 
 **Blocked by:** 01(API/helper)、02(显式目标通道)
 
-- [ ] 顶栏打点按钮(disabled 态 / POST 坐标 / 失败提示 / 成功无 toast)
-- [ ] 目录面板书签区(列表 / 原文前缀条目 / 跳转 / 删除 / 回到第一章)
-- [ ] 书架「继续阅读 · 第 N 章」按钮(出现条件 / 落点 / meta 不动)
-- [ ] reading/bookshelf 测试片
-- [ ] 真滚动打点 → 关页 → 重开 → 列表 → 跳转留浏览器验收(结果记 Comments)
-- [ ] 每个实现 commit:typecheck && test && lint 绿(看退出码,不看 tail);基线 = 本票首个实现 commit 之前的 HEAD
+- [x] 顶栏打点按钮(disabled 态 / POST 坐标 / 失败提示 / 成功无 toast)
+- [x] 目录面板书签区(列表 / 原文前缀条目 / 跳转 / 删除 / 回到第一章)
+- [x] 书架「继续阅读 · 第 N 章」按钮(出现条件 / 落点 / meta 不动)
+- [x] reading/bookshelf 测试片
+- [x] 真滚动打点 → 关页 → 重开 → 列表 → 跳转留浏览器验收(结果记 Comments)
+- [x] 每个实现 commit:typecheck && test && lint 绿(看退出码,不看 tail);基线 = 本票首个实现 commit 之前的 HEAD
 
 ## Comments
 
@@ -35,3 +35,61 @@ Status: ready-for-agent
 Codex T5/P5 提示:目录面板开合会改变视口,打点捕获只认按钮点击瞬间的
 面板关闭态视口;「回到第一章」若不走显式目标通道,会被自动恢复拽回旧
 进度位。
+
+> *Wrap-up, 2026-10-31 (/implement, Claude).*
+>
+> **红绿证据**
+>
+> - 基线 = `8779f5a`(本票首个实现 commit 之前的 HEAD);实现 6 commit:
+>   `cf539cf` 书架继续阅读按钮 → `93aa6aa` 打书签按钮 → `5dad4dd` 面板
+>   书签区列表+删除 → `65d9b11` 跳转接线 → `d85d487` 样式微调(验收截图
+>   发现的下划线)→ `1988a22` 双轴评审修复。
+> - 每 commit 门禁 typecheck && test && lint 全退出码 0(pre-commit 钩子
+>   本身重跑全量门禁);收尾 `npm run verify` 退出码 0(45 文件 / 504 测试,
+>   含 SQL/task-lifecycle/storage 三 locality + manifest + build)。
+> - 新测试 12 片:reading.test.tsx 9(打点 disabled / POST 体钉=捕获 /
+>   失败提示 / 列表前缀+20 字截断+跨章退化+图块+纯空白块 / 空态 / DELETE
+>   原地移除 / 同章跳转 / 跨章路由跳转 / 回到第一章+落位 PUT)、
+>   bookshelf.test.tsx 3(按钮出现+href 钉 / 无进度不出现 / 非 ready 不
+>   出现)。reading.test.tsx 既有断言零改写(仅 import 行补 afterEach/
+>   within + 文件尾新 describe);apps/extension/** 零触碰。
+>
+> **双轴评审判定(基线 8779f5a,双 agent 并行)**
+>
+> - Standards 2 项(1 硬伤 + 1 判定级)/ Spec 3 项(缺失 1=收官记档本身,
+>   已补;存疑 1;蔓延 2 笔良性)。
+> - 硬伤已修(1988a22,两轴同钉):成功测试的「无 toast」原只断
+>   queryByRole("alert"),看不见 failed 旗的 role="status" 通道——补
+>   queryByText(/书签操作失败/) 双断言。
+> - 判定级已修:fixture 补图块(caption 原文)与纯空白块(空文本守卫与
+>   「图块一律取文本」注释获测试背书);书架 readingTarget 单一归属
+>   (书名链接与继续阅读共用落点提为一函数);ENTRY_PREFIX_MAX_CHARS
+>   常量承载「≤20 字省略」;armJumpTarget 收 BookmarkTarget(数据团
+>   归位);测试 mark() 行工厂收编 7 处 createdAt 字面量。
+> - 记档不修:button/Link 双形两处(条目行与回到第一章,形状分化,强抽
+>   一组件得不偿失);跳转关面板 + 空态文案(票面未要求,良性保留)。
+> - Spec 判定记录:打点 disabled 态 = `content.blocks.length === 0`
+>   (结构判定,渲染期不读布局)。topmostVisibleBlock 理论上另有 null 面
+>   (.blocks 缺失/全部滚出视口),点击处守卫兜底不虚构块 1,且顶栏不吸顶
+>   使「按钮可点但视口无候选」的中间态实际不可达——按票面近似;要精确
+>   须渲染期布局读,得不偿失。
+>
+> **浏览器验收(真滚动打点 → 关页 → 重开 → 列表 → 跳转,PASS)**
+>
+> - 真实 Chromium + 生产构建(:3789,scratch DB):导入 md 两章书 → 真滚
+>   动到块 32 → 滚回顶栏点「打书签」→ 面板条目出真实原文前缀
+>   「Chapter One · Chapter one paragrap…」,零 alert;关页、新 context
+>   重开 → 列表在 → 从块 64 点条目 → 精确落回标记块 → 书架出
+>   「继续阅读 · 第 1 章」(href /book/1/1)→ 点击路由正确 → 回到第一
+>   章落块 1。截图 6 张(/tmp/pw-e2e/,会话临时目录)。
+> - **验收发现(交维护者拍板,非本票实现缺陷)**:顶栏不吸顶,读者在章
+>   节中部够不到「打书签」;回顶点击的瞬间,T10 捕获按语义取「点击瞬间
+>   的视口」= 章首附近。T10(点击瞬间捕获)与 P5(顶栏打点)两个锁死
+>   决策叠加,使深层位置的打点实际总落章首。候选解:吸顶工具栏 / 面板内
+>   打点(捕获面板关闭态视口——grilling Comment 已预留此语义)。动哪条
+>   都是 spec 级改动,本票按 spec 原样落地并记档。
+> - 条目前缀判定:前缀仅从已加载章载荷推导(bookmarkEntryPrefix),跨章
+>   书签诚实退化为纯章标题。票面「该块原文行前缀」未规定跨章取数方式;
+>   不为此对每个书签拉整章载荷(N+1 fetch)。
+>
+> **Spec 漂移**:无。
