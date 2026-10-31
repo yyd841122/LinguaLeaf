@@ -5,7 +5,7 @@
 // file-tail append lands in the last describe and misses them.
 import { fireEvent, render, screen } from "@testing-library/react";
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { ApiError, fetchJson } from "../src/api";
 import type {
@@ -1726,5 +1726,204 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
     expect(button.disabled).toBe(true);
     expect(screen.getByText(/未配置翻译服务/)).toBeTruthy();
     vi.unstubAllGlobals();
+  });
+});
+
+// The manual-bookmark surfaces (reading-bookmarks 03): the toolbar's
+// 打书签 button captures at the click instant (spec T10 — topmost visible
+// block, never fabricated), the TOC panel lists the book's marks with the
+// chapter title plus the block's own text prefix, and every op failure
+// speaks through the inline failed flag (the saveFailed channel's
+// styling), never a popup.
+describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
+  const bookmarkBlocks: Block[] = [
+    {
+      position: 1,
+      kind: "sentence",
+      originalText: "The first line stands here for the prefix slice.",
+      ipaSlots: null,
+      ipaText: null,
+      translationText: null,
+      wordStatuses: [null, null, null, null],
+    },
+    { position: 2, kind: "code", originalText: "npm install left-pad" },
+    { position: 3, kind: "raw", originalText: "A raw paragraph line." },
+  ];
+
+  type BookmarkRow = {
+    id: number;
+    chapter: number;
+    block: number;
+    createdAt: string;
+  };
+
+  function stubBookmarkFetch(options: {
+    blocks?: Block[];
+    rows?: BookmarkRow[];
+    postStatus?: number;
+  }): { calls: { url: string; init: RequestInit }[] } {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const blocks = options.blocks ?? bookmarkBlocks;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        calls.push({ url, init: init ?? {} });
+        if (url.endsWith("/chapters/2")) {
+          return new Response(
+            JSON.stringify({
+              position: 2,
+              title: "Chapter Two",
+              level: null,
+              translationStatus: "untranslated",
+              translationPercent: null,
+              translationError: null,
+              translationAvailable: true,
+              blocks,
+            })
+          );
+        }
+        // Saved progress in another chapter: no restore jump muddies the
+        // bookmark interactions under test.
+        if (url.endsWith("/progress")) {
+          return new Response(JSON.stringify({ chapter: 1, block: 2 }));
+        }
+        if (url.endsWith("/api/books/7")) {
+          return new Response(
+            JSON.stringify({
+              id: 7,
+              title: "Probe Book",
+              chapters: [
+                { position: 1, title: "One", level: 1 },
+                { position: 2, title: "Two", level: 2 },
+              ],
+            })
+          );
+        }
+        if (url.endsWith("/bookmarks") && method === "GET") {
+          return new Response(
+            JSON.stringify({ bookmarks: options.rows ?? [] })
+          );
+        }
+        if (url.endsWith("/bookmarks") && method === "POST") {
+          if (options.postStatus !== undefined && options.postStatus !== 201) {
+            return new Response(
+              JSON.stringify({
+                code: "bookmark-limit-reached",
+                error: "书签数量已达上限。",
+              }),
+              { status: options.postStatus }
+            );
+          }
+          const target = JSON.parse(String(init?.body)) as {
+            chapter: number;
+            block: number;
+          };
+          return new Response(
+            JSON.stringify({
+              bookmark: {
+                id: 11,
+                chapter: target.chapter,
+                block: target.block,
+                createdAt: "2026-10-31T00:00:00.000Z",
+              },
+            }),
+            { status: 201 }
+          );
+        }
+        return new Response(null, { status: 404 });
+      })
+    );
+    return { calls };
+  }
+
+  // jsdom lays every element out at zero: the capture's binary search
+  // needs real geometry, so the block elements report a stack with the
+  // named block topmost (same shape as progressSession.test.tsx).
+  function showBlock(visible: number): void {
+    vi.spyOn(
+      window.Element.prototype,
+      "getBoundingClientRect"
+    ).mockImplementation(function (this: Element) {
+      const position = Number(
+        this instanceof HTMLElement ? this.dataset.position : undefined
+      );
+      if (Number.isNaN(position)) return new DOMRect(0, 0, 0, 0);
+      return new DOMRect(0, (position - visible) * 100, 100, 100);
+    });
+  }
+
+  beforeEach(() => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("disables 打书签 when the chapter offers no capture candidate", async () => {
+    stubBookmarkFetch({ blocks: [] });
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    const button = screen.getByRole("button", {
+      name: "打书签",
+    }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+
+  it("plants a mark whose POST body is the click-instant capture, feeds the panel list, and raises no toast", async () => {
+    vi.useFakeTimers();
+    try {
+      showBlock(2);
+      const { calls } = stubBookmarkFetch({});
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "打书签" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      const post = calls.find(
+        (call) => call.url.endsWith("/bookmarks") && call.init.method === "POST"
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post!.init.body))).toEqual({
+        chapter: 2,
+        block: 2,
+      });
+      // Success is quiet: the panel list is the feedback, no toast.
+      expect(screen.queryByRole("alert")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the inline failure hint when the POST does not land", async () => {
+    vi.useFakeTimers();
+    try {
+      showBlock(2);
+      stubBookmarkFetch({ postStatus: 409 });
+      renderReadingPage();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      fireEvent.click(screen.getByRole("button", { name: "打书签" }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(screen.getByText(/书签操作失败/)).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

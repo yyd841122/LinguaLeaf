@@ -9,6 +9,7 @@ import type {
   WordStatus,
 } from "../../server/src/wire";
 import { useIpaSize } from "./IpaSizeControl";
+import { useBookmarksSession } from "./bookmarksSession";
 import {
   ReadingSettings,
   useOriginalSize,
@@ -17,6 +18,7 @@ import {
   useTranslationSize,
 } from "./ReadingSettings";
 import { useProgressSession } from "./progressSession";
+import { captureBookmarkTarget } from "./readingProgress";
 import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
 
@@ -88,6 +90,12 @@ export function ReadingPage() {
     loadedRoute.bookId === bookId &&
     loadedRoute.chapterNumber === chapterNumber;
   const { saveFailed } = useProgressSession({ bookId, chapterNumber, ready });
+  // The book's manual marks (reading-bookmarks 03): the session fetches
+  // once per book arm; create/remove failures speak through the same
+  // inline flag as the progress saves.
+  const { failed: bookmarksFailed, addBookmark } = useBookmarksSession({
+    bookId,
+  });
 
   const translating = content?.translationStatus === "translating";
   const {
@@ -173,6 +181,21 @@ export function ReadingPage() {
           <Link to="/">← 书架</Link>
           <span className="book-title">{toc.title}</span>
           <div className="reading-toolbar">
+            {/* 打书签 (reading-bookmarks 03, spec T10): the mark plants
+                where the reader IS at the click instant — captured inside
+                the handler, never after a response or a panel toggle
+                rewrote the viewport. An empty chapter has no candidate:
+                the button disables and block 1 is never fabricated. */}
+            <button
+              type="button"
+              disabled={content.blocks.length === 0}
+              onClick={() => {
+                const target = captureBookmarkTarget(chapterNumber);
+                if (target !== null) addBookmark(target);
+              }}
+            >
+              打书签
+            </button>
             <button
               type="button"
               aria-expanded={tocOpen}
@@ -286,6 +309,11 @@ export function ReadingPage() {
       {saveFailed ? (
         <p role="status" className="save-warning">
           阅读进度保存失败，位置可能没有同步。
+        </p>
+      ) : null}
+      {bookmarksFailed ? (
+        <p role="status" className="save-warning">
+          书签操作失败，请重试。
         </p>
       ) : null}
       {startFailed ? (
