@@ -1,6 +1,6 @@
 # 02: 阅读会话显式目标通道——progressSession 单一协调者
 
-Status: ready-for-agent
+Status: done
 
 **What to build:**
 
@@ -30,14 +30,14 @@ Status: ready-for-agent
 
 **Blocked by:** 01(错误矩阵与 helper 形状在 01 钉死)
 
-- [ ] target 入参 + 三级优先级 + 章 ready 后消费一次 + op 重跳生效
-- [ ] 跳转落位进度前进;章首播报/保存不覆盖目标(有测试)
-- [ ] flush → 目标保存定序有测试(不依赖固定延时)
-- [ ] 打点捕获:topmostVisibleBlock,null 禁用,无虚构
-- [ ] 属主令牌裁决书签读写反馈;失败内联提示
-- [ ] 卫生 a 独立 commit;卫生 b 独立 commit
-- [ ] progressSession.test 扩矩阵;reading.test 零改写绿
-- [ ] 每个实现 commit:typecheck && test && lint 绿(看退出码,不看 tail);基线 = 本票首个实现 commit 之前的 HEAD
+- [x] target 入参 + 三级优先级 + 章 ready 后消费一次 + op 重跳生效
+- [x] 跳转落位进度前进;章首播报/保存不覆盖目标(有测试)
+- [x] flush → 目标保存定序有测试(不依赖固定延时)
+- [x] 打点捕获:topmostVisibleBlock,null 禁用,无虚构
+- [x] 属主令牌裁决书签读写反馈;失败内联提示
+- [x] 卫生 a 独立 commit;卫生 b 独立 commit
+- [x] progressSession.test 扩矩阵;reading.test 零改写绿
+- [x] 每个实现 commit:typecheck && test && lint 绿(看退出码,不看 tail);基线 = 本票首个实现 commit 之前的 HEAD
 
 ## Comments
 
@@ -46,3 +46,54 @@ Status: ready-for-agent
 本期最高风险项(Codex Top 1):书签跳转若另起滚动控制者,与自动恢复、
 章首保存、旧保存请求竞争 → 跳错位或覆盖续读位。故本票先于 03 入口 UI。
 「所有异步写已守属主令牌」不是现状——是本票要落实的约束(Codex 漏项 2)。
+> *Wrap-up, 2026-10-31 (/implement, Claude).*
+
+**红绿证据**
+
+- 基线 = `10c1a73`(本票首个实现 commit 之前的 HEAD);实现 5 commit:
+  `db63724` 卫生 a(saveFailed 属主化)→ `9d6fc9a` 卫生 b(Number.isInteger
+  characterization 钉,pinned-not-endorsed)→ `09cd320` 显式目标通道 →
+  `16d13e4` 书签会话 + captureBookmarkTarget → `b99b8a3` 双轴评审修复。
+- 每 commit 门禁 typecheck && test && lint 全退出码 0(看退出码不看 tail;
+  pre-commit 钩子本身也重跑全量门禁);收尾 `npm run verify` 退出码 0
+  (含 SQL/task-lifecycle/storage 三 locality + manifest + build)。
+- 终态测试 492 全绿,其中 progressSession.test.tsx 30(既有 12 + 新 18:
+  反馈属主 3 / 守卫钉 2 / 显式目标 10 / 跨书 op 1)、bookmarksSession.test.tsx
+  11(会话 9 + pass 定序 2,捕获规则 2 含其中)。**reading.test.tsx 全套零
+  改写跑绿(43 tests,安全包络兑现)**;apps/extension/** 零触碰;自动进度
+  既有行为(恢复/保存时机/404 口径/unavailable 停车)零变化,唯一增量 =
+  显式目标通道优先级。
+
+**双轴评审判定(基线 10c1a73,双 agent 并行)**
+
+- Standards 6 项(1 硬伤 + 5 判定级)/ Spec 3 项(缺失 0、蔓延 0、存疑 3)。
+- 两轴同钉两根因,均已修(b99b8a3):①书签响应裁决改 **invalidate-at-arm**
+  ——原「A→B→A 复活仍安全」论证只护住数据保持型 ops(id 去重/删行过滤),
+  列表整快照可乱序回卷、create 响应晚于同行删除可复活已删行;②consumedOpRef
+  随书重置(渲染期 adjust;路由元素不重挂载,书 A op5 不得哑书 B op1)。
+- 判定级已修:target 形状绑 `BookmarkTarget & { op }`;跳转守卫+选择器抽
+  blockElAt/jumpToBlockEl;书签三连 catch 抽 settleOp 单通道。
+- 记档不修:lastRestoreRef 路由键内联(循本文件 loadedProgress 既有形状);
+  测试 deferred() 第 5 份拷贝(per-file describe-local 系仓库既有约定,
+  reading.test.tsx 头注明文);`op` 命名(票面钉死形状)。
+
+**Spec 漂移**:无。spec 决策逐条对照成立;spec「现状」节的行号本就钉在
+d1ae168,不因本票漂移。GLOSSARY 两词条零触碰。
+
+**交 03 的契约锚**(均已在代码注释落位)
+
+- `useProgressSession({ bookId, chapterNumber, ready, target })`,target =
+  `{ chapter, block, op } | null`(BookmarkTarget & { op });**target 与其
+  所属导航同一事件内设置**(同批渲染;异章 target 只会触发当前章正常恢复);
+  op 页内按意图单调递增、书内不复位(hook 侧随书重置消费水位);书签切换
+  页面自清 target(target 无 bookId 字段)。
+- 打点取位:`captureBookmarkTarget(chapterNumber)`(readingProgress.ts)——
+  点击瞬间调用,返回 null 即空章/无候选,按钮禁用、不虚构块 1;响应不得
+  重读位置。
+- `useBookmarksSession({ bookId })` → `{ bookmarks, failed, addBookmark,
+  removeBookmark }`;列表按(章,块)升序;failed 即内联提示旗,复用
+  saveFailed 通道样式(role="status" + .save-warning),不弹窗。
+- 「回到第一章」= target `{ chapter: 1, block: 1, op: N }`,不清进度
+  (P7);块 1 的 data-position 存在时走跳转通道。
+- 浏览器验收(真滚动打点 → 关页 → 重开 → 列表 → 跳转)随 03 票面执行,
+  本票无独立浏览器验收点。
