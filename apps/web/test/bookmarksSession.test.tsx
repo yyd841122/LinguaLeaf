@@ -214,3 +214,63 @@ describe("captureBookmarkTarget", () => {
     expect(captureBookmarkTarget(2)).toBeNull();
   });
 });
+
+describe("useBookmarksSession pass ordering", () => {
+  it("a first pass's late list snapshot cannot rewind the re-entered book's fresher one", async () => {
+    const firstPass = deferred<BookmarkSummary[]>();
+    vi.mocked(fetchBookmarks)
+      .mockReturnValueOnce(firstPass.promise)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([row(9, 4, 2)]);
+    const { result, rerender } = renderHook(useBookmarksSession, {
+      initialProps: { bookId: 7 },
+    });
+    await settle();
+
+    rerender({ bookId: 8 });
+    await settle();
+    rerender({ bookId: 7 });
+    await settle();
+    expect(result.current.bookmarks).toEqual([row(9, 4, 2)]);
+
+    // The first pass's snapshot resolves last: older data, dropped.
+    await act(async () => firstPass.resolve([row(1, 1, 1), row(2, 3, 1)]));
+    expect(result.current.bookmarks).toEqual([row(9, 4, 2)]);
+  });
+
+  it("a first pass's late create cannot resurrect a row the reader deleted", async () => {
+    const firstPassCreate = deferred<BookmarkSummary>();
+    vi.mocked(fetchBookmarks).mockResolvedValue([row(1, 1, 5)]);
+    vi.mocked(createBookmark)
+      .mockReturnValueOnce(firstPassCreate.promise)
+      .mockResolvedValue(row(2, 2, 2));
+    vi.mocked(deleteBookmark).mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(useBookmarksSession, {
+      initialProps: { bookId: 7 },
+    });
+    await settle();
+    act(() => result.current.addBookmark({ chapter: 2, block: 2 }));
+
+    // Away and back: book 7's second pass sees the row the first pass
+    // created.
+    rerender({ bookId: 8 });
+    await settle();
+    vi.mocked(fetchBookmarks).mockResolvedValue([row(1, 1, 5), row(2, 2, 2)]);
+    rerender({ bookId: 7 });
+    await settle();
+    expect(result.current.bookmarks.map((bookmark) => bookmark.id)).toEqual([
+      1, 2,
+    ]);
+
+    // The reader deletes it; then the first pass's create resolves late.
+    act(() => result.current.removeBookmark(2));
+    await settle();
+    expect(result.current.bookmarks.map((bookmark) => bookmark.id)).toEqual([
+      1,
+    ]);
+    await act(async () => firstPassCreate.resolve(row(2, 2, 2)));
+    expect(result.current.bookmarks.map((bookmark) => bookmark.id)).toEqual([
+      1,
+    ]);
+  });
+});

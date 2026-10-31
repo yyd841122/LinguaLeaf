@@ -5,6 +5,7 @@ import {
   topmostVisibleBlock,
   type ReadingProgress,
 } from "./readingProgress";
+import type { BookmarkTarget } from "./bookmarks";
 import { useOwner, type OwnerTicket } from "./useOwner";
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -25,10 +26,13 @@ export function useProgressSession(options: {
   chapterNumber: number;
   ready: boolean;
   // Where the reader asked to land. op advances per intent, so a repeated
-  // jump to the same chapter+block still re-scrolls. The target carries no
-  // book id by shape; the page owns clearing it on navigation it does not
-  // want honored (a book switch above all).
-  target?: { chapter: number; block: number; op: number } | null;
+  // jump to the same chapter+block still re-scrolls. Set it in the same
+  // event as the navigation it belongs to (React batches them into one
+  // render): a target naming a foreign chapter simply runs the current
+  // chapter's normal restore. The target carries no book id by shape; the
+  // page owns clearing it on navigation it does not want honored (a book
+  // switch above all).
+  target?: (BookmarkTarget & { op: number }) | null;
 }): { saveFailed: boolean } {
   const { bookId, chapterNumber, ready, target = null } = options;
   // "unavailable" = the progress could not be asked for (server hiccup):
@@ -75,8 +79,18 @@ export function useProgressSession(options: {
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<ReadingProgress | null>(null);
   // Highest target op already consumed: an equal-or-lower op is a re-render
-  // of a landed intent, not a new jump.
+  // of a landed intent, not a new jump. The watermark resets when the book
+  // changes (render-time adjust — the route-key rule's endorsed shape):
+  // ops are the page's counter, and the route element does not remount on
+  // a book switch, so book A's consumed op 5 must not silence book B's
+  // op 1. The page's half of the contract: ops advance per intent and are
+  // never renumbered within a book.
   const consumedOpRef = useRef(Number.NEGATIVE_INFINITY);
+  const consumedBookIdRef = useRef<number | null>(null);
+  if (consumedBookIdRef.current !== bookId) {
+    consumedBookIdRef.current = bookId;
+    consumedOpRef.current = Number.NEGATIVE_INFINITY;
+  }
   // What the last completed restore did on which route. The restore effect
   // must be idempotent per (route, inputs) — StrictMode double-invokes it,
   // and a page re-creating the target object per render re-runs it — so a
@@ -139,6 +153,20 @@ export function useProgressSession(options: {
   // skipSavesRef is set before the autosave effect decides whether to
   // announce the chapter start — a landing jump must not be overwritten by
   // the chapter-start save.
+  // Both landing paths (explicit target, auto restore) scroll the same
+  // way: swallow the jump's own scroll events for the guard window, and
+  // hand back the guard timer's disposer for the effect cleanup.
+  const blockElAt = (block: number) =>
+    document.querySelector(`.blocks [data-position="${block}"]`);
+  const jumpToBlockEl = (blockEl: Element) => {
+    skipSavesRef.current = true;
+    blockEl.scrollIntoView();
+    const guard = window.setTimeout(() => {
+      skipSavesRef.current = false;
+    }, RESTORE_SCROLL_GUARD_MS);
+    return () => window.clearTimeout(guard);
+  };
+
   useEffect(() => {
     if (!ready || !progressLoaded) return;
     const landsHere = target !== null && target.chapter === chapterNumber;
@@ -151,9 +179,7 @@ export function useProgressSession(options: {
       last.jumpedToOp !== null &&
       target.op === last.jumpedToOp;
     const fresh = landsHere && !repeatJump && target.op > consumedOpRef.current;
-    const blockEl = landsHere
-      ? document.querySelector(`.blocks [data-position="${target.block}"]`)
-      : null;
+    const blockEl = landsHere ? blockElAt(target.block) : null;
 
     if ((repeatJump || fresh) && blockEl !== null) {
       if (fresh) {
@@ -165,13 +191,8 @@ export function useProgressSession(options: {
         // the reader's real block.
         scheduleSave({ chapter: chapterNumber, block: target.block });
       }
-      skipSavesRef.current = true;
-      blockEl.scrollIntoView();
       lastRestoreRef.current = { bookId, chapterNumber, jumpedToOp: target.op };
-      const guard = window.setTimeout(() => {
-        skipSavesRef.current = false;
-      }, RESTORE_SCROLL_GUARD_MS);
-      return () => window.clearTimeout(guard);
+      return jumpToBlockEl(blockEl);
     }
     if (fresh) {
       // The target names a block this chapter does not render — a stale
@@ -185,26 +206,18 @@ export function useProgressSession(options: {
       saved && saved.chapter === chapterNumber && saved.block > 1
         ? saved.block
         : null;
-    const restoreEl =
-      restoreBlock === null
-        ? null
-        : document.querySelector(`.blocks [data-position="${restoreBlock}"]`);
+    const restoreEl = restoreBlock === null ? null : blockElAt(restoreBlock);
     if (restoreEl) {
-      skipSavesRef.current = true;
-      restoreEl.scrollIntoView();
-      const guard = window.setTimeout(() => {
-        skipSavesRef.current = false;
-      }, RESTORE_SCROLL_GUARD_MS);
-      return () => window.clearTimeout(guard);
+      return jumpToBlockEl(restoreEl);
     }
     skipSavesRef.current = false;
     window.scrollTo(0, 0);
     // bookId joins the route key by name (a book switch re-arms through
     // progressLoaded too, but the repeatJump check reads bookId directly).
-    // scheduleSave stays out on purpose: it is re-created every render, and
-    // in the array it would re-run the restore — and re-arm the scroll
-    // guard — on every render. It reads only refs, so the closure cannot
-    // go stale.
+    // scheduleSave/blockElAt/jumpToBlockEl stay out on purpose: they are
+    // re-created every render, and in the array they would re-run the
+    // restore — and re-arm the scroll guard — on every render. They read
+    // only refs and arguments, so the closures cannot go stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, progressLoaded, chapterNumber, progress, target, bookId]);
 

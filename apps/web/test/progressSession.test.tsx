@@ -726,3 +726,29 @@ describe("useProgressSession explicit target", () => {
     });
   });
 });
+
+describe("useProgressSession target ops across books", () => {
+  it("starts a fresh op numbering on a new book", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    const { rerender } = renderHook<SessionResult, SessionRoute>(
+      useProgressSession,
+      { initialProps: { ...route, target: { chapter: 2, block: 3, op: 5 } } }
+    );
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    await actAdvance(250);
+
+    // The route element does not remount on a book switch, and the new
+    // book's page-local numbering starts low: the consumed watermark from
+    // book 7 must not silence book 8's op 1.
+    rerender({
+      bookId: 8,
+      chapterNumber: 2,
+      ready: true,
+      target: { chapter: 2, block: 3, op: 1 },
+    });
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(2);
+    expect(jump.mock.instances[1]).toBe(blockEl(3));
+  });
+});
