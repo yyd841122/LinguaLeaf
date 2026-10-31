@@ -1,3 +1,5 @@
+import type { BookmarkTarget } from "./bookmarks";
+
 import { ApiError, fetchJson } from "./api";
 
 // Where a reader stopped in a book: chapter position + block position
@@ -67,4 +69,17 @@ export function topmostVisibleBlock(): number | null {
     }
   }
   return answer;
+}
+
+// Bookmark capture (reading-bookmarks spec, decision 7): the mark plants
+// where the reader IS at the click instant, so this runs in the click
+// handler — never after a response, whose re-read could land on a block
+// the reader no longer sees. null means nothing measurable (an empty
+// chapter, no candidates): the action disables upstream and block 1 is
+// never fabricated.
+export function captureBookmarkTarget(
+  chapterNumber: number
+): BookmarkTarget | null {
+  const block = topmostVisibleBlock();
+  return block === null ? null : { chapter: chapterNumber, block };
 }
