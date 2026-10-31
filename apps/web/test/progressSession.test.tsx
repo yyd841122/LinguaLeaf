@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useProgressSession } from "../src/progressSession";
 import {
@@ -33,7 +34,11 @@ async function actAdvance(ms: number) {
 }
 
 const route = { bookId: 7, chapterNumber: 2, ready: true };
+type SessionRoute = Parameters<typeof useProgressSession>[0];
+type SessionResult = ReturnType<typeof useProgressSession>;
 const jump = vi.fn();
+const blockEl = (position: number) =>
+  document.querySelector(`.blocks [data-position="${position}"]`);
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(
   window.HTMLElement.prototype,
   "scrollIntoView"
@@ -493,4 +498,231 @@ describe("useProgressSession non-integer route guard (pinned)", () => {
       expect(window.scrollTo).not.toHaveBeenCalled();
     }
   );
+});
+
+describe("useProgressSession explicit target", () => {
+  it("jumps to the target over saved progress and saves the landing, not the chapter start", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue({ chapter: 2, block: 2 });
+    renderHook(() =>
+      useProgressSession({ ...route, target: { chapter: 2, block: 3, op: 1 } })
+    );
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump.mock.instances[0]).toBe(blockEl(3));
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 3,
+    });
+  });
+
+  it("waits for ready and the fetched progress before consuming the target", async () => {
+    const pending = deferred<ReadingProgress | null>();
+    vi.mocked(fetchReadingProgress).mockReturnValue(pending.promise);
+    const { rerender } = renderHook(useProgressSession, {
+      initialProps: {
+        ...route,
+        ready: false,
+        target: { chapter: 2, block: 3, op: 1 },
+      },
+    });
+    await actAdvance(1000);
+    expect(jump).not.toHaveBeenCalled();
+    expect(saveReadingProgress).not.toHaveBeenCalled();
+
+    rerender({ ...route, target: { chapter: 2, block: 3, op: 1 } });
+    await actAdvance(1000);
+    // The chapter is ready but the priority chain cannot run on an
+    // unsettled progress read.
+    expect(jump).not.toHaveBeenCalled();
+    expect(saveReadingProgress).not.toHaveBeenCalled();
+
+    await act(async () => pending.resolve(null));
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump.mock.instances[0]).toBe(blockEl(3));
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 3,
+    });
+  });
+
+  it("saves the landing even when progress could not be asked for, and never announces block one", async () => {
+    vi.mocked(fetchReadingProgress).mockRejectedValue(new Error("server gone"));
+    renderHook(() =>
+      useProgressSession({ ...route, target: { chapter: 2, block: 3, op: 1 } })
+    );
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump.mock.instances[0]).toBe(blockEl(3));
+
+    // The jump's own scroll events stay swallowed by the guard.
+    fireEvent.scroll(window);
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 3,
+    });
+    // And pagehide has nothing further to flush: the landing was the only
+    // write.
+    fireEvent.pageHide(window);
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it("consumes the target once: one landing save, reruns repeat it verbatim, re-entry never re-jumps", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    const target = { chapter: 2, block: 3, op: 1 };
+    const { rerender } = renderHook(useProgressSession, {
+      initialProps: { ...route, target },
+    });
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 3,
+    });
+
+    // A rerun with a re-created same-op target (StrictMode's shape)
+    // repeats the scroll but adds no save and no top yank.
+    rerender({ ...route, target: { ...target } });
+    expect(jump).toHaveBeenCalledTimes(2);
+    expect(jump.mock.instances[1]).toBe(blockEl(3));
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledTimes(1);
+
+    // Another chapter restores normally; the consumed target stays dead.
+    rerender({ ...route, chapterNumber: 3, target: { ...target } });
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(2);
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenLastCalledWith(7, {
+      chapter: 3,
+      block: 1,
+    });
+
+    rerender({ ...route, chapterNumber: 2, target: { ...target } });
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(2);
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenLastCalledWith(7, {
+      chapter: 2,
+      block: 1,
+    });
+  });
+
+  it("re-scrolls on op advance and coalesces consecutive clicks into the latest landing", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    const { rerender } = renderHook(useProgressSession, {
+      initialProps: { ...route, target: { chapter: 2, block: 3, op: 1 } },
+    });
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump.mock.instances[0]).toBe(blockEl(3));
+
+    // Same chapter, same block: only the advanced op re-scrolls.
+    rerender({ ...route, target: { chapter: 2, block: 3, op: 2 } });
+    expect(jump).toHaveBeenCalledTimes(2);
+
+    // A third click lands elsewhere before the debounce fires: latest wins.
+    await actAdvance(100);
+    rerender({ ...route, target: { chapter: 2, block: 2, op: 3 } });
+    expect(jump).toHaveBeenCalledTimes(3);
+    expect(jump.mock.instances[2]).toBe(blockEl(2));
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 2,
+    });
+  });
+
+  it("degrades a missing target block to the chapter start and consumes the op", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    const { rerender } = renderHook(useProgressSession, {
+      initialProps: { ...route, target: { chapter: 2, block: 99, op: 1 } },
+    });
+    await actAdvance(0);
+    expect(jump).not.toHaveBeenCalled();
+    expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 1,
+    });
+
+    // Consumed: a rerun does not loop on the unusable target.
+    rerender({ ...route, target: { chapter: 2, block: 99, op: 1 } });
+    await actAdvance(1000);
+    expect(jump).not.toHaveBeenCalled();
+    expect(saveReadingProgress).toHaveBeenCalledTimes(1);
+  });
+
+  it("flushes the old chapter before the landing save, with no scroll event in between", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    // Explicit generics: inference from a `target: null` initialProps
+    // collapses Props.target to null and rejects every later rerender.
+    const { rerender } = renderHook<SessionResult, SessionRoute>(
+      useProgressSession,
+      { initialProps: { ...route, target: null } }
+    );
+    await actAdvance(0);
+    visibleBlock = 2;
+    fireEvent.scroll(window);
+    // The burst is still debouncing when the reader jumps chapters.
+    rerender({
+      ...route,
+      chapterNumber: 3,
+      target: { chapter: 3, block: 2, op: 1 },
+    });
+    // The route-change flush went out first, carrying the old chapter.
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 2,
+    });
+    // Chapter 3 has not rendered yet: no jump, no save.
+    expect(jump).not.toHaveBeenCalled();
+
+    await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    expect(jump.mock.instances[0]).toBe(blockEl(2));
+
+    await actAdvance(499);
+    // The scroll guard expiring alone saves nothing — the landing save is
+    // scheduled directly, not hoped for from a later scroll event.
+    expect(saveReadingProgress).toHaveBeenCalledTimes(1);
+    await actAdvance(1);
+    expect(saveReadingProgress).toHaveBeenCalledTimes(2);
+    expect(saveReadingProgress).toHaveBeenLastCalledWith(7, {
+      chapter: 3,
+      block: 2,
+    });
+  });
+
+  it("repeats the same landing verbatim under StrictMode's double-invoked effects", async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    renderHook(
+      () =>
+        useProgressSession({
+          ...route,
+          target: { chapter: 2, block: 3, op: 1 },
+        }),
+      { wrapper: StrictMode }
+    );
+    await actAdvance(0);
+    expect(jump.mock.calls.length).toBeGreaterThan(0);
+    for (const instance of jump.mock.instances) {
+      expect(instance).toBe(blockEl(3));
+    }
+    expect(window.scrollTo).not.toHaveBeenCalled();
+    await actAdvance(500);
+    // Both invocations describe one landing: a single save goes out.
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 3,
+    });
+  });
 });
