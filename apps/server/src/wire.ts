@@ -112,3 +112,16 @@ export type BookSummary = {
 export type BookToc = Omit<BookSummary, "progress"> & {
   chapters: { position: number; title: string; level: number | null }[];
 };
+
+// One manual bookmark (reading-bookmarks ticket 01): a reader-planted
+// position marker in a book, keyed by the same chapter/block coordinates
+// the progress pair and the reading view's data-position attributes use.
+// The id is the proxy primary key (names may come later, spec P4);
+// createdAt is the ISO string the INSERT wrote. The list route serves
+// these in (chapter, block) reading order.
+export type BookmarkSummary = {
+  id: number;
+  chapter: number;
+  block: number;
+  createdAt: string;
+};

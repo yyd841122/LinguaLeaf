@@ -12,17 +12,21 @@ import type { Translator } from "./translate/translator.js";
 import { runChapterTranslationTask } from "./translate/chapter-task.js";
 import { runImportTask } from "./import/import-task.js";
 import {
+  addBookmark,
   beginChapterTranslation,
   createImportingBook,
   deleteBook,
+  deleteBookmark,
   findBookRow,
   findChapterRow,
   type ChapterData,
   getProgress,
+  listBookmarks,
   listChapters,
   listShelf,
   loadChapter,
   loadWholeBook,
+  MAX_BOOKMARKS_PER_BOOK,
   saveProgress,
   type BookRow,
   type ShelfEntry,
@@ -263,6 +267,95 @@ export function createBooksRouter(
     }
     saveProgress(database, book.id, chapter, block);
     response.json({ chapter, block });
+  });
+
+  // Manual bookmarks (reading-bookmarks ticket 01). Reads and adds join
+  // the reading guard family — only settled books answer — but with the
+  // coded bodies this route family's error matrix pins: every bookmark
+  // rejection carries its stable code beside the prose, so the client
+  // branches on the code (respondIfNotReady keeps its uncoded body for
+  // the existing routes; the automatic-progress surface must not drift).
+  // Deleting is not a reading route: a book that exists answers, importing
+  // or not.
+  const bookmarkBookFromParams = (
+    request: Request,
+    response: Response
+  ): BookRow | undefined => {
+    const book = bookFromParams(request);
+    if (!book) {
+      response
+        .status(404)
+        .json({ code: "book-not-found", error: "book not found" });
+      return undefined;
+    }
+    if (book.status !== "ready") {
+      response.status(409).json({
+        code: "book-not-ready",
+        error: "book is not ready for reading",
+      });
+      return undefined;
+    }
+    return book;
+  };
+
+  router.get("/:id/bookmarks", (request, response) => {
+    const book = bookmarkBookFromParams(request, response);
+    if (!book) return;
+    // A ready book with no marks yet is an empty collection, not a 404.
+    response.json({ bookmarks: listBookmarks(database, book.id) });
+  });
+
+  router.post("/:id/bookmarks", json(), (request, response) => {
+    const body = request.body as { chapter?: unknown; block?: unknown };
+    const chapter = body?.chapter;
+    const block = body?.block;
+    if (!isPositiveInteger(chapter) || !isPositiveInteger(block)) {
+      response.status(400).json({
+        code: "invalid-position",
+        error: "chapter and block must be positive integers",
+      });
+      return;
+    }
+    const book = bookmarkBookFromParams(request, response);
+    if (!book) return;
+    const result = addBookmark(database, book.id, chapter, block);
+    if (result.outcome === "target-not-found") {
+      response.status(404).json({
+        code: "bookmark-target-not-found",
+        error: "bookmark target block not found",
+      });
+      return;
+    }
+    if (result.outcome === "limit-reached") {
+      response.status(409).json({
+        code: "bookmark-limit-reached",
+        error: `a book holds at most ${MAX_BOOKMARKS_PER_BOOK} bookmarks`,
+      });
+      return;
+    }
+    // A fresh mark is 201; a same-position retry is the existing mark with
+    // a 200 — the cap never turns a repeat into an error.
+    response
+      .status(result.outcome === "created" ? 201 : 200)
+      .json({ bookmark: result.bookmark });
+  });
+
+  router.delete("/:id/bookmarks/:bookmarkId", (request, response) => {
+    const book = bookFromParams(request);
+    if (!book) {
+      response
+        .status(404)
+        .json({ code: "book-not-found", error: "book not found" });
+      return;
+    }
+    // Double-qualified in the store; a repeat or a non-integer id matches
+    // no row — a book that exists answers 204, period (idempotent by
+    // contract, not by row count).
+    const bookmarkId = Number(request.params.bookmarkId);
+    if (Number.isInteger(bookmarkId)) {
+      deleteBookmark(database, book.id, bookmarkId);
+    }
+    response.status(204).end();
   });
 
   // Export answers with the annotated book file (GLOSSARY.md): the same

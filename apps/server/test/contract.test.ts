@@ -45,6 +45,11 @@ import {
   fetchReadingProgress,
   saveReadingProgress,
 } from "../../../apps/web/src/readingProgress";
+import {
+  createBookmark,
+  deleteBookmark,
+  fetchBookmarks,
+} from "../../../apps/web/src/bookmarks";
 import { downloadAttachment } from "../../../apps/web/src/download";
 import { sendHeartbeat } from "../../../apps/web/src/heartbeat";
 import { drainTasks } from "../src/task-lifecycle.js";
@@ -451,6 +456,75 @@ describe("reading progress over the real server (readingProgress.ts)", () => {
     // The task's own settle write (the store seam) opens everything up.
     settleImport(database, created.id, "ready", null);
     await waitForShelfBook(app, created.id, "ready");
+  });
+});
+
+describe("bookmarks over the real server (bookmarks.ts)", () => {
+  it("round-trips a mark through POST/GET and reads the DELETE's 204 as success", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const created = await createBookmark(id, { chapter: 2, block: 4 });
+    expect(created).toEqual({
+      id: expect.any(Number),
+      chapter: 2,
+      block: 4,
+      createdAt: expect.any(String),
+    });
+    // The same position again resolves to the same mark (the 200 path,
+    // identical shape — the client never needs to care which happened).
+    const again = await createBookmark(id, { chapter: 2, block: 4 });
+    expect(again).toEqual(created);
+    await expect(fetchBookmarks(id)).resolves.toEqual([created]);
+    // The 204 is the delete shape: no body — fetchJson must not parse one
+    // into a failure. Repeats are the same 204 (idempotent).
+    await expect(deleteBookmark(id, created.id)).resolves.toBeUndefined();
+    await expect(deleteBookmark(id, created.id)).resolves.toBeUndefined();
+    await expect(fetchBookmarks(id)).resolves.toEqual([]);
+  });
+
+  it("keeps a missing book's 404 separate from every other failure", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    // 404 book-not-found on all three helpers: a catchable ApiError with
+    // its stable code — never folded into empty data or a silent no-op.
+    // Thunks, not a promise array: each call starts only once its expect
+    // is about to await it, so no rejection outruns its handler.
+    for (const attempted of [
+      () => fetchBookmarks(999),
+      () => createBookmark(999, { chapter: 1, block: 1 }),
+      () => deleteBookmark(999, 1),
+    ]) {
+      await expect(attempted()).rejects.toMatchObject({
+        status: 404,
+        body: { code: "book-not-found" },
+      });
+    }
+    // Other failures stay distinct throws, not silent swallows: a bad
+    // body 400s, a position the book lacks 404s with its own code.
+    await expect(
+      createBookmark(id, { chapter: 0, block: 0 })
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      createBookmark(id, { chapter: 9, block: 1 })
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { code: "bookmark-target-not-found" },
+    });
+  });
+
+  it("409s the guarded reads on an importing book over the real wire", async () => {
+    const { database } = await startStack();
+    // The importing row is planted the way a crashed import leaves it.
+    const created = {
+      id: createImportingBook(database, "A Seamed Book", "markdown", null),
+    };
+    await expect(fetchBookmarks(created.id)).rejects.toMatchObject({
+      status: 409,
+      body: { code: "book-not-ready" },
+    });
+    await expect(
+      createBookmark(created.id, { chapter: 1, block: 1 })
+    ).rejects.toMatchObject({ status: 409 });
   });
 });
 

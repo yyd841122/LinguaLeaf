@@ -1201,3 +1201,188 @@ describe("生词本 word states through the HTTP seam (ADR-0005)", () => {
     ]);
   });
 });
+
+// Manual bookmarks (reading-bookmarks ticket 01): three routes over the
+// store's dedup/cap/delete. This suite owns the error matrix — every code
+// on the wire, status by status — and the idempotent 204; the client-side
+// parse shapes stay with the contract suite.
+describe("bookmarks through the HTTP API seam (reading-bookmarks ticket 01)", () => {
+  let database: Database.Database;
+  let app: Express;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+    app = createApp(database, openTrackedDictionary());
+  });
+  afterEach(() => {
+    database.close();
+  });
+
+  async function readyBookId(): Promise<number> {
+    return importSampleBookReady(app);
+  }
+
+  it("lists [] for a ready book with no marks, then round-trips a POST", async () => {
+    const bookId = await readyBookId();
+    const empty = await request(app).get(`/api/books/${bookId}/bookmarks`);
+    expect(empty.status).toBe(200);
+    expect(empty.body).toEqual({ bookmarks: [] });
+
+    const created = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 2, block: 1 });
+    expect(created.status).toBe(201);
+    expect(created.body).toEqual({
+      bookmark: {
+        id: expect.any(Number),
+        chapter: 2,
+        block: 1,
+        createdAt: expect.any(String),
+      },
+    });
+
+    // The same position again is the existing mark: 200, the same row.
+    const existing = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 2, block: 1 });
+    expect(existing.status).toBe(200);
+    expect(existing.body).toEqual(created.body);
+
+    const listed = await request(app).get(`/api/books/${bookId}/bookmarks`);
+    expect(listed.status).toBe(200);
+    expect(listed.body).toEqual({ bookmarks: [created.body.bookmark] });
+  });
+
+  it("answers the coded 400/404 matrix, status by status", async () => {
+    const bookId = await readyBookId();
+
+    // Body positions must be positive integers — validated before the
+    // book lookup, the same order as progress PUT.
+    for (const payload of [
+      { chapter: "2", block: 1 },
+      { chapter: 2 },
+      { chapter: 0, block: 1 },
+      { chapter: 2, block: 0 },
+    ]) {
+      const bad = await request(app)
+        .post(`/api/books/${bookId}/bookmarks`)
+        .send(payload);
+      expect(bad.status).toBe(400);
+      expect(bad.body.code).toBe("invalid-position");
+    }
+
+    // A missing book 404s all three routes with the same code.
+    for (const made of [
+      request(app).get("/api/books/999/bookmarks"),
+      request(app)
+        .post("/api/books/999/bookmarks")
+        .send({ chapter: 1, block: 1 }),
+      request(app).delete("/api/books/999/bookmarks/1"),
+    ]) {
+      const answered = await made;
+      expect(answered.status).toBe(404);
+      expect(answered.body.code).toBe("book-not-found");
+    }
+
+    // A real book, positions it does not have: no chapter 9, and chapter 1
+    // holds a single block.
+    const noChapter = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 9, block: 1 });
+    expect(noChapter.status).toBe(404);
+    expect(noChapter.body.code).toBe("bookmark-target-not-found");
+    const noBlock = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 1, block: 99 });
+    expect(noBlock.status).toBe(404);
+    expect(noBlock.body.code).toBe("bookmark-target-not-found");
+  });
+
+  it("409s an importing book's reading routes and a full cap on new marks", async () => {
+    // The importing row is what a crashed import leaves behind; the
+    // reading routes answer it 409, deterministically.
+    const importing = createImportingBook(
+      database,
+      "Not Ready",
+      "markdown",
+      null
+    );
+    const notReadyGet = await request(app).get(
+      `/api/books/${importing}/bookmarks`
+    );
+    expect(notReadyGet.status).toBe(409);
+    expect(notReadyGet.body.code).toBe("book-not-ready");
+    const notReadyPost = await request(app)
+      .post(`/api/books/${importing}/bookmarks`)
+      .send({ chapter: 1, block: 1 });
+    expect(notReadyPost.status).toBe(409);
+    expect(notReadyPost.body.code).toBe("book-not-ready");
+    // Deleting carries no readiness guard: a book that exists answers 204.
+    const deleteNotReady = await request(app).delete(
+      `/api/books/${importing}/bookmarks/5`
+    );
+    expect(deleteNotReady.status).toBe(204);
+
+    // A full cap rejects the 101st distinct position but keeps answering
+    // existing for a mark already at (2,1).
+    const bookId = await readyBookId();
+    const plant = database.prepare(
+      "INSERT INTO bookmarks (book_id, chapter_position, block_position, created_at) VALUES (?, ?, ?, ?)"
+    );
+    for (let i = 2; i <= 100; i += 1) {
+      plant.run(bookId, 99, i, "2026-10-31T00:00:00.000Z");
+    }
+    const hundredth = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 2, block: 1 });
+    expect(hundredth.status).toBe(201);
+    const overCap = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 2, block: 2 });
+    expect(overCap.status).toBe(409);
+    expect(overCap.body.code).toBe("bookmark-limit-reached");
+    const retryAtCap = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 2, block: 1 });
+    expect(retryAtCap.status).toBe(200);
+  });
+
+  it("deletes a mark idempotently and never another book's mark", async () => {
+    const bookId = await readyBookId();
+    const otherId = await readyBookId();
+    const made = await request(app)
+      .post(`/api/books/${bookId}/bookmarks`)
+      .send({ chapter: 2, block: 3 });
+    const ownMarkId = made.body.bookmark.id as number;
+    const otherMade = await request(app)
+      .post(`/api/books/${otherId}/bookmarks`)
+      .send({ chapter: 2, block: 3 });
+    const otherMarkId = otherMade.body.bookmark.id as number;
+
+    // Another book's id deletes nothing here — but still answers 204.
+    const cross = await request(app).delete(
+      `/api/books/${bookId}/bookmarks/${otherMarkId}`
+    );
+    expect(cross.status).toBe(204);
+    expect(
+      (await request(app).get(`/api/books/${otherId}/bookmarks`)).body.bookmarks
+    ).toHaveLength(1);
+
+    const gone = await request(app).delete(
+      `/api/books/${bookId}/bookmarks/${ownMarkId}`
+    );
+    expect(gone.status).toBe(204);
+    expect(gone.body).toEqual({});
+    // Repeats, never-existed ids, and non-integer ids are the same
+    // idempotent 204 — a book that exists answers 204, period.
+    for (const bookmarkId of [ownMarkId, 424242, "not-a-number"]) {
+      const repeat = await request(app).delete(
+        `/api/books/${bookId}/bookmarks/${bookmarkId}`
+      );
+      expect(repeat.status).toBe(204);
+    }
+    expect(
+      (await request(app).get(`/api/books/${bookId}/bookmarks`)).body
+    ).toEqual({ bookmarks: [] });
+  });
+});

@@ -4,14 +4,18 @@ import { openDatabase } from "../src/database.js";
 import {
   INTERRUPTED_MESSAGE,
   INTERRUPTED_TRANSLATION_MESSAGE,
+  MAX_BOOKMARKS_PER_BOOK,
+  addBookmark,
   beginChapterTranslation,
   createImportingBook,
+  deleteBookmark,
   deleteBook,
   failInterruptedImports,
   failInterruptedChapterTranslations,
   findBookRow,
   findChapterRow,
   getProgress,
+  listBookmarks,
   listChapters,
   listSentenceBlocks,
   listShelf,
@@ -534,5 +538,137 @@ describe("chapter translation state machine", () => {
       "译一",
       null,
     ]);
+  });
+});
+
+// Manual bookmarks (reading-bookmarks ticket 01): the store owns the three
+// writes the router serves — a deduped add under a per-book cap, the
+// (chapter, block)-ordered read, and the double-qualified delete. The HTTP
+// matrix and wire shapes stay with the api and contract suites; these pin
+// what those cannot see: the cap's existing-retry exemption, the
+// double-qualified delete, and a rejection leaving no partial row.
+describe("bookmarks (reading-bookmarks ticket 01)", () => {
+  let database: Database.Database;
+
+  beforeEach(() => {
+    database = openDatabase(":memory:");
+  });
+
+  afterEach(() => {
+    database.close();
+  });
+
+  // One book with real blocks to anchor on: chapter 1 holds three blocks
+  // (sentence/raw/sentence), chapter 2 one — positions (1,1)..(1,3), (2,1).
+  function bookWithBlocks(): number {
+    const id = createImportingBook(database, "Marked", "markdown", null);
+    persistBook(database, id, [
+      {
+        title: "One",
+        level: 1,
+        blocks: [sentence("First."), raw("<p>x</p>"), sentence("Second.")],
+      },
+      { title: "Two", level: null, blocks: [sentence("Third.")] },
+    ]);
+    return id;
+  }
+
+  const bookmarkCount = (): number =>
+    (
+      database.prepare("SELECT COUNT(*) AS n FROM bookmarks").get() as {
+        n: number;
+      }
+    ).n;
+
+  it("addBookmark plants a mark; a same-position retry answers existing, unchanged", () => {
+    const bookId = bookWithBlocks();
+    const created = addBookmark(database, bookId, 1, 2);
+    expect(created.outcome).toBe("created");
+    expect(created).toMatchObject({
+      bookmark: { chapter: 1, block: 2, createdAt: expect.any(String) },
+    });
+    // The dedup is per book: another book's same position is a fresh mark.
+    const otherBook = bookWithBlocks();
+    expect(addBookmark(database, otherBook, 1, 2).outcome).toBe("created");
+    // The retry carries the original row — same id, same created_at — with
+    // only the verdict flipped.
+    const retry = addBookmark(database, bookId, 1, 2);
+    expect(retry.outcome).toBe("existing");
+    expect(retry).toEqual({ ...created, outcome: "existing" });
+    expect(bookmarkCount()).toBe(2);
+  });
+
+  it("listBookmarks reads (chapter, block)-ascending, [] before the first mark", () => {
+    const bookId = bookWithBlocks();
+    expect(listBookmarks(database, bookId)).toEqual([]);
+    addBookmark(database, bookId, 2, 1);
+    addBookmark(database, bookId, 1, 3);
+    addBookmark(database, bookId, 1, 1);
+    addBookmark(database, bookId, 1, 2);
+    expect(
+      listBookmarks(database, bookId).map((mark) => [mark.chapter, mark.block])
+    ).toEqual([
+      [1, 1],
+      [1, 2],
+      [1, 3],
+      [2, 1],
+    ]);
+    // Another book's marks do not leak in.
+    addBookmark(database, bookWithBlocks(), 1, 1);
+    expect(listBookmarks(database, bookId)).toHaveLength(4);
+  });
+
+  it("addBookmark rejects a target the book does not have, leaving no row", () => {
+    const bookId = bookWithBlocks();
+    expect(addBookmark(database, bookId, 3, 1).outcome).toBe(
+      "target-not-found"
+    );
+    expect(addBookmark(database, bookId, 1, 99).outcome).toBe(
+      "target-not-found"
+    );
+    expect(bookmarkCount()).toBe(0);
+  });
+
+  it("caps a book at MAX_BOOKMARKS_PER_BOOK new marks but keeps answering existing", () => {
+    // The spec number itself (reading-bookmarks spec decision 4): 100/书.
+    expect(MAX_BOOKMARKS_PER_BOOK).toBe(100);
+    const bookId = bookWithBlocks();
+    // The filler rows sit at positions the store's target check would
+    // reject — only tests may build what the store reads.
+    const plant = database.prepare(
+      "INSERT INTO bookmarks (book_id, chapter_position, block_position, created_at) VALUES (?, ?, ?, ?)"
+    );
+    for (let i = 1; i < MAX_BOOKMARKS_PER_BOOK; i += 1) {
+      plant.run(bookId, 99, i, "2026-10-31T00:00:00.000Z");
+    }
+    // The 100th mark is a real, unmarked block: still created.
+    expect(addBookmark(database, bookId, 1, 1).outcome).toBe("created");
+    // A 101st distinct position is over the cap: rejected, nothing stored.
+    expect(addBookmark(database, bookId, 1, 2).outcome).toBe("limit-reached");
+    expect(bookmarkCount()).toBe(MAX_BOOKMARKS_PER_BOOK);
+    // Retrying a mark that exists stays existing at a full cap — the cap
+    // rejects new marks, not repeats.
+    expect(addBookmark(database, bookId, 1, 1).outcome).toBe("existing");
+    expect(bookmarkCount()).toBe(MAX_BOOKMARKS_PER_BOOK);
+  });
+
+  it("deleteBookmark deletes only the given book's mark, idempotently; deleteBook cascades", () => {
+    const bookA = bookWithBlocks();
+    const bookB = bookWithBlocks();
+    addBookmark(database, bookA, 1, 1);
+    addBookmark(database, bookB, 1, 1);
+    const markOfA = listBookmarks(database, bookA)[0]!;
+    const markOfB = listBookmarks(database, bookB)[0]!;
+    // Another book's id deletes nothing here — the id alone is not the key.
+    deleteBookmark(database, bookA, markOfB.id);
+    expect(listBookmarks(database, bookB)).toHaveLength(1);
+    // The book's own mark goes, and repeating is the same quiet no-op.
+    deleteBookmark(database, bookA, markOfA.id);
+    expect(listBookmarks(database, bookA)).toEqual([]);
+    expect(() => deleteBookmark(database, bookA, markOfA.id)).not.toThrow();
+    // Deleting the book takes its remaining marks with it (the FK cascade
+    // the schema owns, pinned here through the store's deleteBook).
+    deleteBook(database, bookB);
+    expect(bookmarkCount()).toBe(0);
   });
 });

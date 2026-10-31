@@ -1,17 +1,22 @@
 import type Database from "better-sqlite3";
-import type { BookStatus, ImportStage, TranslationStatus } from "./wire.js";
+import type {
+  BookStatus,
+  BookmarkSummary,
+  ImportStage,
+  TranslationStatus,
+} from "./wire.js";
 
-// The book store: every SQL statement over the four book tables — books,
-// chapters, blocks, reading_progress — lives here and nowhere else. The
-// interface is plain functions (dictionary.ts idiom), database first. What
-// the module hides: the column lists (one per table), the ipa_slots JSON
-// codec, the decode from snake_case rows to the readers' camelCase shapes,
-// the transaction boundary around an import's writes, and the resurrection
-// guards — no import write may touch a book that is gone, and progress
-// writes only touch a book that is still importing. Callers hold the
-// envelopes: books-router the HTTP, import-task the orchestration, export
-// the rendering. schema.ts keeps DDL and migrations, which by nature run
-// before any of these shapes exist.
+// The book store: every SQL statement over the book tables — books,
+// chapters, blocks, reading_progress, bookmarks — lives here and nowhere
+// else. The interface is plain functions (dictionary.ts idiom), database
+// first. What the module hides: the column lists (one per table), the
+// ipa_slots JSON codec, the decode from snake_case rows to the readers'
+// camelCase shapes, the transaction boundary around an import's writes,
+// and the resurrection guards — no import write may touch a book that is
+// gone, and progress writes only touch a book that is still importing.
+// Callers hold the envelopes: books-router the HTTP, import-task the
+// orchestration, export the rendering. schema.ts keeps DDL and migrations,
+// which by nature run before any of these shapes exist.
 
 // The block kinds the data model stores — mirrors the blocks.kind CHECK in
 // schema.ts (SQL cannot import it); adding a kind means touching this union
@@ -523,8 +528,131 @@ export function saveProgress(
     .run(bookId, chapter, block, new Date().toISOString());
 }
 
-// Deletes the book; its chapters, blocks, and reading_progress go with it
-// through their ON DELETE CASCADE foreign keys (the pragma is on).
+// Manual bookmarks (reading-bookmarks ticket 01): reader-planted position
+// markers, many per book. The dedup and the per-book cap live here, inside
+// one transaction, so a rejected add leaves no partial row; the router
+// turns the verdicts into the HTTP matrix.
+
+// The per-book cap on bookmarks (spec decision 4): a guard against runaway
+// accumulation, not a working set — over the cap a new mark is refused
+// with an error, never silently evicted, and repeating an existing mark is
+// never refused.
+export const MAX_BOOKMARKS_PER_BOOK = 100;
+
+// One bookmarks row as the table holds it. The column list has exactly one
+// home (this SELECT and the INSERT's read-back below), matching the
+// one-list discipline of BOOK_COLUMNS above.
+type BookmarkSqlRow = {
+  id: number;
+  chapter_position: number;
+  block_position: number;
+  created_at: string;
+};
+
+const BOOKMARK_COLUMNS = "id, chapter_position, block_position, created_at";
+
+const decodeBookmark = (row: BookmarkSqlRow): BookmarkSummary => ({
+  id: row.id,
+  chapter: row.chapter_position,
+  block: row.block_position,
+  createdAt: row.created_at,
+});
+
+// The book's marks in reading order — the shape both the list route and
+// the add route's read-back serve.
+export function listBookmarks(
+  database: Database.Database,
+  bookId: number
+): BookmarkSummary[] {
+  return (
+    database
+      .prepare(
+        `SELECT ${BOOKMARK_COLUMNS} FROM bookmarks WHERE book_id = ?
+         ORDER BY chapter_position, block_position`
+      )
+      .all(bookId) as BookmarkSqlRow[]
+  ).map(decodeBookmark);
+}
+
+// What an add decided: created vs existing both carry the row (the router
+// answers 201 vs 200 with the same body shape); the two rejections name
+// themselves for the router's coded 404/409. All three steps — target
+// existence, cap, insert — run in one transaction, so no outcome leaves a
+// partial write behind.
+export type AddBookmarkResult =
+  | { outcome: "created" | "existing"; bookmark: BookmarkSummary }
+  | { outcome: "target-not-found" }
+  | { outcome: "limit-reached" };
+
+export function addBookmark(
+  database: Database.Database,
+  bookId: number,
+  chapter: number,
+  block: number
+): AddBookmarkResult {
+  const add = database.transaction((): AddBookmarkResult => {
+    // The target must be a real block of this book. One JOIN — existence
+    // only, not progress PUT's whole-chapter load: a bookmark anchor needs
+    // no content.
+    const target = database
+      .prepare(
+        `SELECT 1
+         FROM chapters c
+         JOIN blocks b ON b.chapter_id = c.id
+         WHERE c.book_id = ? AND c.position = ? AND b.position = ?`
+      )
+      .get(bookId, chapter, block);
+    if (!target) return { outcome: "target-not-found" };
+    // The cap counts marks other than the asked-for position: a
+    // same-position retry is the existing path below and must keep
+    // answering existing at a full cap.
+    const others = database
+      .prepare(
+        `SELECT COUNT(*) AS n FROM bookmarks
+         WHERE book_id = ? AND (chapter_position != ? OR block_position != ?)`
+      )
+      .get(bookId, chapter, block) as { n: number };
+    if (others.n >= MAX_BOOKMARKS_PER_BOOK) {
+      return { outcome: "limit-reached" };
+    }
+    // The UNIQUE key owns dedup: the ignored insert is the existing path.
+    const inserted = database
+      .prepare(
+        `INSERT OR IGNORE INTO bookmarks
+           (book_id, chapter_position, block_position, created_at)
+         VALUES (?, ?, ?, ?)`
+      )
+      .run(bookId, chapter, block, new Date().toISOString());
+    const row = database
+      .prepare(
+        `SELECT ${BOOKMARK_COLUMNS} FROM bookmarks
+         WHERE book_id = ? AND chapter_position = ? AND block_position = ?`
+      )
+      .get(bookId, chapter, block) as BookmarkSqlRow;
+    return {
+      outcome: inserted.changes > 0 ? "created" : "existing",
+      bookmark: decodeBookmark(row),
+    };
+  });
+  return add();
+}
+
+// Deletes one mark, double-qualified by the book: another book's id
+// deletes nothing here. Idempotent by nature — an already-gone id matches
+// no row, and the router answers the same 204 either way.
+export function deleteBookmark(
+  database: Database.Database,
+  bookId: number,
+  bookmarkId: number
+): void {
+  database
+    .prepare("DELETE FROM bookmarks WHERE book_id = ? AND id = ?")
+    .run(bookId, bookmarkId);
+}
+
+// Deletes the book; its chapters, blocks, reading_progress, and bookmarks
+// go with it through their ON DELETE CASCADE foreign keys (the pragma is
+// on).
 export function deleteBook(database: Database.Database, bookId: number): void {
   database.prepare("DELETE FROM books WHERE id = ?").run(bookId);
 }

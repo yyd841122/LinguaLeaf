@@ -547,3 +547,102 @@ describe("word_states table migration (vocabulary-states ticket 01)", () => {
     reopened.close();
   });
 });
+
+// The bookmarks table (reading-bookmarks ticket 01) postdates every
+// database above. Bookmarks are book data, not learner data: the UNIQUE
+// (book_id, chapter_position, block_position) key owns dedup, and the
+// books FK cascade takes the marks when the book goes — the same story the
+// chapters and blocks tables already live. So the migration story is only
+// "the table exists": a pre-bookmarks .data file grows it on its next
+// open, unchanged and in place.
+describe("bookmarks table migration (reading-bookmarks ticket 01)", () => {
+  let directory: string;
+  let databasePath: string;
+
+  beforeEach(() => {
+    directory = mkdtempSync(join(tmpdir(), "lingualeaf-schema-"));
+    databasePath = join(directory, "pre-bookmarks.sqlite");
+  });
+  afterEach(() => {
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  function createPreBookmarksDatabase(): number {
+    const database = new Database(databasePath);
+    database.exec(`
+      CREATE TABLE books (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        format TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+    `);
+    const bookId = Number(
+      database
+        .prepare(
+          "INSERT INTO books (title, format, created_at) VALUES (?, ?, ?)"
+        )
+        .run("An old book", "markdown", "2026-10-17T00:00:00.000Z")
+        .lastInsertRowid
+    );
+    database.close();
+    return bookId;
+  }
+
+  it("grows a pre-bookmarks database the bookmarks table, constraints intact", () => {
+    const bookId = createPreBookmarksDatabase();
+
+    const database = openDatabase(databasePath);
+    database
+      .prepare(
+        "INSERT INTO bookmarks (book_id, chapter_position, block_position, created_at) VALUES (?, ?, ?, ?)"
+      )
+      .run(bookId, 2, 3, "2026-10-31T00:00:00.000Z");
+    // The UNIQUE key owns dedup: the same position twice is a rejection at
+    // this seam — the store's INSERT OR IGNORE quietly leans on it.
+    expect(() =>
+      database
+        .prepare(
+          "INSERT INTO bookmarks (book_id, chapter_position, block_position, created_at) VALUES (?, ?, ?, ?)"
+        )
+        .run(bookId, 2, 3, "2026-10-31T00:00:00.000Z")
+    ).toThrow();
+    // Bookmarks are book data: deleting the book takes its marks with it.
+    database.prepare("DELETE FROM books WHERE id = ?").run(bookId);
+    expect(
+      (
+        database.prepare("SELECT COUNT(*) AS n FROM bookmarks").get() as {
+          n: number;
+        }
+      ).n
+    ).toBe(0);
+    database.close();
+
+    // The migration is one-time work: reopening the migrated file is
+    // stable, and the table keeps taking rows across restarts.
+    const reopened = openDatabase(databasePath);
+    const freshBookId = Number(
+      reopened
+        .prepare(
+          "INSERT INTO books (title, format, created_at) VALUES (?, ?, ?)"
+        )
+        .run("A reopened book", "epub", "2026-10-31T00:00:00.000Z")
+        .lastInsertRowid
+    );
+    reopened
+      .prepare(
+        "INSERT INTO bookmarks (book_id, chapter_position, block_position, created_at) VALUES (?, ?, ?, ?)"
+      )
+      .run(freshBookId, 1, 1, "2026-10-31T00:00:00.000Z");
+    reopened.close();
+    const final = openDatabase(databasePath);
+    expect(
+      (
+        final.prepare("SELECT COUNT(*) AS n FROM bookmarks").get() as {
+          n: number;
+        }
+      ).n
+    ).toBe(1);
+    final.close();
+  });
+});

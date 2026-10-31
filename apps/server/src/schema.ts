@@ -73,6 +73,24 @@ const readingProgressTable = `
     );
 `;
 
+// Manual bookmarks (reading-bookmarks ticket 01): reader-planted position
+// markers, many per book, keyed by the same chapter/block coordinates the
+// progress pair uses. The proxy id keeps room for names later (spec P4);
+// the UNIQUE key owns dedup so a same-position re-add is a no-op, and the
+// cascade takes the marks when the book goes — bookmarks are book data,
+// not learner data like word_states. Like every table here, new is the
+// table's absence: a pre-bookmarks database grows it on its next open.
+const bookmarksTable = `
+    CREATE TABLE IF NOT EXISTS bookmarks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      chapter_position INTEGER NOT NULL,
+      block_position INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (book_id, chapter_position, block_position)
+    );
+`;
+
 const wordStatesTable = `
     CREATE TABLE IF NOT EXISTS word_states (
       lemma TEXT PRIMARY KEY,
@@ -96,7 +114,7 @@ export function migrateSchema(database: Database.Database): void {
     }
   };
   database.exec(
-    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}`
+    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}${bookmarksTable}`
   );
   // Databases created before ticket 03's word-pairing work lack the slots
   // column; add it in place so an existing .data file keeps working. Runs
