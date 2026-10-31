@@ -125,3 +125,21 @@ export type BookmarkSummary = {
   block: number;
   createdAt: string;
 };
+
+// The bookmark routes' stable error codes (reading-bookmarks ticket 01) —
+// the machine half of each coded body, declared here so the router's
+// bodies and the contract pins compile against one union and the first
+// client branch on `code` inherits the type anchor (CODING_STANDARDS.md,
+// "Error bodies are a code plus copy"). The body's `error` field stays
+// rewordable prose.
+export type BookmarkErrorCode =
+  | "book-not-found"
+  | "book-not-ready"
+  | "invalid-position"
+  | "bookmark-target-not-found"
+  | "bookmark-limit-reached";
+
+export type BookmarkError = {
+  code: BookmarkErrorCode;
+  error: string;
+};

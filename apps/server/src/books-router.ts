@@ -33,7 +33,7 @@ import {
 } from "./book-store.js";
 import { tokenizeWords } from "./dict/ipa-line.js";
 import { loadWordStatuses, tokenStatuses } from "./vocab-store.js";
-import type { ChapterPayload, ImportRejection } from "./wire.js";
+import type { BookmarkError, ChapterPayload, ImportRejection } from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -272,34 +272,45 @@ export function createBooksRouter(
   // Manual bookmarks (reading-bookmarks ticket 01). Reads and adds join
   // the reading guard family — only settled books answer — but with the
   // coded bodies this route family's error matrix pins: every bookmark
-  // rejection carries its stable code beside the prose, so the client
-  // branches on the code (respondIfNotReady keeps its uncoded body for
-  // the existing routes; the automatic-progress surface must not drift).
+  // rejection carries its stable code beside the prose, each literal
+  // satisfies-checked against wire.ts's BookmarkError so a code typo is a
+  // compile error (respondIfNotReady keeps its uncoded body for the
+  // existing routes; the automatic-progress surface must not drift).
   // Deleting is not a reading route: a book that exists answers, importing
   // or not.
-  const bookmarkBookFromParams = (
+
+  // The coded 404 book body's one home, shared by the guard and DELETE.
+  const respondBookNotFound = (response: Response): void => {
+    response.status(404).json({
+      code: "book-not-found",
+      error: "book not found",
+    } satisfies BookmarkError);
+  };
+
+  // The reads and adds' shared guard: only a readable book (it exists and
+  // is settled) passes; the name owns its responding, like its sibling
+  // respondIfNotReady above.
+  const respondIfNotReadable = (
     request: Request,
     response: Response
   ): BookRow | undefined => {
     const book = bookFromParams(request);
     if (!book) {
-      response
-        .status(404)
-        .json({ code: "book-not-found", error: "book not found" });
+      respondBookNotFound(response);
       return undefined;
     }
     if (book.status !== "ready") {
       response.status(409).json({
         code: "book-not-ready",
         error: "book is not ready for reading",
-      });
+      } satisfies BookmarkError);
       return undefined;
     }
     return book;
   };
 
   router.get("/:id/bookmarks", (request, response) => {
-    const book = bookmarkBookFromParams(request, response);
+    const book = respondIfNotReadable(request, response);
     if (!book) return;
     // A ready book with no marks yet is an empty collection, not a 404.
     response.json({ bookmarks: listBookmarks(database, book.id) });
@@ -313,24 +324,24 @@ export function createBooksRouter(
       response.status(400).json({
         code: "invalid-position",
         error: "chapter and block must be positive integers",
-      });
+      } satisfies BookmarkError);
       return;
     }
-    const book = bookmarkBookFromParams(request, response);
+    const book = respondIfNotReadable(request, response);
     if (!book) return;
     const result = addBookmark(database, book.id, chapter, block);
     if (result.outcome === "target-not-found") {
       response.status(404).json({
         code: "bookmark-target-not-found",
         error: "bookmark target block not found",
-      });
+      } satisfies BookmarkError);
       return;
     }
     if (result.outcome === "limit-reached") {
       response.status(409).json({
         code: "bookmark-limit-reached",
         error: `a book holds at most ${MAX_BOOKMARKS_PER_BOOK} bookmarks`,
-      });
+      } satisfies BookmarkError);
       return;
     }
     // A fresh mark is 201; a same-position retry is the existing mark with
@@ -343,9 +354,7 @@ export function createBooksRouter(
   router.delete("/:id/bookmarks/:bookmarkId", (request, response) => {
     const book = bookFromParams(request);
     if (!book) {
-      response
-        .status(404)
-        .json({ code: "book-not-found", error: "book not found" });
+      respondBookNotFound(response);
       return;
     }
     // Double-qualified in the store; a repeat or a non-integer id matches
