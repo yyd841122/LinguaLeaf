@@ -466,3 +466,31 @@ describe("useProgressSession route ownership", () => {
     expect(saveReadingProgress).not.toHaveBeenCalled();
   });
 });
+
+// Pinned, not endorsed (CODING_STANDARDS, "Reviews pin unreachable
+// behavior instead of changing it"): the Number.isInteger guard at the top
+// of the fetch effect keeps a garbage route inert. No current caller
+// reaches it — ReadingPage rejects non-integer route params before the
+// reading view renders — so the guard's reach is a contract, not a lived
+// behavior. This is the test that flips if the guard is ever deliberately
+// removed: without it, the hook would fire the progress fetch (and arm
+// saves) for a NaN route.
+describe("useProgressSession non-integer route guard (pinned)", () => {
+  it.each([
+    { name: "book id", badRoute: { bookId: Number("x"), chapterNumber: 2 } },
+    { name: "chapter number", badRoute: { bookId: 7, chapterNumber: 1.5 } },
+  ])(
+    "keeps a non-integer $name inert: no fetch, no restore, no saves",
+    async ({ badRoute }) => {
+      renderHook(() => useProgressSession({ ...badRoute, ready: true }));
+      await actAdvance(1000);
+      fireEvent.scroll(window);
+      await actAdvance(1000);
+
+      expect(fetchReadingProgress).not.toHaveBeenCalled();
+      expect(saveReadingProgress).not.toHaveBeenCalled();
+      expect(jump).not.toHaveBeenCalled();
+      expect(window.scrollTo).not.toHaveBeenCalled();
+    }
+  );
+});
