@@ -415,3 +415,48 @@ At review: when a diff probes a plain-object table with a key from outside
 the module (wire tokens, API names, user input), check the probe is
 hasOwn-guarded — and ask whether a Map is the better table: string keys
 from external sources are its home turf.
+
+## Accessible-name assertions follow the accname computation
+
+Testing Library computes a role's accessible name through the accname
+algorithm, which trims whitespace at element boundaries: a separator (or
+any glue text) living inside a child element vanishes from the computed
+name while the visible text keeps it, so the visual string and the
+computed name diverge. Write the expected name as the computed name, and
+render text that must reach assistive tech — separators, punctuation,
+joiners — in a parent-level text node, not inside a boundary element.
+
+Why: reading-bookmarks 03's panel entry rendered the chapter title, then a
+prefix span opening with `" · "`; the button's computed name came out
+「Two· The first line stand…」 while the screen showed
+「Two · The first line stand…」, and one DOM-dump debug round went to
+finding it (ReadingPage.tsx, 2026-10-31 session). The dump looked clean
+because the DOM was clean — the gap was in the name computation, not the
+markup.
+
+At review: when a diff or its tests assert a role's name over composite
+children (title + prefix, label + count), check the expected string
+against the accname computation — element boundaries trim, so glue text
+rides a parent-level text node — rather than against how the row looks.
+
+## Test stubs answer every method the flow sends; the fall-through throws
+
+A named stub for a multi-verb endpoint carries a branch per method the
+flow under test sends, and an unmatched request throws naming the method
+and URL. A fall-through that answers instead — a canned 404, an empty
+200 — turns a stub-coverage gap into a fake domain failure: the test goes
+red in the shape of the feature's failure path, and the debugging starts
+from the feature instead of the stub.
+
+Why: reading-bookmarks 03's bookmark stub handled GET and POST but not
+DELETE; the catch-all 404 made `removeBookmark` raise its failure flag and
+the delete test failed as "row not removed" — a timing-shaped
+misdiagnosis before the missing branch surfaced (apps/web/test/
+reading.test.tsx, 2026-10-31 session). The export suite's stubs already
+throw `unexpected fetch: …`; this rule makes that the only shape.
+
+At review: for each new fetch stub in a diff, list the methods the flow
+can send at the tested moment and find each one's branch; a fall-through
+that resolves a response instead of throwing is the finding. (The stub's
+answered shapes still follow "Client calls match real response shapes" —
+this rule is about the gap, not the shapes.)

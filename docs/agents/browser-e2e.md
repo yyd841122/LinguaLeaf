@@ -44,6 +44,16 @@ If no cached chromium exists, `npx playwright install chromium` fetches one.
    button label that changes the instant it is clicked. Screenshots are the
    evidence to paste into the ticket.
 
+   Viewport-dependent behavior — a capture that reads the scroll
+   position, anything keyed on 「点击瞬间」 — makes `click()`'s
+   auto-scroll part of the stimulus: reaching a toolbar off-screen
+   scrolls the page before the handler runs, and the page reacts to the
+   post-scroll viewport (reading-bookmarks 03: the 打书签 capture stored
+   block 1 while the reader sat at block 32, one full acceptance round
+   burned on the mismatch). Scroll to the reader's real position
+   yourself and confirm the target is already in view before clicking;
+   then the click measures the viewport you meant it to measure.
+
 4. **Kill by PID, not by faith**, and re-check the port when a scenario
    restarts the server mid-run.
 
