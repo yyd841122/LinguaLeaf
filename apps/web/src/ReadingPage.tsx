@@ -5,6 +5,7 @@ import { fetchJson } from "./api";
 import { useChapterTranslation } from "./chapterTranslation";
 import type {
   BookToc,
+  BookmarkSummary,
   ChapterPayload,
   WordStatus,
 } from "../../server/src/wire";
@@ -21,6 +22,25 @@ import { useProgressSession } from "./progressSession";
 import { captureBookmarkTarget } from "./readingProgress";
 import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
+
+// A panel entry's text after the chapter title (reading-bookmarks 03):
+// the marked block's own original text, cut at 20 characters with an
+// ellipsis — the text itself, never a 「第 M 句」 counter (spec red line;
+// sentence/code/raw/image all carry originalText). Derivable only for the
+// chapter whose payload is loaded: a foreign chapter's blocks are not on
+// the client, and its entries fall back to the bare title rather than
+// fabricate text.
+function bookmarkEntryPrefix(
+  bookmark: BookmarkSummary,
+  content: ChapterPayload
+): string | null {
+  if (bookmark.chapter !== content.position) return null;
+  const text = content.blocks.find(
+    (block) => block.position === bookmark.block
+  )?.originalText;
+  if (text === undefined || text.trim().length === 0) return null;
+  return text.length > 20 ? `${text.slice(0, 20)}…` : text;
+}
 
 export function ReadingPage() {
   const { id, chapter } = useParams();
@@ -93,9 +113,12 @@ export function ReadingPage() {
   // The book's manual marks (reading-bookmarks 03): the session fetches
   // once per book arm; create/remove failures speak through the same
   // inline flag as the progress saves.
-  const { failed: bookmarksFailed, addBookmark } = useBookmarksSession({
-    bookId,
-  });
+  const {
+    bookmarks,
+    failed: bookmarksFailed,
+    addBookmark,
+    removeBookmark,
+  } = useBookmarksSession({ bookId });
 
   const translating = content?.translationStatus === "translating";
   const {
@@ -260,6 +283,71 @@ export function ReadingPage() {
                 </li>
               ))}
             </ul>
+            {/* The book's manual marks (reading-bookmarks 03): title plus
+                the block's own text prefix; the current chapter's entries
+                are buttons (jump stays inside the route), a foreign
+                chapter's are links. */}
+            <section className="bookmark-area" aria-label="书签">
+              {bookmarks.length === 0 ? (
+                <p className="bookmark-empty">
+                  还没有书签，阅读时点顶栏「打书签」。
+                </p>
+              ) : (
+                <ul className="bookmark-list">
+                  {bookmarks.map((bookmark) => {
+                    const chapterTitle =
+                      toc.chapters.find(
+                        (entry) => entry.position === bookmark.chapter
+                      )?.title ?? `第 ${bookmark.chapter} 章`;
+                    const prefix = bookmarkEntryPrefix(bookmark, content);
+                    const entryBody = (
+                      <>
+                        <span className="bookmark-entry-title">
+                          {chapterTitle}
+                        </span>
+                        {/* The separator rides a parent-level text node:
+                            the accessible-name algorithm trims text at
+                            element boundaries, so a separator inside the
+                            prefix span would glue title and prefix
+                            together for assistive tech. */}
+                        {prefix !== null ? (
+                          <>
+                            {" · "}
+                            <span className="bookmark-entry-prefix">
+                              {prefix}
+                            </span>
+                          </>
+                        ) : null}
+                      </>
+                    );
+                    return (
+                      <li key={bookmark.id} className="bookmark-item">
+                        {bookmark.chapter === chapterNumber ? (
+                          <button type="button" className="bookmark-entry">
+                            {entryBody}
+                          </button>
+                        ) : (
+                          <Link
+                            className="bookmark-entry"
+                            to={`/book/${bookId}/${bookmark.chapter}`}
+                          >
+                            {entryBody}
+                          </Link>
+                        )}
+                        <button
+                          type="button"
+                          className="bookmark-delete"
+                          aria-label={`删除「${chapterTitle}」的书签`}
+                          onClick={() => removeBookmark(bookmark.id)}
+                        >
+                          删
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
           </nav>
         )}
         {settingsOpen && (

@@ -3,7 +3,7 @@
 // ChapterPayload in the translate describe, untranslatedBlocks in ticket
 // 03's). Append new tests INSIDE the describe whose fixtures you need — a
 // file-tail append lands in the last describe and misses them.
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -1806,6 +1806,10 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
             JSON.stringify({ bookmarks: options.rows ?? [] })
           );
         }
+        if (/\/bookmarks\/\d+$/.test(url) && method === "DELETE") {
+          // Idempotent 204 while the book exists (ticket 01's matrix).
+          return new Response(null, { status: 204 });
+        }
         if (url.endsWith("/bookmarks") && method === "POST") {
           if (options.postStatus !== undefined && options.postStatus !== 201) {
             return new Response(
@@ -1925,5 +1929,90 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("lists the book's marks as chapter title plus block text prefix, cut at 20 characters", async () => {
+    stubBookmarkFetch({
+      rows: [
+        {
+          id: 11,
+          chapter: 2,
+          block: 1,
+          createdAt: "2026-10-31T00:00:00.000Z",
+        },
+        {
+          id: 12,
+          chapter: 1,
+          block: 2,
+          createdAt: "2026-10-31T00:00:00.000Z",
+        },
+      ],
+    });
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+
+    // The current chapter's mark: sentence block 1's own text, cut at 20
+    // characters with an ellipsis — the text, never a 「第 M 句」 counter.
+    const area = screen.getByRole("region", { name: "书签" });
+    expect(
+      within(area).getByRole("button", {
+        name: "Two · The first line stand…",
+      })
+    ).toBeTruthy();
+    // A foreign chapter's blocks are not loaded: the entry is the bare
+    // chapter title, no fabricated prefix.
+    expect(within(area).getByRole("link", { name: "One" })).toBeTruthy();
+  });
+
+  it("shows the empty state when the book has no marks", async () => {
+    stubBookmarkFetch({ rows: [] });
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+
+    expect(screen.getByText(/还没有书签/)).toBeTruthy();
+  });
+
+  it("removes an entry in place after its DELETE lands", async () => {
+    stubBookmarkFetch({
+      rows: [
+        {
+          id: 11,
+          chapter: 2,
+          block: 1,
+          createdAt: "2026-10-31T00:00:00.000Z",
+        },
+        {
+          id: 12,
+          chapter: 1,
+          block: 2,
+          createdAt: "2026-10-31T00:00:00.000Z",
+        },
+      ],
+    });
+    renderReadingPage();
+    await act(async () => {
+      await Promise.resolve();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "删除「Two」的书签" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    // In place: the deleted row is gone while its sibling stays.
+    const area = screen.getByRole("region", { name: "书签" });
+    expect(
+      within(area).queryByRole("button", {
+        name: "Two · The first line stand…",
+      })
+    ).toBeNull();
+    expect(within(area).getByRole("link", { name: "One" })).toBeTruthy();
   });
 });
