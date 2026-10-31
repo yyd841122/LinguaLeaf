@@ -307,6 +307,97 @@ describe("useProgressSession autosave", () => {
   });
 });
 
+describe("useProgressSession save feedback ownership", () => {
+  it("still flushes the old route's save on a route change, but its late failure cannot set the new route's notice", async () => {
+    const staleFlush = deferred<void>();
+    vi.mocked(saveReadingProgress)
+      .mockReturnValueOnce(staleFlush.promise)
+      .mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(useProgressSession, {
+      initialProps: route,
+    });
+    await actAdvance(0);
+    visibleBlock = 2;
+    fireEvent.scroll(window);
+
+    rerender({ ...route, bookId: 8 });
+    // The flush itself still writes: ownership governs the notice, not the save.
+    expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
+      chapter: 2,
+      block: 2,
+    });
+    await actAdvance(1000);
+    expect(result.current.saveFailed).toBe(false);
+
+    await act(async () => staleFlush.reject(new Error("late, old route")));
+    expect(result.current.saveFailed).toBe(false);
+  });
+
+  it("a stale success cannot clear the new route's notice", async () => {
+    const staleFlush = deferred<void>();
+    vi.mocked(saveReadingProgress)
+      .mockReturnValueOnce(staleFlush.promise)
+      .mockRejectedValueOnce(new Error("book 8 announce failed"))
+      .mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(useProgressSession, {
+      initialProps: route,
+    });
+    await actAdvance(0);
+    visibleBlock = 2;
+    fireEvent.scroll(window);
+
+    rerender({ ...route, bookId: 8 });
+    await actAdvance(0); // book 8's refetch settles and its session arms
+    await actAdvance(1000);
+    // Book 8's own save failed: the notice is its route's now.
+    expect(result.current.saveFailed).toBe(true);
+
+    await act(async () => staleFlush.resolve());
+    expect(result.current.saveFailed).toBe(true);
+
+    // The next save this route lands clears it.
+    visibleBlock = 3;
+    fireEvent.scroll(window);
+    await actAdvance(500);
+    expect(result.current.saveFailed).toBe(false);
+  });
+
+  it("leaving and re-entering a route does not revive its first pass's feedback", async () => {
+    const firstPassFlush = deferred<void>();
+    vi.mocked(saveReadingProgress)
+      .mockReturnValueOnce(firstPassFlush.promise)
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(new Error("current pass"))
+      .mockResolvedValue(undefined);
+    const { result, rerender } = renderHook(useProgressSession, {
+      initialProps: route,
+    });
+    await actAdvance(0);
+    visibleBlock = 2;
+    fireEvent.scroll(window);
+
+    rerender({ ...route, bookId: 8 });
+    await actAdvance(0);
+    await actAdvance(1000);
+    rerender(route);
+    await actAdvance(0); // re-entry's refetch settles and its session arms
+    await actAdvance(1000);
+    expect(result.current.saveFailed).toBe(false);
+
+    // The first pass's flush rejects after re-entry: key comparison alone
+    // would revive its ticket, so the arm invalidates instead.
+    await act(async () => firstPassFlush.reject(new Error("first pass")));
+    expect(result.current.saveFailed).toBe(false);
+
+    // The current pass's own failure still reports honestly.
+    visibleBlock = 3;
+    fireEvent.scroll(window);
+    await actAdvance(500);
+    expect(result.current.saveFailed).toBe(true);
+  });
+});
+
 describe("useProgressSession route ownership", () => {
   it.each([
     { name: "chapter", next: { ...route, chapterNumber: 3 } },

@@ -5,6 +5,7 @@ import {
   topmostVisibleBlock,
   type ReadingProgress,
 } from "./readingProgress";
+import { useOwner, type OwnerTicket } from "./useOwner";
 
 const SAVE_DEBOUNCE_MS = 500;
 // How long after the restore jump scroll events stay ignored: they are the
@@ -53,6 +54,14 @@ export function useProgressSession(options: {
     };
   }, [bookId, chapterNumber]);
 
+  // Route-keyed owner (GLOSSARY 属主令牌) for the save-failure feedback.
+  // The progress read keeps its per-effect cancelled flag on purpose: that
+  // flag revokes one effect instance's response and the route change
+  // refetches anyway, which is the read's whole contract. The notice is
+  // the write side, whose responses arrive after the write and need
+  // adjudication.
+  const owner = useOwner(bookId, chapterNumber);
+
   const skipSavesRef = useRef(false);
   const saveTimerRef = useRef<number | null>(null);
   const pendingSaveRef = useRef<ReadingProgress | null>(null);
@@ -62,6 +71,16 @@ export function useProgressSession(options: {
   // audit 2026-10-23 — the silence made persistent outages look saved).
   const [saveFailed, setSaveFailed] = useState(false);
 
+  // The notice's owner ticket (GLOSSARY 属主令牌), taken when the
+  // autosave session arms. Every flush this arm puts in flight speaks
+  // through it, so a response can move the notice only while its route is
+  // still current: an old route's late success must not clear the new
+  // route's notice, and its late failure must not set it. The ref, not a
+  // render-scoped constant, is what keeps the route-change flush honest —
+  // that flush runs during the cleanup of the render that already
+  // committed the new route, and it must carry the old route's ticket.
+  const saveFeedbackTicketRef = useRef<OwnerTicket | null>(null);
+
   const flushSave = () => {
     if (saveTimerRef.current !== null) {
       window.clearTimeout(saveTimerRef.current);
@@ -70,12 +89,15 @@ export function useProgressSession(options: {
     const pending = pendingSaveRef.current;
     pendingSaveRef.current = null;
     if (pending) {
+      const ticket = saveFeedbackTicketRef.current;
       void saveReadingProgress(bookId, pending)
-        .then(() => setSaveFailed(false))
+        .then(() => {
+          if (ticket && !ticket.stale()) setSaveFailed(false);
+        })
         .catch(() => {
           // A failed save must never disturb reading; the next scroll
           // retries, and this notice says the sync is not happening.
-          setSaveFailed(true);
+          if (ticket && !ticket.stale()) setSaveFailed(true);
         });
     }
   };
@@ -123,6 +145,13 @@ export function useProgressSession(options: {
   // flushed on chapter switch / unmount / pagehide.
   useEffect(() => {
     if (!ready || !progressLoaded) return;
+    // This arm owns the notice. invalidate, not just the key compare:
+    // leaving a route and re-entering it would otherwise revive the first
+    // pass's ticket (CODING_STANDARDS, "Cleanup flags revoke once; key
+    // comparison can revive") and let its response speak for the second
+    // pass. One armed session at a time owns the channel.
+    owner.invalidate();
+    saveFeedbackTicketRef.current = owner.mark();
     if (!skipSavesRef.current && progress !== "unavailable") {
       scheduleSave({ chapter: chapterNumber, block: 1 });
     }
