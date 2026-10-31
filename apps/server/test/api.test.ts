@@ -465,7 +465,22 @@ describe("HTTP API seam", () => {
     ).get("/api/health");
     expect(response.status).toBe(200);
     expect(response.headers["content-type"]).toContain("application/json");
-    expect(response.body).toEqual({ status: "ok" });
+    expect(response.body).toEqual({
+      status: "ok",
+      lastPageSeenAt: null,
+      activeTasks: 0,
+    });
+  });
+
+  it("records a reader heartbeat and reports the presence on health", async () => {
+    const app = createApp(database, openTrackedDictionary());
+    const beat = await request(app).post("/api/heartbeat");
+    expect(beat.status).toBe(204);
+    expect(beat.text).toBe("");
+    const health = await request(app).get("/api/health");
+    expect(health.body.status).toBe("ok");
+    expect(typeof health.body.lastPageSeenAt).toBe("string");
+    expect(health.body.activeTasks).toBe(0);
   });
 
   it("returns an API 404 instead of the frontend HTML", async () => {

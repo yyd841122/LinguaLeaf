@@ -53,6 +53,10 @@ npm start
 
 构建结果位于 `.output/server` 与 `.output/web`。生产环境同一 Node 进程提供 API、前端静态资源，以及 `/`、`/book/:id/:chapter` 的应用入口。生产启动前必须构建；无需独立启动 Vite。生产部署需保留根目录 `package.json`、安装的运行依赖、`.output` 与数据库目录。
 
+## 桌面双击启动（本机 WSL2）
+
+`scripts/launcher/` 提供免手动启停：双击 `scripts/launcher/windows/lingualeaf-launch.bat`（可为其建桌面快捷方式）——在 WSL 内以生产模式拉起服务（固定 `127.0.0.1:3000`，动态端口被设计拒绝），健康检查通过后由 Windows 打开默认浏览器进入书架页；服务已在跑则直接复用。**所有页面关闭约 2 分钟后服务自动停止**：每个打开的页面每 10 秒向 `POST /api/heartbeat` 报一次在场，看门狗（`scripts/launcher/watchdog.mjs`，launch 时随之拉起）在持续无心跳且无后台任务时才优雅停机——关页时正在跑的导入/翻译会等它做完再停。`lingualeaf-stop.bat` 仍是即时的手动停止（SIGTERM，等待上限 15s）。启动器只跑已构建产物：首次使用先完成 `npm install`、`npm run build` 与上面的词典导入；改代码后需 停止 → `npm run build` → 再启动，仅改 `.env` 停止再启动即可。锁与运行记录在数据库旁（`<db>.launch-lock`、`<db>.launcher-state.json`，互斥粒度是数据库而非端口），日志在 `.data/launcher-server.log` 与 `.data/launcher-watchdog.log`；端口被非托管进程占用时明确报错，不自动杀进程、不自动换端口。设计契约与评审记录见 `.scratch/local-launcher/`。
+
 ```sh
 npm run typecheck
 npm test

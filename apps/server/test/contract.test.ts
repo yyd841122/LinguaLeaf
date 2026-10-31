@@ -46,6 +46,7 @@ import {
   saveReadingProgress,
 } from "../../../apps/web/src/readingProgress";
 import { downloadAttachment } from "../../../apps/web/src/download";
+import { sendHeartbeat } from "../../../apps/web/src/heartbeat";
 import { drainTasks } from "../src/task-lifecycle.js";
 
 // The chapter translation trigger calls the shared fetch layer directly
@@ -1073,5 +1074,17 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
       releases.forEach((resume) => resume());
       await drainTasks(1000);
     }
+  });
+
+  it("the reader heartbeat answers 204 and shows on health for the launcher watchdog", async () => {
+    await startStack();
+    // Through the shared fetch layer exactly as heartbeat.ts sends it: the
+    // bodyless 204 comes back as undefined, and health carries the presence
+    // the watchdog reads plus the in-flight task count it waits on.
+    await expect(sendHeartbeat()).resolves.toBeUndefined();
+    const health = await fetchJson<Record<string, unknown>>("/api/health");
+    expect(health.status).toBe("ok");
+    expect(typeof health.lastPageSeenAt).toBe("string");
+    expect(health.activeTasks).toBe(0);
   });
 });

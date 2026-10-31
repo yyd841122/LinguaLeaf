@@ -84,6 +84,8 @@ describe("frontend hosting through the HTTP API seam", () => {
     expect(asset.text).toContain('console.log("LinguaLeaf")');
     expect((await request(server).get("/api/health")).body).toEqual({
       status: "ok",
+      lastPageSeenAt: null,
+      activeTasks: 0,
     });
     expect((await request(server).get("/api/missing")).status).toBe(404);
     expect((await request(server).get("/assets/missing.js")).status).toBe(404);
@@ -112,6 +114,8 @@ describe("frontend hosting through the HTTP API seam", () => {
       // transformation is already covered by the component seam (reading.test.tsx).
       expect((await request(server).get("/api/health")).body).toEqual({
         status: "ok",
+        lastPageSeenAt: null,
+        activeTasks: 0,
       });
       expect((await request(server).get("/api/missing")).status).toBe(404);
     } finally {

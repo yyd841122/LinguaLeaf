@@ -92,6 +92,13 @@ export function drainTasks(graceMs: number): Promise<void> {
   });
 }
 
+// The launcher watchdog's "wait for tasks" input: how many background
+// tasks are in flight right now (plan.md T4 修订 — the idle stop fires
+// only on page-idle AND zero in-flight tasks).
+export function activeTaskCount(): number {
+  return inFlight.size;
+}
+
 // Startup recovery for tasks orphaned by a server restart: any row still
 // importing/translating belongs to a task that died with the previous
 // process and can never resume. Must run only after the server owns its

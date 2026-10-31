@@ -10,6 +10,7 @@ import { createBooksRouter } from "./books-router.js";
 import { createLookupRouter } from "./dict/lookup-router.js";
 import { createVocabRouter } from "./vocab-router.js";
 import { learnWordIfAbsent } from "./vocab-store.js";
+import { activeTaskCount } from "./task-lifecycle.js";
 
 // The translator is the chapter route's optional network source (ADR-0004):
 // absent means the 翻译本章 trigger answers 409 until a key is configured.
@@ -55,9 +56,23 @@ export function createApp(
     next();
   });
 
+  // The launcher watchdog's page-presence signal (plan.md T4 修订): every
+  // open reader page heartbeats, and the watchdog stops the server only
+  // after the idle limit passes with no heartbeat and no background task.
+  // The timestamp is in-memory — after a restart it reads "no page yet".
+  let lastPageSeenAt: string | null = null;
+  app.post("/api/heartbeat", (_request, response) => {
+    lastPageSeenAt = new Date().toISOString();
+    response.status(204).end();
+  });
+
   app.get("/api/health", (_request, response) => {
     database.prepare("SELECT 1").get();
-    response.json({ status: "ok" });
+    response.json({
+      status: "ok",
+      lastPageSeenAt,
+      activeTasks: activeTaskCount(),
+    });
   });
 
   app.use("/api/books", createBooksRouter(database, dictionary, translator));
