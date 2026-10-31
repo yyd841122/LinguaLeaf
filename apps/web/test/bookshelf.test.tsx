@@ -629,3 +629,59 @@ describe("BookshelfPage export (ticket 03)", () => {
     expect(second.textContent).toBe("导出");
   });
 });
+
+// The explicit continue-reading entry (reading-bookmarks spec P2): a ready
+// card with saved progress surfaces 「继续阅读 · 第 N 章」 next to the title
+// link it shares a target with; cards without progress keep the title link
+// as their only entry, and their 「读到第 N 章」 meta is untouched.
+describe("BookshelfPage continue-reading button (reading-bookmarks 03)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/books")) {
+        return jsonResponse(200, shelfState);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  it("shows 继续阅读 · 第 N 章 on a ready card with progress, landing on that chapter", async () => {
+    shelfState.books = [{ ...readyBook, progress: { chapter: 3, block: 7 } }];
+    renderShelf();
+    await actAdvance(0);
+
+    const button = screen.getByRole("link", { name: "继续阅读 · 第 3 章" });
+    expect(button.getAttribute("href")).toBe("/book/1/3");
+    // The title link keeps its target (progress.chapter) and the meta
+    // keeps 读到第 N 章 — the button adds an entry, it replaces nothing.
+    expect(screen.getByRole("link", { name: "A Finished Book" })).toBeTruthy();
+    expect(screen.getByText(/读到第 3 章/)).toBeTruthy();
+  });
+
+  it("adds no continue button to a ready card without progress", async () => {
+    shelfState.books = [readyBook];
+    renderShelf();
+    await actAdvance(0);
+
+    expect(screen.queryByRole("link", { name: /继续阅读/ })).toBeNull();
+    // The title link remains the card's reading entry.
+    expect(screen.getByRole("link", { name: "A Finished Book" })).toBeTruthy();
+  });
+
+  it("adds no continue button to importing or failed cards", async () => {
+    shelfState.books = [importingBook, failedBook];
+    renderShelf();
+    await actAdvance(0);
+
+    expect(screen.queryByRole("link", { name: /继续阅读/ })).toBeNull();
+  });
+});

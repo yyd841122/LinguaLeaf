@@ -238,6 +238,18 @@ export function BookshelfPage() {
                         }`}
                 </span>
               </div>
+              {/* The explicit continue-reading entry (reading-bookmarks
+                  spec P2): same target the title link already uses —
+                  progress.chapter — surfaced as a button. A card without
+                  progress grows nothing: its title link is the entry. */}
+              {book.status === "ready" && book.progress && (
+                <Link
+                  className="continue-book"
+                  to={`/book/${book.id}/${book.progress.chapter}`}
+                >
+                  继续阅读 · 第 {book.progress.chapter} 章
+                </Link>
+              )}
               {book.status === "ready" && (
                 <button
                   type="button"
