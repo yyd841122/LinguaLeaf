@@ -33,6 +33,13 @@ function formatImportedAt(iso: string): string {
   });
 }
 
+// The card's reading entry, one home for the target both links share:
+// the title link and the 继续阅读 button (reading-bookmarks 03) must
+// never drift apart.
+function readingTarget(book: BookSummary): string {
+  return `/book/${book.id}/${book.progress?.chapter ?? 1}`;
+}
+
 export function BookshelfPage() {
   const [books, setBooks] = useState<BookSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -218,9 +225,7 @@ export function BookshelfPage() {
                     lands on the saved chapter; the reading page restores
                     the saved block. */}
                 {book.status === "ready" ? (
-                  <Link to={`/book/${book.id}/${book.progress?.chapter ?? 1}`}>
-                    {book.title}
-                  </Link>
+                  <Link to={readingTarget(book)}>{book.title}</Link>
                 ) : (
                   <span>{book.title}</span>
                 )}
@@ -243,10 +248,7 @@ export function BookshelfPage() {
                   progress.chapter — surfaced as a button. A card without
                   progress grows nothing: its title link is the entry. */}
               {book.status === "ready" && book.progress && (
-                <Link
-                  className="continue-book"
-                  to={`/book/${book.id}/${book.progress.chapter}`}
-                >
+                <Link className="continue-book" to={readingTarget(book)}>
                   继续阅读 · 第 {book.progress.chapter} 章
                 </Link>
               )}

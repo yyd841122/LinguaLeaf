@@ -25,12 +25,14 @@ import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
 
 // A panel entry's text after the chapter title (reading-bookmarks 03):
-// the marked block's own original text, cut at 20 characters with an
-// ellipsis — the text itself, never a 「第 M 句」 counter (spec red line;
-// sentence/code/raw/image all carry originalText). Derivable only for the
-// chapter whose payload is loaded: a foreign chapter's blocks are not on
-// the client, and its entries fall back to the bare title rather than
-// fabricate text.
+// the marked block's own original text, cut at ENTRY_PREFIX_MAX_CHARS
+// with an ellipsis — the text itself, never a 「第 M 句」 counter (spec
+// red line; sentence/code/raw/image all carry originalText). Derivable
+// only for the chapter whose payload is loaded: a foreign chapter's
+// blocks are not on the client, and its entries fall back to the bare
+// title rather than fabricate text.
+const ENTRY_PREFIX_MAX_CHARS = 20;
+
 function bookmarkEntryPrefix(
   bookmark: BookmarkSummary,
   content: ChapterPayload
@@ -40,7 +42,9 @@ function bookmarkEntryPrefix(
     (block) => block.position === bookmark.block
   )?.originalText;
   if (text === undefined || text.trim().length === 0) return null;
-  return text.length > 20 ? `${text.slice(0, 20)}…` : text;
+  return text.length > ENTRY_PREFIX_MAX_CHARS
+    ? `${text.slice(0, ENTRY_PREFIX_MAX_CHARS)}…`
+    : text;
 }
 
 export function ReadingPage() {
@@ -126,12 +130,12 @@ export function ReadingPage() {
   useEffect(() => {
     setJumpTarget(null);
   }, [bookId]);
-  const armJumpTarget = (chapter: number, block: number) => {
+  const armJumpTarget = (target: BookmarkTarget) => {
     jumpOpRef.current += 1;
-    setJumpTarget({ chapter, block, op: jumpOpRef.current });
+    setJumpTarget({ ...target, op: jumpOpRef.current });
   };
-  const jumpAndClosePanel = (chapter: number, block: number) => {
-    armJumpTarget(chapter, block);
+  const jumpAndClosePanel = (target: BookmarkTarget) => {
+    armJumpTarget(target);
     setTocOpen(false);
   };
   const { saveFailed } = useProgressSession({
@@ -357,10 +361,10 @@ export function ReadingPage() {
                             type="button"
                             className="bookmark-entry"
                             onClick={() =>
-                              jumpAndClosePanel(
-                                bookmark.chapter,
-                                bookmark.block
-                              )
+                              jumpAndClosePanel({
+                                chapter: bookmark.chapter,
+                                block: bookmark.block,
+                              })
                             }
                           >
                             {entryBody}
@@ -370,10 +374,10 @@ export function ReadingPage() {
                             className="bookmark-entry"
                             to={`/book/${bookId}/${bookmark.chapter}`}
                             onClick={() =>
-                              jumpAndClosePanel(
-                                bookmark.chapter,
-                                bookmark.block
-                              )
+                              jumpAndClosePanel({
+                                chapter: bookmark.chapter,
+                                block: bookmark.block,
+                              })
                             }
                           >
                             {entryBody}
@@ -400,7 +404,7 @@ export function ReadingPage() {
                 <button
                   type="button"
                   className="bookmark-first"
-                  onClick={() => jumpAndClosePanel(1, 1)}
+                  onClick={() => jumpAndClosePanel({ chapter: 1, block: 1 })}
                 >
                   回到第一章
                 </button>
@@ -408,7 +412,7 @@ export function ReadingPage() {
                 <Link
                   className="bookmark-first"
                   to={`/book/${bookId}/1`}
-                  onClick={() => jumpAndClosePanel(1, 1)}
+                  onClick={() => jumpAndClosePanel({ chapter: 1, block: 1 })}
                 >
                   回到第一章
                 </Link>

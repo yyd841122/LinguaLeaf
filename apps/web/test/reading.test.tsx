@@ -1748,6 +1748,8 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     },
     { position: 2, kind: "code", originalText: "npm install left-pad" },
     { position: 3, kind: "raw", originalText: "A raw paragraph line." },
+    { position: 4, kind: "image", originalText: "figure caption text" },
+    { position: 5, kind: "raw", originalText: "   " },
   ];
 
   type BookmarkRow = {
@@ -1756,6 +1758,14 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     block: number;
     createdAt: string;
   };
+
+  // One row shape, one home: every list fixture builds through this.
+  const mark = (id: number, chapter: number, block: number): BookmarkRow => ({
+    id,
+    chapter,
+    block,
+    createdAt: "2026-10-31T00:00:00.000Z",
+  });
 
   function stubBookmarkFetch(options: {
     blocks?: Block[];
@@ -1840,12 +1850,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
           };
           return new Response(
             JSON.stringify({
-              bookmark: {
-                id: 11,
-                chapter: target.chapter,
-                block: target.block,
-                createdAt: "2026-10-31T00:00:00.000Z",
-              },
+              bookmark: mark(11, target.chapter, target.block),
             }),
             { status: 201 }
           );
@@ -1917,8 +1922,10 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
         chapter: 2,
         block: 2,
       });
-      // Success is quiet: the panel list is the feedback, no toast.
+      // Success is quiet: the panel list is the feedback, no toast —
+      // neither an alert nor the failure channel the flag renders into.
       expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.queryByText(/书签操作失败/)).toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -1947,20 +1954,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
 
   it("lists the book's marks as chapter title plus block text prefix, cut at 20 characters", async () => {
     stubBookmarkFetch({
-      rows: [
-        {
-          id: 11,
-          chapter: 2,
-          block: 1,
-          createdAt: "2026-10-31T00:00:00.000Z",
-        },
-        {
-          id: 12,
-          chapter: 1,
-          block: 2,
-          createdAt: "2026-10-31T00:00:00.000Z",
-        },
-      ],
+      rows: [mark(11, 2, 1), mark(12, 1, 2), mark(13, 2, 4), mark(14, 2, 5)],
     });
     renderReadingPage();
     await act(async () => {
@@ -1976,6 +1970,12 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
         name: "Two · The first line stand…",
       })
     ).toBeTruthy();
+    // Image blocks carry their caption as originalText like any other
+    // kind, and a whitespace-only block yields no prefix at all.
+    expect(
+      within(area).getByRole("button", { name: "Two · figure caption text" })
+    ).toBeTruthy();
+    expect(within(area).getByRole("button", { name: "Two" })).toBeTruthy();
     // A foreign chapter's blocks are not loaded: the entry is the bare
     // chapter title, no fabricated prefix.
     expect(within(area).getByRole("link", { name: "One" })).toBeTruthy();
@@ -1994,20 +1994,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
 
   it("removes an entry in place after its DELETE lands", async () => {
     stubBookmarkFetch({
-      rows: [
-        {
-          id: 11,
-          chapter: 2,
-          block: 1,
-          createdAt: "2026-10-31T00:00:00.000Z",
-        },
-        {
-          id: 12,
-          chapter: 1,
-          block: 2,
-          createdAt: "2026-10-31T00:00:00.000Z",
-        },
-      ],
+      rows: [mark(11, 2, 1), mark(12, 1, 2)],
     });
     renderReadingPage();
     await act(async () => {
@@ -2034,14 +2021,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     const jump = vi.fn();
     window.HTMLElement.prototype.scrollIntoView = jump;
     stubBookmarkFetch({
-      rows: [
-        {
-          id: 11,
-          chapter: 2,
-          block: 3,
-          createdAt: "2026-10-31T00:00:00.000Z",
-        },
-      ],
+      rows: [mark(11, 2, 3)],
     });
     renderReadingPage();
     await act(async () => {
@@ -2090,14 +2070,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
         // Block 1 keeps chapter 1's auto-restore quiet: the only jump this
         // test allows is the entry's explicit target.
         progress: { chapter: 1, block: 1 },
-        rows: [
-          {
-            id: 12,
-            chapter: 1,
-            block: 2,
-            createdAt: "2026-10-31T00:00:00.000Z",
-          },
-        ],
+        rows: [mark(12, 1, 2)],
       });
       renderReadingPage();
       await act(async () => {
