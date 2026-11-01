@@ -52,7 +52,15 @@ If no cached chromium exists, `npx playwright install chromium` fetches one.
    block 1 while the reader sat at block 32, one full acceptance round
    burned on the mismatch). Scroll to the reader's real position
    yourself and confirm the target is already in view before clicking;
-   then the click measures the viewport you meant it to measure.
+   then the click measures the viewport you meant it to measure. Two
+   refinements from reading-bookmarks 04: in-view confirmation is not
+   enough — `click()` can still inject a pre-click auto-scroll while the
+   target sits in view (the 打书签 button pinned at y≈1.6, yet captures
+   read 017/023/24 off a page the driver had scrolled up to 414px inside
+   its actionability window); and for a capture read at the click
+   instant, fire the click at DOM level —
+   `locator.evaluate((el) => el.click())` — and assert `scrollY` is
+   unchanged across the click before trusting what the handler measured.
 
 4. **Kill by PID, not by faith**, and re-check the port when a scenario
    restarts the server mid-run.
