@@ -1,6 +1,6 @@
 # status-join:wordStatuses 位置 join 升 reading-model 纯函数
 
-Status: ready-for-agent
+Status: done
 
 来源:architecture-review-20261101 候选 3(Worth exploring;报告 gitignore,
 本票是候选的入档载体)。范围维护者已拍:只走纯函数路径;wire 带出 stateKeys
@@ -38,8 +38,10 @@ tokenStatuses——为每个 token 算出 stateKey 又扔掉(stateKeys 另票的
 
 1. **行为逐字上收**:精确串语义原样——`word === applied.word ||
    (applied.lemma !== null && word === applied.lemma)`;改折叠语义(如
-   Woke→woke)是 spec 决策,本票不动(ADR-0005:前端渲染 verbatim、永不词形
-   还原;本票不触任何 ADR)。
+   Woke→woke)是 spec 决策,本票不动(渲染 verbatim 规则的正确家:
+   vocabulary-states/01 决策 5「前端拿到即渲染、不做词形还原」;patch 语义:
+   popup-status-backedge 决策 2;本票不触任何 ADR。评审期纠错:原稿此处误引
+   ADR-0005,系报告→票面转抄,见 Comments)。
 2. **react-locality 门禁**(`scripts/check-react-locality.mjs`,入 verify 与
    pre-commit)禁止根入口 import react、禁止 re-export 子入口符号 →
    `StatusApplied` 定义必须上收根入口;类型本身 react-free,上收即合法。
@@ -102,3 +104,30 @@ tokenStatuses——为每个 token 算出 stateKey 又扔掉(stateKeys 另票的
   覆盖。
 - Codex 沙箱实现:禁 `git add`/`git commit`,改动留工作树;门禁与提交由编排
   会话执行(沙箱无网络,依赖安装/全链跑不了是沙箱预期,非实现缺陷)。
+
+## Comments
+
+- 2026-11-01 (Claude): 实现 + 收官。Codex 沙箱(gpt-6.1-sol/high,workspace-write)
+  threadId `01a1975f`;编排门禁 `npm run verify` EXIT=0(539 tests = 526 + 13 新,
+  4 locality + manifest + build 全过);零改写承诺成立:apps/web/test、
+  apps/extension/test 在 diff 中零触碰。实现 commit `e3d6345`,票面 docs commit
+  `cf6d845`(= 评审基线,即首个实现 commit 之前的 HEAD)。
+- 2026-11-01 (Claude): 双轴评审(基线 cf6d845,一次覆盖)。**Spec 轴 PASS**:
+  零缺失;与基线 ReadingPage.tsx:159-179 逐段比对同派发序/同 segmentOriginal
+  调用/同精确串比对/同 spread 语义;wire 文件零改动;九条测试主张全在。
+  **Standards 轴零硬违规**:一笔中等 finding + 一笔引文错误 + 两笔 judgement。
+  修 3 笔:① status-join.ts 注释错引 ADR-0005 → 改回 popup-status-backedge
+  决策 2 原家(ADR-0005 全文无折叠/还原条款,该句系评审报告→本票契约 1→模块
+  注释的转抄链;本票契约 1 已同步纠错,此条即 drift 记档);② 无 wordStatuses
+  透传测试补「pinned, not endorsed」标签(该防御分支系本票新引入,循同文件
+  over/under 对 :153 先例,新钉必须自报身份);③ WordLookupPopup.tsx 模块级
+  `StatusApplied` re-export 删(全仓零消费方,票面只要求 import type;
+  react/index.ts 的 re-export 保留 = 票面「公开面零收窄」锁定面)。
+  记档 4 笔:① react/index.ts re-export 现无消费方,系票面决策的兼容面
+  (Middle Man 判定被 spec 决策压制);② `StatusJoinBlock.kind: string` 刻意
+  宽于 wire 字面量联合——结构最小形状是「BlockPayload 留 wire」决策的对价
+  (Primitive Obsession 判定记档不采);③ 第 10 枚用例(最小形状缺 ipaSlots)
+  超出票面九条清单,保留——可选字段的自然伴侣;④ `ipaSlots ?? null` 与
+  `!wordStatuses` 守卫对 wire 数据不可达(Spec 轴核实为 spec-sanctioned
+  no-op)。后续:wire-state-keys stub(needs-triage)待触发条件;架构评审
+  候选 3 到此收官,候选 4/5 仍按记忆中的触发条件等。
