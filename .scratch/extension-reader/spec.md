@@ -1,6 +1,6 @@
 # Spec: extension-reader — 浏览器扩展（无服务本地标音）
 
-Status: ready-for-agent
+Status: done
 
 依据：ADR-0006（彻底无服务本地标注）、ADR-0005（四态词元状态）、GLOSSARY.md（音标行、标注、书、生词本、词元、浏览器扩展、扩展阅读页、离线词典、属主令牌）。Codex 独立评审（read-only，verdict NEEDS REVISION，单轮已封）的补齐项已全部折入。
 
@@ -73,3 +73,8 @@ Status: ready-for-agent
 - Codex Top 3 风险的对应缓解：PDF 遮挡→验证票前置且可降级；词元冒充词形→强制披露规则入词典接口契约；双份数据无合并协议→schema 同构 + 同源另票。
 - 本 spec 的代码事实断言（槽位真相源、存储注入形状、导入链构成）已对照当前代码核实；导入链浏览器纯度是唯一待验断言，已写成认领票义务。
 - 阅读进度与最近文档列表存在扩展本地；卸载扩展即随浏览器存储一并消失。
+
+## Comments
+
+- 2026-11-01 retro 翻正:票 01–07 全 done、扩展已发布,伞形 spec 的
+  Status: ready-for-agent 系立项期残留,非未竟范围。
