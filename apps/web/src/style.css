@@ -125,9 +125,31 @@ main {
 }
 
 /* Header dropdowns (ticket 05): the TOC and the reading settings panel
-   hover over the text instead of pushing the chapter down. */
+   hover over the text instead of pushing the chapter down. Sticky
+   (reading-bookmarks 04, spec decision 8): the whole bar rides the
+   scroll so the deep-position 打书签 entry stays reachable, and the
+   dropdowns anchored here ride along. sticky sits on .reading-top, not
+   .reading-header: a sticky element sticks only within its containing
+   block, and .reading-top is exactly header-height — on the header it
+   would never lift off. */
 .reading-top {
-  position: relative;
+  position: sticky;
+  top: 0;
+  /* Above the static text column, below .lookup-popup (fixed, z-20)
+     — a lookup opened near the top must still cover the bar. */
+  z-index: 5;
+  /* The page color, not white: at rest the bar is invisible; stuck, it
+     must be opaque or the text scrolling underneath would show through. */
+  background: #f6f7f2;
+  border-bottom: 1px solid #dde3d8;
+}
+
+/* Jump and restore targets align their top edge to the viewport top via
+   scrollIntoView (progressSession.ts) — under the sticky bar they would
+   land out of sight. The root scroller insets its alignment rect by the
+   bar height plus clearance (reading-bookmarks 04). */
+html {
+  scroll-padding-top: 3.5rem;
 }
 
 .reading-toolbar {
