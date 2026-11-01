@@ -100,3 +100,9 @@ Codex T5/P5 提示:目录面板开合会改变视口,打点捕获只认按钮点
 > stub 静默 404 fall-through(两轴同钉),已修 — fall-through 改 throw,
 > 规则文本的「only shape」过度声称改为「diff 到达时转,不追溯」;其余
 > 7 处存量 fall-through 记档待各自 diff 到达时转。
+
+> *Decision, 2026-11-01(/grill-with-docs 重开 T10×P5,维护者拍板)。*
+
+「验收发现」拍板:吸顶工具栏——.reading-top 整行 sticky,深位入口常驻可达;
+T10(决策 7)一字不改;spec 决策 8 已增吸顶子句;实现另立票 04。候选判定
+(面板内打点双轴失效/FAB 窄/维持现状 = 书签退化)详录票 04 Comments。
