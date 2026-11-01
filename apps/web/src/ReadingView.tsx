@@ -14,6 +14,8 @@ import type {
 
 export type Block = BlockPayload;
 
+// Every block kind writes data-position; readingBlocks.ts owns its selector.
+
 // Renders the sentence as clickable word units — the word, its IPA beneath
 // when slots pair — so every transcription stays attached to its own word at
 // any line wrap (ticket 03) and every word is a lookup target (ticket 06).

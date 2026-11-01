@@ -6,6 +6,7 @@ import {
   type ReadingProgress,
 } from "./readingProgress";
 import type { BookmarkTarget } from "./bookmarks";
+import { readingBlockSelector } from "./readingBlocks";
 import { useOwner, type OwnerTicket } from "./useOwner";
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -25,16 +26,21 @@ export function useProgressSession(options: {
   bookId: number;
   chapterNumber: number;
   ready: boolean;
-  // Where the reader asked to land. op advances per intent, so a repeated
-  // jump to the same chapter+block still re-scrolls. Set it in the same
-  // event as the navigation it belongs to (React batches them into one
-  // render): a target naming a foreign chapter simply runs the current
-  // chapter's normal restore. The target carries no book id by shape; the
-  // page owns clearing it on navigation it does not want honored (a book
-  // switch above all).
-  target?: (BookmarkTarget & { op: number }) | null;
-}): { saveFailed: boolean } {
-  const { bookId, chapterNumber, ready, target = null } = options;
+}): { saveFailed: boolean; armJumpTarget: (target: BookmarkTarget) => void } {
+  const { bookId, chapterNumber, ready } = options;
+  const [armedTarget, setArmedTarget] = useState<
+    (BookmarkTarget & { op: number }) | null
+  >(null);
+  const jumpOpRef = useRef(0);
+  // Arms a landing without navigating. Each call mints a monotonically
+  // advancing op that never resets, so repeated intents for the same
+  // chapter and block still re-scroll. Arm in the same event as the
+  // navigation it belongs to: React batches them into one render. A target
+  // naming another chapter leaves this chapter's normal restore in place.
+  const armJumpTarget = (target: BookmarkTarget) => {
+    jumpOpRef.current += 1;
+    setArmedTarget({ ...target, op: jumpOpRef.current });
+  };
   // "unavailable" = the progress could not be asked for (server hiccup):
   // nothing to restore, and the autosave must not write either, or it would
   // overwrite the reader's real position with top-of-chapter.
@@ -80,20 +86,19 @@ export function useProgressSession(options: {
   const pendingSaveRef = useRef<ReadingProgress | null>(null);
   // Highest target op already consumed: an equal-or-lower op is a re-render
   // of a landed intent, not a new jump. The watermark resets when the book
-  // changes (render-time adjust — the route-key rule's endorsed shape):
-  // ops are the page's counter, and the route element does not remount on
-  // a book switch, so book A's consumed op 5 must not silence book B's
-  // op 1. The page's half of the contract: ops advance per intent and are
-  // never renumbered within a book.
+  // changes alongside the armed target (render-time adjust — the route-key
+  // rule's endorsed shape), before any effect can restore the new book.
   const consumedOpRef = useRef(Number.NEGATIVE_INFINITY);
   const consumedBookIdRef = useRef<number | null>(null);
-  if (consumedBookIdRef.current !== bookId) {
+  // NaN routes stay inert too: !== would keep resetting state every render.
+  if (!Object.is(consumedBookIdRef.current, bookId)) {
     consumedBookIdRef.current = bookId;
     consumedOpRef.current = Number.NEGATIVE_INFINITY;
+    setArmedTarget(null);
   }
   // What the last completed restore did on which route. The restore effect
   // must be idempotent per (route, inputs) — StrictMode double-invokes it,
-  // and a page re-creating the target object per render re-runs it — so a
+  // and readiness can replay it with the same armed target — so a
   // re-run that matches this record repeats the jump verbatim (same scroll,
   // no second save), and anything else treats the target as consumed.
   const lastRestoreRef = useRef<{
@@ -157,7 +162,7 @@ export function useProgressSession(options: {
   // way: swallow the jump's own scroll events for the guard window, and
   // hand back the guard timer's disposer for the effect cleanup.
   const blockElAt = (block: number) =>
-    document.querySelector(`.blocks [data-position="${block}"]`);
+    document.querySelector(readingBlockSelector(block));
   const jumpToBlockEl = (blockEl: Element) => {
     skipSavesRef.current = true;
     blockEl.scrollIntoView();
@@ -169,6 +174,7 @@ export function useProgressSession(options: {
 
   useEffect(() => {
     if (!ready || !progressLoaded) return;
+    const target = armedTarget;
     const landsHere = target !== null && target.chapter === chapterNumber;
     const last = lastRestoreRef.current;
     const repeatJump =
@@ -219,7 +225,7 @@ export function useProgressSession(options: {
     // restore — and re-arm the scroll guard — on every render. They read
     // only refs and arguments, so the closures cannot go stale.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, progressLoaded, chapterNumber, progress, target, bookId]);
+  }, [ready, progressLoaded, chapterNumber, progress, armedTarget, bookId]);
 
   // Autosave: announce the chapter start, then follow scrolling. When the
   // saved position could not be asked for, write nothing until a real
@@ -258,5 +264,5 @@ export function useProgressSession(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, progressLoaded, chapterNumber, bookId]);
 
-  return { saveFailed };
+  return { saveFailed, armJumpTarget };
 }

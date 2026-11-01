@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 import { segmentOriginal } from "@lingualeaf/reading-model";
 import { fetchJson } from "./api";
@@ -114,36 +114,15 @@ export function ReadingPage() {
     loadedRoute !== null &&
     loadedRoute.bookId === bookId &&
     loadedRoute.chapterNumber === chapterNumber;
-  // Explicit jump intents (reading-bookmarks 03, riding 02's target
-  // channel): a panel entry or 回到第一章 arms a target — ops advance per
-  // intent and are never renumbered, so a repeated jump to the same mark
-  // still re-scrolls. The target arms in the same click event as its
-  // navigation, whatever the chapter: React batches them into one render
-  // (02's contract anchor), and the hook is the single coordinator of
-  // where the reader lands.
-  const [jumpTarget, setJumpTarget] = useState<
-    (BookmarkTarget & { op: number }) | null
-  >(null);
-  const jumpOpRef = useRef(0);
-  // A book switch under the mounted route element must not honor the old
-  // book's armed target — the page owns clearing it (02's contract).
-  useEffect(() => {
-    setJumpTarget(null);
-  }, [bookId]);
-  const armJumpTarget = (target: BookmarkTarget) => {
-    jumpOpRef.current += 1;
-    setJumpTarget({ ...target, op: jumpOpRef.current });
-  };
+  const { saveFailed, armJumpTarget } = useProgressSession({
+    bookId,
+    chapterNumber,
+    ready,
+  });
   const jumpAndClosePanel = (target: BookmarkTarget) => {
     armJumpTarget(target);
     setTocOpen(false);
   };
-  const { saveFailed } = useProgressSession({
-    bookId,
-    chapterNumber,
-    ready,
-    target: jumpTarget,
-  });
   // The book's manual marks (reading-bookmarks 03): the session fetches
   // once per book arm; create/remove failures speak through the same
   // inline flag as the progress saves.

@@ -1,6 +1,7 @@
 import type { BookmarkTarget } from "./bookmarks";
 
 import { ApiError, fetchJson } from "./api";
+import { readingBlockSelector } from "./readingBlocks";
 
 // Where a reader stopped in a book: chapter position + block position
 // within that chapter (the same positions the API and data-position
@@ -53,7 +54,9 @@ export function topmostVisibleBlock(): number | null {
   const container = document.querySelector(".blocks");
   if (!container) return null;
   // The live NodeList indexes directly — no per-scroll array copy.
-  const blocks = container.querySelectorAll<HTMLElement>("[data-position]");
+  const blocks = container.querySelectorAll<HTMLElement>(
+    readingBlockSelector()
+  );
   let low = 0;
   let high = blocks.length - 1;
   let answer: number | null = null;

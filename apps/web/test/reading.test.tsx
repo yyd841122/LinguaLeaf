@@ -36,6 +36,7 @@ import {
   readStoredTranslationSize,
 } from "../src/ReadingSettings";
 import { fetchReadingProgress } from "../src/readingProgress";
+import { readingBlockSelector } from "../src/readingBlocks";
 import { dataWordEl, dataWordEls } from "./domQueries";
 
 const blocks: Block[] = [
@@ -2041,7 +2042,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     expect(screen.queryByRole("region", { name: "书签" })).toBeNull();
     expect(jump).toHaveBeenCalledTimes(1);
     expect(jump.mock.instances[0]).toBe(
-      document.querySelector('.blocks [data-position="3"]')
+      document.querySelector(readingBlockSelector(3))
     );
   });
 
@@ -2094,7 +2095,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
       expect(screen.getByRole("region", { name: "Chapter One" })).toBeTruthy();
       expect(jump).toHaveBeenCalledTimes(1);
       expect(jump.mock.instances[0]).toBe(
-        document.querySelector('.blocks [data-position="2"]')
+        document.querySelector(readingBlockSelector(2))
       );
     } finally {
       vi.useRealTimers();
@@ -2120,7 +2121,7 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(jump.mock.instances[0]).toBe(
-        document.querySelector('.blocks [data-position="1"]')
+        document.querySelector(readingBlockSelector(1))
       );
 
       // P7: 只跳转、不清进度 — the landing is an observed act and the

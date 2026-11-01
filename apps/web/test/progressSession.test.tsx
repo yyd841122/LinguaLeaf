@@ -1,7 +1,9 @@
 import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useEffect } from "react";
+import type { BookmarkTarget } from "../src/bookmarks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useProgressSession } from "../src/progressSession";
+import { readingBlockSelector } from "../src/readingBlocks";
 import {
   fetchReadingProgress,
   saveReadingProgress,
@@ -35,10 +37,18 @@ async function actAdvance(ms: number) {
 
 const route = { bookId: 7, chapterNumber: 2, ready: true };
 type SessionRoute = Parameters<typeof useProgressSession>[0];
-type SessionResult = ReturnType<typeof useProgressSession>;
+function renderArmedSession(
+  target: BookmarkTarget,
+  options: SessionRoute = route
+) {
+  const view = renderHook(useProgressSession, { initialProps: options });
+  act(() => view.result.current.armJumpTarget(target));
+  return view;
+}
+
 const jump = vi.fn();
 const blockEl = (position: number) =>
-  document.querySelector(`.blocks [data-position="${position}"]`);
+  document.querySelector(readingBlockSelector(position));
 const originalScrollIntoView = Object.getOwnPropertyDescriptor(
   window.HTMLElement.prototype,
   "scrollIntoView"
@@ -99,9 +109,7 @@ describe("useProgressSession restore and chapter start", () => {
 
     rerender(route);
     expect(jump).toHaveBeenCalledTimes(1);
-    expect(jump.mock.instances[0]).toBe(
-      document.querySelector('.blocks [data-position="3"]')
-    );
+    expect(jump.mock.instances[0]).toBe(blockEl(3));
     expect(window.scrollTo).not.toHaveBeenCalled();
     await actAdvance(1000);
     expect(saveReadingProgress).not.toHaveBeenCalled();
@@ -119,9 +127,7 @@ describe("useProgressSession restore and chapter start", () => {
     expect(saveReadingProgress).not.toHaveBeenCalled();
 
     await act(async () => pending.resolve({ chapter: 2, block: 3 }));
-    expect(jump.mock.instances[0]).toBe(
-      document.querySelector('.blocks [data-position="3"]')
-    );
+    expect(jump.mock.instances[0]).toBe(blockEl(3));
     await actAdvance(1000);
     expect(saveReadingProgress).not.toHaveBeenCalled();
   });
@@ -460,9 +466,7 @@ describe("useProgressSession route ownership", () => {
     rerender({ ...route, chapterNumber: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(1);
-    expect(jump.mock.instances[0]).toBe(
-      document.querySelector('.blocks [data-position="2"]')
-    );
+    expect(jump.mock.instances[0]).toBe(blockEl(2));
 
     await act(async () => stale.resolve({ chapter: 3, block: 3 }));
     await actAdvance(1000);
@@ -503,9 +507,7 @@ describe("useProgressSession non-integer route guard (pinned)", () => {
 describe("useProgressSession explicit target", () => {
   it("jumps to the target over saved progress and saves the landing, not the chapter start", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue({ chapter: 2, block: 2 });
-    renderHook(() =>
-      useProgressSession({ ...route, target: { chapter: 2, block: 3, op: 1 } })
-    );
+    renderArmedSession({ chapter: 2, block: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(1);
     expect(jump.mock.instances[0]).toBe(blockEl(3));
@@ -520,18 +522,15 @@ describe("useProgressSession explicit target", () => {
   it("waits for ready and the fetched progress before consuming the target", async () => {
     const pending = deferred<ReadingProgress | null>();
     vi.mocked(fetchReadingProgress).mockReturnValue(pending.promise);
-    const { rerender } = renderHook(useProgressSession, {
-      initialProps: {
-        ...route,
-        ready: false,
-        target: { chapter: 2, block: 3, op: 1 },
-      },
-    });
+    const { rerender } = renderArmedSession(
+      { chapter: 2, block: 3 },
+      { ...route, ready: false }
+    );
     await actAdvance(1000);
     expect(jump).not.toHaveBeenCalled();
     expect(saveReadingProgress).not.toHaveBeenCalled();
 
-    rerender({ ...route, target: { chapter: 2, block: 3, op: 1 } });
+    rerender(route);
     await actAdvance(1000);
     // The chapter is ready but the priority chain cannot run on an
     // unsettled progress read.
@@ -550,9 +549,7 @@ describe("useProgressSession explicit target", () => {
 
   it("saves the landing even when progress could not be asked for, and never announces block one", async () => {
     vi.mocked(fetchReadingProgress).mockRejectedValue(new Error("server gone"));
-    renderHook(() =>
-      useProgressSession({ ...route, target: { chapter: 2, block: 3, op: 1 } })
-    );
+    renderArmedSession({ chapter: 2, block: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(1);
     expect(jump.mock.instances[0]).toBe(blockEl(3));
@@ -573,10 +570,7 @@ describe("useProgressSession explicit target", () => {
 
   it("consumes the target once: one landing save, reruns repeat it verbatim, re-entry never re-jumps", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue(null);
-    const target = { chapter: 2, block: 3, op: 1 };
-    const { rerender } = renderHook(useProgressSession, {
-      initialProps: { ...route, target },
-    });
+    const { rerender } = renderArmedSession({ chapter: 2, block: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(1);
     await actAdvance(500);
@@ -585,9 +579,10 @@ describe("useProgressSession explicit target", () => {
       block: 3,
     });
 
-    // A rerun with a re-created same-op target (StrictMode's shape)
-    // repeats the scroll but adds no save and no top yank.
-    rerender({ ...route, target: { ...target } });
+    // Replaying the restore with the same armed intent repeats the scroll
+    // but adds no save and no top yank. Readiness is the public rerun seam.
+    rerender({ ...route, ready: false });
+    rerender(route);
     expect(jump).toHaveBeenCalledTimes(2);
     expect(jump.mock.instances[1]).toBe(blockEl(3));
     expect(window.scrollTo).not.toHaveBeenCalled();
@@ -595,7 +590,7 @@ describe("useProgressSession explicit target", () => {
     expect(saveReadingProgress).toHaveBeenCalledTimes(1);
 
     // Another chapter restores normally; the consumed target stays dead.
-    rerender({ ...route, chapterNumber: 3, target: { ...target } });
+    rerender({ ...route, chapterNumber: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(2);
     expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
@@ -605,7 +600,7 @@ describe("useProgressSession explicit target", () => {
       block: 1,
     });
 
-    rerender({ ...route, chapterNumber: 2, target: { ...target } });
+    rerender(route);
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(2);
     await actAdvance(500);
@@ -617,20 +612,18 @@ describe("useProgressSession explicit target", () => {
 
   it("re-scrolls on op advance and coalesces consecutive clicks into the latest landing", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue(null);
-    const { rerender } = renderHook(useProgressSession, {
-      initialProps: { ...route, target: { chapter: 2, block: 3, op: 1 } },
-    });
+    const { result } = renderArmedSession({ chapter: 2, block: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(1);
     expect(jump.mock.instances[0]).toBe(blockEl(3));
 
     // Same chapter, same block: only the advanced op re-scrolls.
-    rerender({ ...route, target: { chapter: 2, block: 3, op: 2 } });
+    act(() => result.current.armJumpTarget({ chapter: 2, block: 3 }));
     expect(jump).toHaveBeenCalledTimes(2);
 
     // A third click lands elsewhere before the debounce fires: latest wins.
     await actAdvance(100);
-    rerender({ ...route, target: { chapter: 2, block: 2, op: 3 } });
+    act(() => result.current.armJumpTarget({ chapter: 2, block: 2 }));
     expect(jump).toHaveBeenCalledTimes(3);
     expect(jump.mock.instances[2]).toBe(blockEl(2));
     await actAdvance(500);
@@ -640,11 +633,24 @@ describe("useProgressSession explicit target", () => {
     });
   });
 
+  it("re-scrolls when armJumpTarget is called twice with the same target", async () => {
+    const target = { chapter: 2, block: 3 };
+    const { result } = renderArmedSession(target);
+    await actAdvance(0);
+    await actAdvance(500);
+    expect(jump).toHaveBeenCalledTimes(1);
+
+    act(() => result.current.armJumpTarget(target));
+    expect(jump).toHaveBeenCalledTimes(2);
+    expect(jump.mock.instances[1]).toBe(blockEl(3));
+    await actAdvance(500);
+    expect(saveReadingProgress).toHaveBeenCalledTimes(2);
+    expect(saveReadingProgress).toHaveBeenLastCalledWith(7, target);
+  });
+
   it("degrades a missing target block to the chapter start and consumes the op", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue(null);
-    const { rerender } = renderHook(useProgressSession, {
-      initialProps: { ...route, target: { chapter: 2, block: 99, op: 1 } },
-    });
+    const { rerender } = renderArmedSession({ chapter: 2, block: 99 });
     await actAdvance(0);
     expect(jump).not.toHaveBeenCalled();
     expect(window.scrollTo).toHaveBeenCalledWith(0, 0);
@@ -655,28 +661,33 @@ describe("useProgressSession explicit target", () => {
     });
 
     // Consumed: a rerun does not loop on the unusable target.
-    rerender({ ...route, target: { chapter: 2, block: 99, op: 1 } });
+    rerender(route);
     await actAdvance(1000);
     expect(jump).not.toHaveBeenCalled();
     expect(saveReadingProgress).toHaveBeenCalledTimes(1);
+
+    // Force a restore replay after the missing block becomes available:
+    // the already consumed intent must remain dead even when it can land.
+    const lateBlock = document.createElement("div");
+    lateBlock.dataset.position = "99";
+    document.querySelector(".blocks")?.append(lateBlock);
+    rerender({ ...route, ready: false });
+    rerender(route);
+    expect(jump).not.toHaveBeenCalled();
   });
 
   it("flushes the old chapter before the landing save, with no scroll event in between", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue(null);
-    // Explicit generics: inference from a `target: null` initialProps
-    // collapses Props.target to null and rejects every later rerender.
-    const { rerender } = renderHook<SessionResult, SessionRoute>(
-      useProgressSession,
-      { initialProps: { ...route, target: null } }
-    );
+    const { result, rerender } = renderHook(useProgressSession, {
+      initialProps: route,
+    });
     await actAdvance(0);
     visibleBlock = 2;
     fireEvent.scroll(window);
     // The burst is still debouncing when the reader jumps chapters.
-    rerender({
-      ...route,
-      chapterNumber: 3,
-      target: { chapter: 3, block: 2, op: 1 },
+    act(() => {
+      result.current.armJumpTarget({ chapter: 3, block: 2 });
+      rerender({ ...route, chapterNumber: 3 });
     });
     // The route-change flush went out first, carrying the old chapter.
     expect(saveReadingProgress).toHaveBeenCalledExactlyOnceWith(7, {
@@ -705,11 +716,15 @@ describe("useProgressSession explicit target", () => {
   it("repeats the same landing verbatim under StrictMode's double-invoked effects", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue(null);
     renderHook(
-      () =>
-        useProgressSession({
-          ...route,
-          target: { chapter: 2, block: 3, op: 1 },
-        }),
+      () => {
+        const session = useProgressSession(route);
+        useEffect(() => {
+          session.armJumpTarget({ chapter: 2, block: 3 });
+          // A mount intent is replayed along with StrictMode's effects.
+          // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, []);
+        return session;
+      },
       { wrapper: StrictMode }
     );
     await actAdvance(0);
@@ -728,27 +743,48 @@ describe("useProgressSession explicit target", () => {
 });
 
 describe("useProgressSession target ops across books", () => {
-  it("starts a fresh op numbering on a new book", async () => {
+  it("accepts a fresh jump on a new book under the mounted hook", async () => {
     vi.mocked(fetchReadingProgress).mockResolvedValue(null);
-    const { rerender } = renderHook<SessionResult, SessionRoute>(
-      useProgressSession,
-      { initialProps: { ...route, target: { chapter: 2, block: 3, op: 5 } } }
-    );
+    const { result, rerender } = renderArmedSession({ chapter: 2, block: 3 });
     await actAdvance(0);
     expect(jump).toHaveBeenCalledTimes(1);
     await actAdvance(250);
 
-    // The route element does not remount on a book switch, and the new
-    // book's page-local numbering starts low: the consumed watermark from
-    // book 7 must not silence book 8's op 1.
-    rerender({
-      bookId: 8,
-      chapterNumber: 2,
-      ready: true,
-      target: { chapter: 2, block: 3, op: 1 },
-    });
+    // Ops are private and never renumbered. A book switch clears the old
+    // intent, and the first new-book intent must still land.
+    rerender({ ...route, bookId: 8 });
     await actAdvance(0);
+    expect(jump).toHaveBeenCalledTimes(1);
+    act(() => result.current.armJumpTarget({ chapter: 2, block: 3 }));
     expect(jump).toHaveBeenCalledTimes(2);
     expect(jump.mock.instances[1]).toBe(blockEl(3));
   });
+
+  it.each([true, false])(
+    "clears the old book's target before restoring the new book (ready: %s)",
+    async (ready) => {
+      const { rerender } = renderArmedSession(
+        { chapter: 2, block: 3 },
+        { ...route, ready }
+      );
+      await actAdvance(0);
+      const previousJumps = jump.mock.calls.length;
+      vi.mocked(window.scrollTo).mockClear();
+
+      rerender({ ...route, bookId: 8 });
+      await actAdvance(0);
+      expect(jump).toHaveBeenCalledTimes(previousJumps);
+      expect(window.scrollTo).toHaveBeenCalledExactlyOnceWith(0, 0);
+      await actAdvance(500);
+      expect(saveReadingProgress).toHaveBeenLastCalledWith(8, {
+        chapter: 2,
+        block: 1,
+      });
+
+      // Returning to the first book must not revive its cleared target.
+      rerender(route);
+      await actAdvance(0);
+      expect(jump).toHaveBeenCalledTimes(previousJumps);
+    }
+  );
 });
