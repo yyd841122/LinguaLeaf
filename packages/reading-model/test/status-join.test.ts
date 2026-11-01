@@ -88,6 +88,9 @@ describe("applyStatusToBlocks", () => {
     }
   );
 
+  // Pin the pass-through, not an endorsement: wire sentence blocks always
+  // carry wordStatuses, so this shape is unreachable from real payloads.
+  // Change if the contract deliberately gains validation.
   it("passes a sentence without wordStatuses through by reference", () => {
     const block = { kind: "sentence", originalText: "woke" };
 

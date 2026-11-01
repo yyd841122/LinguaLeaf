@@ -18,8 +18,8 @@ export type StatusJoinBlock = {
 
 // wordStatuses follows the server's tokenizeWords order. Reconstruct that
 // order with the same word segments the reader renders, even without IPA.
-// Exact surface and lemma strings only: the client never lemmatizes or
-// folds case (ADR-0005).
+// Exact surface and lemma strings only: the client has no lemmatizer
+// (popup-status-backedge spec, decision 2).
 export function applyStatusToBlocks<B extends StatusJoinBlock>(
   blocks: readonly B[],
   applied: StatusApplied

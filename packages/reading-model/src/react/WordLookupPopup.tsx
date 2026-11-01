@@ -7,7 +7,6 @@ import type { WordLookupResult, WordStatus } from "../word-lookup.js";
 import type { StatusApplied } from "../status-join.js";
 import { useOwner } from "./useOwner.js";
 
-export type { StatusApplied } from "../status-join.js";
 export type WordClick = { word: string; point: ClickPoint };
 export interface WordLookupGateway {
   lookup(word: string): Promise<WordLookupResult | null>;
