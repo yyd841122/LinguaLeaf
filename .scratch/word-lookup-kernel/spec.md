@@ -1,54 +1,59 @@
 # word-lookup-kernel:点词查详情弹窗内核两宿收编
 
-Status: needs-triage
-
-维护者执行序已定(2026-11-01):架构评审候选 2(jump-target-protocol,已收官)
-之后的下一票。本票是 grilling 前的 stub:决策未锁,锁定后翻 ready-for-agent。
-唯一入档载体——评审报告 `.scratch/architecture-review-20261101-111943.html`
-被 gitignore,其候选 1 卡片 + Codex 勘误卡的全部承载内容已折入本票。
+来源:architecture-review-20261101 候选 1(Strong,Claude 勘探 + Codex 独立评审
+双判;报告 gitignore,问题与依据原载 stub 票,已折入本 spec)。grilling 四决策
+全锁(2026-11-01,维护者「全按推荐」);gateway 四问中三个半由代码定案,不再
+决策。
 
 ## 问题
 
-点词查详情的交互内核存在两份手工同步拷贝:web
-`apps/web/src/WordLookupPopup.tsx`(247 行)与扩展
-`apps/extension/src/reader/WordLookupPopup.tsx`(254 行)经 diff 实测
-196/247 行逐字节相同;`useOwner` 两份,扩展副本头注自述「mirrored
-verbatim」;`closest("[data-word]")` 点击委托三份(两宿 reader 各一至两处)。
-全仓最贵的并发知识——属主令牌、逐实体在途键控(savingKeys Set)、陈旧裁决
-弃写——以两份拷贝存活,每次演化双倍测试维护。
+web `WordLookupPopup.tsx`(247 行)与扩展版(254 行)196/247 行逐字节相同;
+`useOwner` 双份(扩展副本自述「mirrored verbatim」);`closest("[data-word]")`
+点击委托三份。全仓最贵的并发知识(属主令牌、逐实体在途键控、陈旧裁决弃写)
+以两份拷贝存活。依据 = 现存重复 + 竞态套件双份维护(「5772005 分叉」论据已
+撤:b38b78b 首版即带 savingKeys)。
 
-## 方案形状(评审已锚,grilling 未锁)
+## 已由代码定案(契约,不再决策)
 
-共享弹窗内核,interface 约
-`WordLookupPopup({ click, gateway: { lookup(word), setStatus(key, status) },
-onClose, onStatusApplied })`;**两个 adapter 已在**——web
-`apps/web/src/wordLookup.ts`(fetch,查词即落态)与扩展
-`vocabulary-store.ts`(store.lookup/setStatus)——缝是真的。家:reading-model
-第二 React 入口或新小包(待决策)。
+1. **查词即落态**:首查自动 New→Learning 归 adapter——web 服务端 lookup 路由
+   `statusAfterLookup→learnWordIfAbsent`,扩展 store.lookup 内 enroll;内核永不
+   入学。
+2. **未收录 vs 失败**:`gateway.lookup(word) → Promise<Entry | null>`,null =
+   未收录(404),rejection = 失败;404 不得冒充服务端打嗝。
+3. **回边时序**:`onStatusApplied` 先于票裁决(popup-status-backedge 决策 3:
+   已存事实属于那个词);弹窗自身状态补丁受 stale 守卫。
+4. **gateway 稳定性**:读取 effect 只键 `[word]`;契约写明 gateway 须弹窗生命
+   周期内稳定;web 出模块级 gateway 常量(扩展 store 本就 app 级)。
 
-## 待 grilling 锁定的决策(实施前置,评审已点名)
+## 决策(grilling 四锁)
 
-1. **React 子入口边界**:reading-model 现零 React 依赖、服务端运行时导入
-   它——独立 React 子入口且根入口不重导出,还是新小包?peer dep 下纯服务端
-   消费者可不装 React?
-2. **ipaSource 披露**:扩展查找结果带词元回退来源披露
-   (offline-dictionary.ts 的 ipaSource 字段,ADR-0006 明文要求)——必须进
-   共享结果契约,照 web 实现抄模板会丢它。
-3. **gateway 契约四问**:未收录 vs 失败如何区分;首查自动 Learning 迁移归
-   adapter 还是内核;onStatusApplied 回边与属主令牌陈旧裁决的时序;gateway
-   身份变更是否重启读取。
-4. **竞态测试迁移**:在途键控 / A→B→A 再入不复活 / 同词形共享在途态三组
-   主张,两宿各持一份镜像套件——内核化后写一次、双 adapter 各跑一遍。
+1. **家 = reading-model React 子入口**:第二入口,根入口不重导出;react 挂
+   peerDep;新增 locality 检查(循 check:storage-locality 先例:根入口文件禁
+   import react / 禁 re-export 子入口符号)。
+2. **测试 = reading-model/testing 子入口**(循 import-core/src/testing 先例):
+   竞态套件工厂住那,三组竞态主张(在途键控禁用 / A→B→A 再入不复活 / 同词形
+   共享在途)一次书写,双宿各传 adapter + 假件各跑一遍;testing-library/jsdom
+   留宿主 devDep,包不加重。
+3. **类型 = 根入口(纯类型)**:`WordLookupResult = WordLookup & { status:
+   WordStatus } & { ipaSource?: IpaSource | null }`;`WordStatus`/`IpaSource`
+   定义上收(server wire 保持 type-only,改引 reading-model);扩展 VocabState
+   成别名,行为零变;web `WordLookupResponse`、扩展 `LookupWithState` 改引统一
+   形状。
+4. **范围与验收**:useOwner + data-word 委托助手随内核入包(宿主删副本,测试
+   改引实现,断言零动);类名漂移顺路统一(web `lookup-speak/close` 归共享
+   `lookup-head-button`,accessible-name 断言不动,红即记档退回);**验收 =
+   两宿既有弹窗测试零改写全绿**(web 桩全局 fetch 走 adapter,扩展走
+   memoryBackend,gateway 注入不碰桩层);边界不并入:library-store、两宿逐词
+   JSX 渲染、wire 状态数组(候选 3)。
 
-## 边界存档(勿默默并入本票)
+## 票
 
-Codex 独立评审两条漏判,各自单列评估:①library-store 的 memory/chrome 双
-实现行为重复(进度保留/更新时间/排序),共享的只是写队列;②两宿逐词 JSX
-渲染(词 span/音标 span/可达性/底色)重复度超本票委托范围,与
-wordStatuses 状态配对(评审候选 3)相连。
+- **01 类型与门**:决策 3 + 决策 1 的 locality 检查先行——零行为、两宿零改动。
+- **02 内核迁移**:决策 1/2/4 + 上述契约——组件/useOwner/委托入包,两宿薄
+  adapter 化,竞态工厂接线,类名统一。Blocked by 01。
 
-## 历史 论据更正
+## Gate(两票合看)
 
-评审初稿曾以「5772005(10-27)在途键控修复只落 web」为分叉实证——不成立:
-扩展弹窗 b38b78b(10-28)首版即含 savingKeys,分叉从未发生。本票依据 =
-现存 196/247 行重复 + 竞态套件双份维护,足够。
+`npm run typecheck && npm test && npm run lint` 全绿;零改写承诺:两宿既有弹
+窗测试断言零动;评审基线 = 01 首个实现 commit 之前的 HEAD;双轴评审一次覆盖
+两票。
