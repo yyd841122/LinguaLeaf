@@ -1855,7 +1855,10 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
             { status: 201 }
           );
         }
-        return new Response(null, { status: 404 });
+        // Loud fall-through (CODING_STANDARDS, "Test stubs answer every
+        // method the flow sends"): a silent 404 answer turns a stub gap
+        // into a fake domain failure.
+        throw new Error(`unexpected fetch: ${method} ${url}`);
       })
     );
     return { calls };

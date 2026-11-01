@@ -93,3 +93,10 @@ Codex T5/P5 提示:目录面板开合会改变视口,打点捕获只认按钮点
 >   不为此对每个书签拉整章载荷(N+1 fetch)。
 >
 > **Spec 漂移**:无。
+>
+> **复审二轮(2026-11-01,基线 d85d487)**:1988a22 + 两笔 docs 的双轴
+> 复审 — Spec 轴 PASS(记档数字逐项复核,verify 45/504 现场重跑通过);
+> Standards 轴 1 硬伤:新 stub 规则首次适用即抓到本票自己的 bookmarks
+> stub 静默 404 fall-through(两轴同钉),已修 — fall-through 改 throw,
+> 规则文本的「only shape」过度声称改为「diff 到达时转,不追溯」;其余
+> 7 处存量 fall-through 记档待各自 diff 到达时转。

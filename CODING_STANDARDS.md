@@ -453,7 +453,9 @@ DELETE; the catch-all 404 made `removeBookmark` raise its failure flag and
 the delete test failed as "row not removed" — a timing-shaped
 misdiagnosis before the missing branch surfaced (apps/web/test/
 reading.test.tsx, 2026-10-31 session). The export suite's stubs already
-throw `unexpected fetch: …`; this rule makes that the only shape.
+throw `unexpected fetch: …`. A diff follows this rule for the stubs it
+adds or touches; older fall-through stubs in a file convert when a diff
+reaches them — not retroactively in the change that writes the rule.
 
 At review: for each new fetch stub in a diff, list the methods the flow
 can send at the tested moment and find each one's branch; a fall-through
