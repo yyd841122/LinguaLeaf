@@ -27,7 +27,8 @@
     "prepare": "husky",
     "pretypecheck": "npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/import-core",
     "pretest": "npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/import-core",
-    "check:contract-types": "tsc --noEmit -p apps/server/tsconfig.contract-test.json"
+    "check:contract-types": "tsc --noEmit -p apps/server/tsconfig.contract-test.json",
+    "browser-e2e": "node scripts/browser-e2e/reading-bookmarks-04.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -37,6 +38,7 @@
     "globals": "^16.4.0",
     "husky": "^9.1.7",
     "lint-staged": "^17.6.0",
+    "playwright-core": "^1.64.1",
     "prettier": "^3.9.10",
     "tsx": "^4.23.12",
     "typescript": "~5.9.3",

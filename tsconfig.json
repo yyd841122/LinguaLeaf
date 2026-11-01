@@ -6,5 +6,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["vitest.config.ts"]
+  "include": ["vitest.config.ts", "scripts/browser-e2e/vitest.config.ts"]
 }

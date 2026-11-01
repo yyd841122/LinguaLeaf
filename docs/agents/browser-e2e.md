@@ -18,6 +18,10 @@ npm init -y && npm i playwright-core
 ```
 
 If no cached chromium exists, `npx playwright install chromium` fetches one.
+For a repeatable acceptance use the committed harness
+(`scripts/browser-e2e/`, `npm run browser-e2e`) instead of a throwaway
+driver — the recipe below is what it automates, and what one-off repro
+scripts should still follow.
 
 ## Recipe
 
@@ -44,23 +48,16 @@ If no cached chromium exists, `npx playwright install chromium` fetches one.
    button label that changes the instant it is clicked. Screenshots are the
    evidence to paste into the ticket.
 
-   Viewport-dependent behavior — a capture that reads the scroll
-   position, anything keyed on 「点击瞬间」 — makes `click()`'s
-   auto-scroll part of the stimulus: reaching a toolbar off-screen
-   scrolls the page before the handler runs, and the page reacts to the
-   post-scroll viewport (reading-bookmarks 03: the 打书签 capture stored
-   block 1 while the reader sat at block 32, one full acceptance round
-   burned on the mismatch). Scroll to the reader's real position
-   yourself and confirm the target is already in view before clicking;
-   then the click measures the viewport you meant it to measure. Two
-   refinements from reading-bookmarks 04: in-view confirmation is not
-   enough — `click()` can still inject a pre-click auto-scroll while the
-   target sits in view (the 打书签 button pinned at y≈1.6, yet captures
-   read 017/023/24 off a page the driver had scrolled up to 414px inside
-   its actionability window); and for a capture read at the click
-   instant, fire the click at DOM level —
-   `locator.evaluate((el) => el.click())` — and assert `scrollY` is
-   unchanged across the click before trusting what the handler measured.
+   Viewport-sensitive behavior — a capture that reads the scroll
+   position, anything keyed on 「点击瞬间」 — goes through the committed
+   harness `scripts/browser-e2e/`: the stimulus-complete click (DOM-level
+   dispatch + built-in scrollY invariant), the numbered-prefix fixture
+   book, and the server discipline are code there, with the why in
+   harness.mjs's comments (locator.click() injects a pre-click
+   auto-scroll inside its actionability window even with the target in
+   view — it burned 03 one round and 04 three-plus-one before the
+   discipline became code). A hand-rolled repro script copies the
+   harness's click shape rather than reaching for locator.click().
 
 4. **Kill by PID, not by faith**, and re-check the port when a scenario
    restarts the server mid-run.
