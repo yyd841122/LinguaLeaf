@@ -6,7 +6,11 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
-import { segmentOriginal, type Segment } from "@lingualeaf/reading-model";
+import {
+  segmentOriginal,
+  type Segment,
+  type StatusApplied,
+} from "@lingualeaf/reading-model";
 import type { ReactNode } from "react";
 import {
   IMPORT_ERROR_COPY,
@@ -426,11 +430,7 @@ export function ReaderPage({
 
   // The popup's status operation lands here first: the tint updates with
   // the write (即时生效), keyed by the store's one state-key rule.
-  const handleStatusApplied = (applied: {
-    word: string;
-    lemma: string | null;
-    status: VocabState;
-  }) => {
+  const handleStatusApplied = (applied: StatusApplied) => {
     if (!resolvedStore) return;
     const key = resolvedStore.stateKey(applied.word);
     setWordStates((current) => {

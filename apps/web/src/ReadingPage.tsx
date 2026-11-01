@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
-import { segmentOriginal } from "@lingualeaf/reading-model";
+import {
+  applyStatusToBlocks,
+  type StatusApplied,
+} from "@lingualeaf/reading-model";
 import { fetchJson } from "./api";
 import { useChapterTranslation } from "./chapterTranslation";
 import type { BookmarkTarget } from "./bookmarks";
@@ -8,7 +11,6 @@ import type {
   BookToc,
   BookmarkSummary,
   ChapterPayload,
-  WordStatus,
 } from "../../server/src/wire";
 import { useIpaSize } from "./IpaSizeControl";
 import { useBookmarksSession } from "./bookmarksSession";
@@ -147,34 +149,12 @@ export function ReadingPage() {
     onTick: (chapterData) => setContent(chapterData),
   });
 
-  const handleStatusApplied = (applied: {
-    word: string;
-    lemma: string | null;
-    status: WordStatus;
-  }) => {
+  const handleStatusApplied = (applied: StatusApplied) => {
     setContent((current) =>
       current
         ? {
             ...current,
-            blocks: current.blocks.map((block) => {
-              if (block.kind !== "sentence") return block;
-              const words = segmentOriginal(
-                block.originalText,
-                block.ipaSlots
-              ).segments.filter((segment) => segment.kind === "word");
-              return {
-                ...block,
-                // Exact surface and lemma strings only: the client has no
-                // lemmatizer (popup-status-backedge spec, decision 2).
-                wordStatuses: block.wordStatuses.map((status, index) => {
-                  const word = words[index]?.word;
-                  return word === applied.word ||
-                    (applied.lemma !== null && word === applied.lemma)
-                    ? applied.status
-                    : status;
-                }),
-              };
-            }),
+            blocks: applyStatusToBlocks(current.blocks, applied),
           }
         : current
     );

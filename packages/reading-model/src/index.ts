@@ -33,3 +33,8 @@ export {
   type TextSegment,
   type WordSegment,
 } from "./sentence-segments.js";
+export {
+  applyStatusToBlocks,
+  type StatusApplied,
+  type StatusJoinBlock,
+} from "./status-join.js";

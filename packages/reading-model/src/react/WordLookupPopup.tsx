@@ -4,14 +4,11 @@ import { anchorPopup } from "../popup-anchor.js";
 import type { ClickPoint } from "../popup-anchor.js";
 import { speakWord } from "../speak.js";
 import type { WordLookupResult, WordStatus } from "../word-lookup.js";
+import type { StatusApplied } from "../status-join.js";
 import { useOwner } from "./useOwner.js";
 
+export type { StatusApplied } from "../status-join.js";
 export type WordClick = { word: string; point: ClickPoint };
-export type StatusApplied = {
-  word: string;
-  lemma: string | null;
-  status: WordStatus;
-};
 export interface WordLookupGateway {
   lookup(word: string): Promise<WordLookupResult | null>;
   setStatus(key: string, status: WordStatus): Promise<void>;
