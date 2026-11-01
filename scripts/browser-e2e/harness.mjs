@@ -172,6 +172,10 @@ function freePort(port) {
 // Free the port, start the built server on a scratch database, and probe
 // readiness as child-alive AND health-route-ok — a foreign listener on the
 // port must read as failure, never as readiness (local-e2e invariant 3).
+// The port is the recipe's fixed 3789 by default: one harness run at a
+// time — a second concurrent run's fuser -k kills the first's server
+// mid-scenario, and the first's respawn wins the race instead (observed
+// 2026-11-01 when a review ran the example while another run started).
 export async function startAppServer({ port = DEFAULT_PORT, runDir }) {
   freePort(port);
   await sleep(1000);
@@ -248,7 +252,9 @@ export function findChromeExe() {
 
 // playwright-core is a pure driver: with executablePath set it downloads
 // nothing. Imported lazily so the unit seam (harness.test.mjs) does not pay
-// the load.
+// the load. --no-sandbox mirrors the extension smoke's launch of the same
+// cached Chromium (root/WSL sandboxes vary); --no-proxy-server keeps the
+// WSL system proxy from answering for loopback.
 export async function launchBrowser() {
   const { chromium } = await import("playwright-core");
   return chromium.launch({
@@ -259,6 +265,20 @@ export async function launchBrowser() {
 }
 
 // ---- Piece 2: stimulus-complete interactions. -----------------------------
+
+// The selector is named once here because the locator object (not the
+// string) crosses into each evaluate callback — the string itself cannot
+// be shared with page.evaluate bodies, which serialize without module scope.
+const blockLocator = (page, position) =>
+  page.locator(`.blocks [data-position="${position}"]`);
+
+// Where a block's top edge sits in the viewport, in px (null-shaped reads
+// belong to the stimulus helpers below).
+export function blockTop(page, position) {
+  return blockLocator(page, position).evaluate(
+    (el) => el.getBoundingClientRect().top
+  );
+}
 
 // The viewport-sensitive click. DOM level via locator.evaluate — evaluate
 // runs no actionability checks, so playwright cannot inject its pre-click
@@ -311,15 +331,14 @@ export async function clickWithoutScroll(
 // makes topmostVisibleBlock read 32 — off by a pixel the wrong way and the
 // capture reads the neighbor).
 export async function scrollBlockToViewportTop(page, position) {
-  const landed = await page.evaluate((position) => {
-    const el = document.querySelector(`.blocks [data-position="${position}"]`);
-    if (!el) return null;
-    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY);
-    return el.getBoundingClientRect().top;
-  }, position);
-  if (landed === null) {
+  const block = blockLocator(page, position);
+  if ((await block.count()) === 0) {
     throw new Error(`no block at data-position="${position}"`);
   }
+  const landed = await block.evaluate((el) => {
+    window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY);
+    return el.getBoundingClientRect().top;
+  });
   if (Math.abs(landed) > 0.75) {
     throw new Error(
       `stimulus broken: block ${position} landed at ${landed}px, not the viewport top — the scroll command did not take.`
@@ -339,27 +358,21 @@ export async function scrollBlockIntoView(
   position,
   { offsetFromTop = 100 } = {}
 ) {
-  const visible = await page.evaluate(
-    ({ position, offsetFromTop }) => {
-      const el = document.querySelector(
-        `.blocks [data-position="${position}"]`
-      );
-      if (!el) return null;
-      window.scrollTo(
-        0,
-        el.getBoundingClientRect().top + window.scrollY - offsetFromTop
-      );
-      const rect = el.getBoundingClientRect();
-      return {
-        top: rect.top,
-        inView: rect.top >= 0 && rect.bottom <= window.innerHeight,
-      };
-    },
-    { position, offsetFromTop }
-  );
-  if (visible === null) {
+  const block = blockLocator(page, position);
+  if ((await block.count()) === 0) {
     throw new Error(`no block at data-position="${position}"`);
   }
+  const visible = await block.evaluate((el, offsetFromTop) => {
+    window.scrollTo(
+      0,
+      el.getBoundingClientRect().top + window.scrollY - offsetFromTop
+    );
+    const rect = el.getBoundingClientRect();
+    return {
+      top: rect.top,
+      inView: rect.top >= 0 && rect.bottom <= window.innerHeight,
+    };
+  }, offsetFromTop);
   if (!visible.inView) {
     throw new Error(
       `stimulus broken: block ${position} not fully in view after the scroll (top ${visible.top}px).`
@@ -427,46 +440,54 @@ export async function runBrowserE2E({ name, scenario, book = DEFAULT_BOOK }) {
   writeFileSync(fixturePath, buildBookMarkdown(book));
 
   const port = Number(process.env.BROWSER_E2E_PORT ?? DEFAULT_PORT);
-  const server = await startAppServer({ port, runDir });
   const ledger = createCheckLedger({ label: name });
-  const browser = await launchBrowser();
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 720 },
-  });
-  const page = await context.newPage();
-  // The scroll-settle watch (waitForScrollSettle): timestamps every scroll
-  // event, installed before the app loads and reinstalled by the browser on
-  // every navigation/reload.
-  await page.addInitScript(() => {
-    window.addEventListener(
-      "scroll",
-      () => {
-        window.__harnessLastScrollAt = performance.now();
-      },
-      { passive: true }
-    );
-  });
-  const pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(String(error)));
-
+  // One try/finally around everything that comes up (local-e2e invariant 2):
+  // a launchBrowser/newContext failure after the server started must still
+  // tear the server down, or this run manufactures the orphan that poisons
+  // its own next run.
+  let server = null;
+  let browser = null;
   try {
-    await scenario({
-      page,
-      baseUrl: server.baseUrl,
-      runDir,
-      fixturePath,
-      check: ledger.check,
+    server = await startAppServer({ port, runDir });
+    browser = await launchBrowser();
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 720 },
     });
-    ledger.check(
-      "no uncaught page errors",
-      pageErrors.length === 0,
-      pageErrors.join(" | ")
-    );
-  } catch (error) {
-    ledger.check("scenario ran to completion", false, String(error));
+    const page = await context.newPage();
+    // The scroll-settle watch (waitForScrollSettle): timestamps every scroll
+    // event, installed before the app loads and reinstalled by the browser on
+    // every navigation/reload.
+    await page.addInitScript(() => {
+      window.addEventListener(
+        "scroll",
+        () => {
+          window.__harnessLastScrollAt = performance.now();
+        },
+        { passive: true }
+      );
+    });
+    const pageErrors = [];
+    page.on("pageerror", (error) => pageErrors.push(String(error)));
+
+    try {
+      await scenario({
+        page,
+        baseUrl: server.baseUrl,
+        runDir,
+        fixturePath,
+        check: ledger.check,
+      });
+      ledger.check(
+        "no uncaught page errors",
+        pageErrors.length === 0,
+        pageErrors.join(" | ")
+      );
+    } catch (error) {
+      ledger.check("scenario ran to completion", false, String(error));
+    }
   } finally {
-    await browser.close();
-    await stopAppServer(server.child, port);
+    if (browser) await browser.close();
+    if (server) await stopAppServer(server.child, port);
   }
 
   const { failures } = ledger;

@@ -17,6 +17,7 @@
 // Run: npm run browser-e2e (manual, per acceptance — deliberately outside
 // the commit/verify gates; ticket browser-e2e-harness).
 import {
+  blockTop,
   clickWithoutScroll,
   runBrowserE2E,
   scrollBlockIntoView,
@@ -29,19 +30,9 @@ import { join } from "node:path";
 const DEEP_BLOCK = 32;
 const DEEP_PREFIX_ENTRY = "Chapter One · Sentence 032 of chap…";
 
-// Poll from the driver side (page.evaluate takes the position as its arg —
-// waitForFunction's second argument is the page function's argument, the
-// exact shape the repo's lint rule exists for, so this loop avoids it).
-async function blockTop(page, position) {
-  return page.evaluate(
-    (position) =>
-      document
-        .querySelector(`.blocks [data-position="${position}"]`)
-        ?.getBoundingClientRect().top ?? null,
-    position
-  );
-}
-
+// Poll from the driver side (waitForFunction's second argument is the page
+// function's argument — the exact shape the repo's lint rule exists for —
+// so the loop reads through harness blockTop and sleeps in node instead).
 async function waitForBlockTopNear(
   page,
   position,
@@ -53,7 +44,7 @@ async function waitForBlockTopNear(
   let last = null;
   while (Date.now() < deadline) {
     last = await blockTop(page, position);
-    if (last !== null && Math.abs(last - expected) <= tolerance) return last;
+    if (Math.abs(last - expected) <= tolerance) return last;
     await sleep(100);
   }
   throw new Error(

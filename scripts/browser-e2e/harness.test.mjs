@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import {
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -15,10 +16,22 @@ import { join } from "node:path";
 
 import {
   ENTRY_PREFIX_MAX_CHARS,
+  REPO_ROOT,
   buildBookMarkdown,
   distIsFresh,
   newestMtimeUnder,
 } from "./harness.mjs";
+
+// The fs-scaffold every freshness test wants: a temp dir that cleans up
+// after itself whichever way the body exits.
+function withTempDir(prefix, body) {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  try {
+    return body(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
 
 describe("buildBookMarkdown", () => {
   const book = buildBookMarkdown({
@@ -73,6 +86,26 @@ describe("buildBookMarkdown", () => {
     }
   });
 
+  // The cut lives twice by design — ReadingPage.tsx's private constant and
+  // this harness's mirror — and only one of them is importable. The
+  // app-side half of the dual ledger is pinned here from source, so a
+  // ReadingPage cut change turns this red and forces the fixture's sentence
+  // template to be re-derived consciously (the scroll-padding ledger got
+  // the same pin in ec2ef98; a silent mirror is the drift this class of
+  // test exists for).
+  it("mirrors the app's prefix cut (dual ledger pinned)", () => {
+    const readingPage = readFileSync(
+      join(REPO_ROOT, "apps/web/src/ReadingPage.tsx"),
+      "utf8"
+    );
+    const match = /const ENTRY_PREFIX_MAX_CHARS = (\d+);/.exec(readingPage);
+    expect(
+      match,
+      "the app's ENTRY_PREFIX_MAX_CHARS literal moved"
+    ).not.toBeNull();
+    expect(Number(match[1])).toBe(ENTRY_PREFIX_MAX_CHARS);
+  });
+
   it("is deterministic across calls", () => {
     const again = buildBookMarkdown({
       chapters: [{ title: "Chapter One" }, { title: "Chapter Two" }],
@@ -94,8 +127,7 @@ describe("buildBookMarkdown", () => {
 
 describe("newestMtimeUnder", () => {
   it("returns the newest file mtime across nested dirs", () => {
-    const root = mkdtempSync(join(tmpdir(), "bimtest-"));
-    try {
+    withTempDir("b2e-mtime-", (root) => {
       const deep = join(root, "a/b");
       mkdirSync(deep, { recursive: true });
       const old = join(root, "a/old.txt");
@@ -107,13 +139,13 @@ describe("newestMtimeUnder", () => {
       const later = new Date(Date.parse("2026-11-01T00:00:00Z"));
       utimesSync(newDeep, later, later);
       expect(newestMtimeUnder(root)).toBe(later.getTime());
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    });
   });
 
   it("returns null for a missing root", () => {
-    expect(newestMtimeUnder(join(tmpdir(), "bimtest-missing-xyz"))).toBeNull();
+    expect(
+      newestMtimeUnder(join(tmpdir(), "b2e-mtime-missing-xyz"))
+    ).toBeNull();
   });
 });
 
@@ -122,22 +154,18 @@ describe("distIsFresh", () => {
   const now = Date.now();
 
   it("reads a missing dist as stale", () => {
-    const root = mkdtempSync(join(tmpdir(), "fresh-"));
-    try {
+    withTempDir("b2e-fresh-", (root) => {
       const src = join(root, "src");
       mkdirSync(src, { recursive: true });
       writeFileSync(join(src, "a.ts"), "x");
       expect(
         distIsFresh({ sourcePaths: [src], distDir: join(root, "nope") })
       ).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    });
   });
 
   it("reads dist newer than every source as fresh", () => {
-    const root = mkdtempSync(join(tmpdir(), "fresh-"));
-    try {
+    withTempDir("b2e-fresh-", (root) => {
       const src = join(root, "src");
       const dist = join(root, ".output");
       mkdirSync(src, { recursive: true });
@@ -155,14 +183,11 @@ describe("distIsFresh", () => {
         new Date(now - MS_HOUR)
       );
       expect(distIsFresh({ sourcePaths: [src], distDir: dist })).toBe(true);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    });
   });
 
   it("reads any source newer than dist as stale", () => {
-    const root = mkdtempSync(join(tmpdir(), "fresh-"));
-    try {
+    withTempDir("b2e-fresh-", (root) => {
       const srcA = join(root, "src-a");
       const srcB = join(root, "src-b");
       const dist = join(root, ".output");
@@ -187,8 +212,6 @@ describe("distIsFresh", () => {
       expect(distIsFresh({ sourcePaths: [srcA, srcB], distDir: dist })).toBe(
         false
       );
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
+    });
   });
 });
