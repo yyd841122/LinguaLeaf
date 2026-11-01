@@ -91,4 +91,21 @@ describe("annotation style locality", () => {
     );
     expect(body).toContain("box-sizing: border-box");
   });
+
+  it("pins the sticky reading top bar's platform claims (reading-bookmarks 04)", () => {
+    // The bar rides the scroll (spec decision 8) and layers under the
+    // lookup popup; jump/restore insets align below it. jsdom does no
+    // layout, so this pins the declared values — the geometry itself is
+    // browser-acceptance territory (ticket 04 Comments).
+    const bar = appBlocks.get(".reading-top");
+    expect(bar).toBeDefined();
+    expect(bar).toContain("position: sticky");
+    expect(declarationValue(bar!, "z-index")).toBe("5");
+    expect(declarationValue(appBlocks.get(".lookup-popup")!, "z-index")).toBe(
+      "20"
+    );
+    expect(declarationValue(appBlocks.get("html")!, "scroll-padding-top")).toBe(
+      "4rem"
+    );
+  });
 });
