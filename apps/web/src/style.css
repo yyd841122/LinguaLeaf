@@ -147,9 +147,10 @@ main {
 /* Jump and restore targets align their top edge to the viewport top via
    scrollIntoView (progressSession.ts) — under the sticky bar they would
    land out of sight. The root scroller insets its alignment rect by the
-   bar height plus clearance (reading-bookmarks 04). */
+   bar height plus clearance (reading-bookmarks 04): the bar measures
+   ~3.7rem, so 4rem keeps the target's first line fully below it. */
 html {
-  scroll-padding-top: 3.5rem;
+  scroll-padding-top: 4rem;
 }
 
 .reading-toolbar {
