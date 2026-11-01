@@ -2,8 +2,6 @@ import { normalizeLookupToken } from "@lingualeaf/reading-model";
 import type { IpaSource } from "@lingualeaf/reading-model";
 import { posFromTranslation } from "@lingualeaf/import-core";
 
-export type { IpaSource } from "@lingualeaf/reading-model";
-
 // The baked offline asset's shape (scripts/bake-dictionary.ts writes it):
 // American IPA per word form, the inflection index (form → lemma), and the
 // ECDICT entries baked only for IPA-covered words (phonetic + translation

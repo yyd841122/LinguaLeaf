@@ -1,3 +1,4 @@
+import { wordFromEvent, type WordClick } from "@lingualeaf/reading-model/react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -163,13 +164,8 @@ function BlockView({
   );
 }
 
-// Where a click happened, in viewport coordinates. Clicks carry 0/0 in
-// synthetic environments; real clicks carry the pointer position.
-export type ClickPoint = { x: number; y: number };
-
-// A word click: the surface form as it stands in the text, plus where it
-// happened — the popup anchors there.
-export type WordClick = { word: string; point: ClickPoint };
+export type { ClickPoint } from "@lingualeaf/reading-model";
+export type { WordClick } from "@lingualeaf/reading-model/react";
 
 export const ReadingView = memo(function ReadingView({
   chapter,
@@ -193,9 +189,7 @@ export const ReadingView = memo(function ReadingView({
   // stays inert.
   const handleWordClick = (event: ReactMouseEvent<HTMLElement>) => {
     if (!onWordClick) return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    const word = wordFromEvent(event);
     if (word) {
       onWordClick({ word, point: { x: event.clientX, y: event.clientY } });
     }
@@ -208,7 +202,7 @@ export const ReadingView = memo(function ReadingView({
     if (event.key !== "Enter" && event.key !== " ") return;
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    const word = wordFromEvent(event);
     if (!word) return;
     event.preventDefault();
     const box = target.getBoundingClientRect();

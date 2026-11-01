@@ -5,7 +5,7 @@ import type {
 } from "../../server/src/wire";
 import { fetchJson } from "./api";
 import { useTaskFollower } from "./taskFollower";
-import { useOwner } from "./useOwner";
+import { useOwner } from "@lingualeaf/reading-model/react";
 
 // The chapter translation trigger state machine (ADR-0004): owns the POST,
 // the stale-response discard after navigation, the startFailed lifecycle,

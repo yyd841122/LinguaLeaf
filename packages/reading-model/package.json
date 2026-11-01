@@ -8,7 +8,15 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
-    "./annotated-shared.css": "./src/annotated-shared.css"
+    "./annotated-shared.css": "./src/annotated-shared.css",
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js"
+    },
+    "./testing": {
+      "types": "./dist/testing/index.d.ts",
+      "import": "./dist/testing/index.js"
+    }
   },
   "files": [
     "dist"

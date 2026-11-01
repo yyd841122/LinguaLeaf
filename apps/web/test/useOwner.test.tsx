@@ -1,7 +1,7 @@
 import { useLayoutEffect } from "react";
 import { act, renderHook } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { useOwner, type OwnerTicket } from "../src/useOwner";
+import { useOwner, type OwnerTicket } from "@lingualeaf/reading-model/react";
 
 // The owner-token contract (spec: .scratch/owner-token/spec.md). Page tests
 // keep pinning each consumer's behavior unchanged through the extraction.

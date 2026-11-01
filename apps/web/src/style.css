@@ -245,6 +245,9 @@ html {
   background: none;
 }
 
+/* Header buttons use .lookup-head-button; the shared sheet styles them
+   through .lookup-head-actions button and its :hover rule. */
+
 /* The popup floats over the reading flow — no backdrop, no scroll lock —
    anchored to the clicked word (left/top set inline, clamped to viewport).
    The box values hand-mirror the reading model's popup constants

@@ -1,3 +1,5 @@
+import { WordLookupPopup as KernelPopup } from "@lingualeaf/reading-model/react";
+import { wordLookupRaceSuite } from "@lingualeaf/reading-model/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { ReaderPage } from "../src/reader/ReaderPage";
@@ -655,4 +657,46 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     );
     expect(await screen.findByText("Second")).toBeInTheDocument();
   });
+});
+
+wordLookupRaceSuite({
+  createHarness() {
+    const harness = deferredBackend();
+    // Existing states make lookup immediate while explicit saves still use
+    // the same deferred memory backend as the page's original race tests.
+    for (const key of ["woke", "book", "run"])
+      harness.memory.map.set(key, "learning");
+    const gateway = createVocabularyStore(
+      new OfflineDictionary(POPUP_DICT),
+      harness.backend
+    );
+    return {
+      gateway,
+      settle: (word: string) => harness.settleKey(gateway.stateKey(word)),
+      dispose() {},
+    };
+  },
+  renderPopup(gateway, word, onStatusApplied) {
+    const popup = (word: string) => (
+      <KernelPopup
+        click={{ word, point: { x: 100, y: 100 } }}
+        gateway={gateway}
+        onClose={() => {}}
+        onStatusApplied={onStatusApplied}
+      />
+    );
+    const view = render(popup(word));
+    return {
+      async open(word: string) {
+        view.rerender(popup(word));
+        await screen.findByRole("button", { name: "学习中" });
+      },
+    };
+  },
+  button: (status) =>
+    screen.getByRole<HTMLButtonElement>("button", {
+      name: { learning: "学习中", known: "已掌握", ignored: "已忽略" }[status],
+    }),
+  click: (button) => fireEvent.click(button),
+  waitFor,
 });

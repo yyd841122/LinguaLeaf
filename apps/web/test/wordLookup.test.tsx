@@ -2,7 +2,10 @@ import { useState, type ComponentProps } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ReadingView, type Block, type WordClick } from "../src/ReadingView";
-import { WordLookupPopup } from "../src/WordLookupPopup";
+import { WordLookupPopup, wordLookupGateway } from "../src/WordLookupPopup";
+import { WordLookupPopup as KernelPopup } from "@lingualeaf/reading-model/react";
+import { wordLookupRaceSuite } from "@lingualeaf/reading-model/testing";
+import type { WordLookupResult, WordStatus } from "@lingualeaf/reading-model";
 import { speakWord } from "../src/wordLookup";
 
 // How ReadingPage wires the two seams together: the view reports clicks, the
@@ -1028,4 +1031,96 @@ it("closes when the reader scrolls or the viewport resizes", async () => {
   expect(onClose).toHaveBeenCalledTimes(1);
   fireEvent.resize(window);
   expect(onClose).toHaveBeenCalledTimes(2);
+});
+
+wordLookupRaceSuite({
+  createHarness() {
+    const lookups: Record<string, WordLookupResult> = {
+      woke: { ...WOKE_ENTRY, status: "learning" },
+      book: { ...BOOK_ENTRY, status: "learning" },
+      runs: {
+        word: "runs",
+        lemma: "run",
+        ipa: "rʌnz",
+        pos: "v.",
+        translation: "v. 跑",
+        status: "learning",
+      },
+      run: {
+        word: "run",
+        lemma: "run",
+        ipa: "rʌn",
+        pos: "v. n.",
+        translation: "v. 跑; n. 跑",
+        status: "learning",
+      },
+    };
+    const pending = new Map<
+      string,
+      {
+        response: ReturnType<typeof deferredResponse>;
+        status: WordStatus;
+      }
+    >();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "PUT") {
+          const key = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+          const { status } = JSON.parse(String(init.body)) as {
+            status: WordStatus;
+          };
+          const response = deferredResponse();
+          pending.set(key, { response, status });
+          return response.promise;
+        }
+        if (!init?.method || init.method === "GET") {
+          const word = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+          const entry = lookups[word];
+          if (url.startsWith("/api/lookup/") && entry) {
+            return Promise.resolve(new Response(JSON.stringify(entry)));
+          }
+        }
+        throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+      })
+    );
+    return {
+      gateway: wordLookupGateway,
+      async settle(word: string) {
+        const entry = lookups[word];
+        if (!entry) throw new Error(`unexpected word: ${word}`);
+        const key = entry.lemma ?? entry.word;
+        const save = pending.get(key);
+        if (!save) throw new Error(`no pending save for ${key}`);
+        pending.delete(key);
+        save.response.resolve(
+          new Response(JSON.stringify({ lemma: key, status: save.status }))
+        );
+      },
+      dispose: () => vi.unstubAllGlobals(),
+    };
+  },
+  renderPopup(gateway, word, onStatusApplied) {
+    const popup = (word: string) => (
+      <KernelPopup
+        click={{ word, point: { x: 100, y: 100 } }}
+        gateway={gateway}
+        onClose={() => {}}
+        onStatusApplied={onStatusApplied}
+      />
+    );
+    const view = render(popup(word));
+    return {
+      async open(word: string) {
+        view.rerender(popup(word));
+        await screen.findByRole("button", { name: "学习中" });
+      },
+    };
+  },
+  button: (status) =>
+    screen.getByRole<HTMLButtonElement>("button", {
+      name: { learning: "学习中", known: "已掌握", ignored: "已忽略" }[status],
+    }),
+  click: (button) => fireEvent.click(button),
+  waitFor,
 });

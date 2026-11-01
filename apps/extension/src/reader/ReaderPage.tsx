@@ -1,3 +1,4 @@
+import { wordFromEvent } from "@lingualeaf/reading-model/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
@@ -443,9 +444,7 @@ export function ReaderPage({
   // data-word, everything else stays inert. Clicks carry 0/0 in synthetic
   // environments; real clicks carry the pointer position.
   const onSectionClick = (event: ReactMouseEvent<HTMLElement>) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    const word = wordFromEvent(event);
     if (word) {
       setLookup({ word, point: { x: event.clientX, y: event.clientY } });
     }
@@ -456,7 +455,7 @@ export function ReaderPage({
     if (event.key !== "Enter" && event.key !== " ") return;
     const target = event.target;
     if (!(target instanceof Element)) return;
-    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    const word = wordFromEvent(event);
     if (!word) return;
     event.preventDefault();
     const box = target.getBoundingClientRect();
@@ -731,9 +730,7 @@ function PdfReader({
   // One delegated click for the overlay: word spans carry data-word,
   // everything else stays inert — the same seam the chapter view uses.
   const onOverlayClick = (event: ReactMouseEvent<HTMLElement>) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const word = target.closest("[data-word]")?.getAttribute("data-word");
+    const word = wordFromEvent(event);
     if (word) {
       onWordClick(word, { x: event.clientX, y: event.clientY });
     }

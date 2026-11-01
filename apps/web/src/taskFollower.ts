@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useOwner } from "./useOwner";
+import { useOwner } from "@lingualeaf/reading-model/react";
 
 // The one follower for server-side background tasks (spec:
 // .scratch/task-follower/spec.md): while `active`, re-asks `fetchTick` on

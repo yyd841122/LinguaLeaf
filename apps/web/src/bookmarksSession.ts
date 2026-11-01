@@ -6,7 +6,7 @@ import {
   type BookmarkTarget,
 } from "./bookmarks";
 import type { BookmarkSummary } from "../../server/src/wire";
-import { useOwner, type OwnerTicket } from "./useOwner";
+import { useOwner, type OwnerTicket } from "@lingualeaf/reading-model/react";
 
 // Manual bookmarks' session (reading-bookmarks ticket 02): the route's
 // list plus the create/remove calls, with every response adjudicated by

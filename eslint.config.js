@@ -100,7 +100,7 @@ export default tseslint.config(
     // shared code (their own vitest configs run under the node block
     // above).
     files: [
-      "packages/reading-model/src/**/*.ts",
+      "packages/reading-model/src/**/*.{ts,tsx}",
       "packages/reading-model/test/**/*.ts",
       "packages/import-core/src/**/*.ts",
       "packages/import-core/test/**/*.ts",

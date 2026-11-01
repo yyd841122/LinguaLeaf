@@ -7,7 +7,7 @@ import {
 } from "./readingProgress";
 import type { BookmarkTarget } from "./bookmarks";
 import { readingBlockSelector } from "./readingBlocks";
-import { useOwner, type OwnerTicket } from "./useOwner";
+import { useOwner, type OwnerTicket } from "@lingualeaf/reading-model/react";
 
 const SAVE_DEBOUNCE_MS = 500;
 // How long after the restore jump scroll events stay ignored: they are the
