@@ -1,5 +1,8 @@
 import { normalizeLookupToken } from "@lingualeaf/reading-model";
+import type { IpaSource } from "@lingualeaf/reading-model";
 import { posFromTranslation } from "@lingualeaf/import-core";
+
+export type { IpaSource } from "@lingualeaf/reading-model";
 
 // The baked offline asset's shape (scripts/bake-dictionary.ts writes it):
 // American IPA per word form, the inflection index (form → lemma), and the
@@ -10,11 +13,6 @@ export type BakedDictionary = {
   inflections: Record<string, string>;
   entries: Record<string, { p: string; t: string }>;
 };
-
-// Where a transcription came from: the surface form itself, or its lemma
-// (runs reads via run). The popup must disclose lemma answers, never pass
-// them off as the form's own reading (spec: 词元回退不冒充词形读音).
-export type IpaSource = "form" | "lemma";
 
 export type IpaResolution = { ipa: string; source: IpaSource };
 

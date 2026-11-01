@@ -1,6 +1,5 @@
 import { ApiError, fetchJson } from "./api";
-import type { WordStatus } from "../../server/src/wire";
-import type { WordLookup } from "@lingualeaf/reading-model";
+import type { WordLookupResult, WordStatus } from "@lingualeaf/reading-model";
 
 // The entry shape and the pronunciation half are the reading model's shared
 // vocabulary (packages/reading-model) — the exported file's popup folds,
@@ -13,7 +12,7 @@ export { speakWord } from "@lingualeaf/reading-model";
 // lemma's 生词本 status (ADR-0005) — the server writes the auto-migration
 // (a hit's New→learning) in the same request, so a found word always
 // carries a concrete state.
-export type WordLookupResponse = WordLookup & { status: WordStatus };
+export type WordLookupResponse = WordLookupResult;
 
 // A 404 reads as null — the word is simply not in the dictionary, which the
 // popup reports as 未收录. Any other failure throws: a server hiccup must

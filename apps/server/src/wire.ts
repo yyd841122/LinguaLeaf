@@ -7,6 +7,7 @@
 // Adding a member to a union turns every consumer's next typecheck red
 // until it handles the new value — the drift guard the hand-copied unions
 // and the 文案 comparison could never give (.scratch/wire-vocabulary/).
+import type { WordStatus } from "@lingualeaf/reading-model";
 
 // The shelf states of a book (ticket 08). 'importing' covers everything
 // between the POST that created the row and the settle write; the
@@ -53,12 +54,9 @@ export type ImportStage = "annotating" | "saving";
 // (apps/server/src/import/upload-rejection.ts).
 export type { ImportErrorCode, ImportRejection } from "@lingualeaf/import-core";
 
-// The vocabulary's stored states (ADR-0005, 生词本四态): a word_states row
-// always carries one of these three. 'New' — never encountered — is the
-// row's absence (the chapter payload's null), never a stored value: the
-// auto-migration inserts 'learning' on the first lookup, and only the
-// popup's explicit operations move a row from there.
-export type WordStatus = "learning" | "known" | "ignored";
+// Shared vocabulary states (ADR-0005); kept type-only so wire consumers
+// acquire no runtime dependency on the reading model.
+export type { WordStatus } from "@lingualeaf/reading-model";
 
 export type SentenceBlockPayload = {
   position: number;

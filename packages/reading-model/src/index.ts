@@ -5,7 +5,12 @@
 // never imported at runtime.
 export { WORD_PATTERN } from "./word-pattern.js";
 export { normalizeToken, normalizeLookupToken } from "./lookup-fold.js";
-export type { WordLookup } from "./word-lookup.js";
+export type {
+  WordLookup,
+  WordLookupResult,
+  WordStatus,
+  IpaSource,
+} from "./word-lookup.js";
 // The clamp's offset constants stay module-internal (anchorPopup consumes
 // them; no frontend needs them once it holds the function).
 export {

@@ -1,17 +1,15 @@
-import type {
-  OfflineDictionary,
-  OfflineLookup,
-} from "../dict/offline-dictionary";
+import type { WordLookupResult, WordStatus } from "@lingualeaf/reading-model";
+import type { OfflineDictionary } from "../dict/offline-dictionary";
 import { createNamespaceRecord } from "./namespace-record";
 
 // ADR-0005's four states, the three stored ones — 'New' is a record's
 // absence, never a stored value (the first lookup migrates it).
-export type VocabState = "learning" | "known" | "ignored";
+export type VocabState = WordStatus;
 
 // What the popup renders for one lookup: the dictionary entry plus the
 // state the lookup itself settled (查词即状态 — a found word always
 // carries a concrete state).
-export type LookupWithState = OfflineLookup & { status: VocabState };
+export type LookupWithState = WordLookupResult;
 
 // Where committed states live. Two shapes exist: an in-memory map (tests)
 // and chrome.storage.local (the real one). Everything above this seam —

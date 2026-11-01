@@ -13,6 +13,9 @@
   "files": [
     "dist"
   ],
+  "peerDependencies": {
+    "react": "^19.2.8"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
