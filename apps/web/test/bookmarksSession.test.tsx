@@ -1,5 +1,6 @@
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settleRaceSuite } from "@lingualeaf/reading-model/testing";
 import { useBookmarksSession } from "../src/bookmarksSession";
 import { captureBookmarkTarget } from "../src/readingProgress";
 import {
@@ -273,4 +274,43 @@ describe("useBookmarksSession pass ordering", () => {
       1,
     ]);
   });
+});
+
+// The same four adjudication claims, run against this session's real
+// create/list flow (settle-channel 01). The harness's invalidate point is
+// the book-id identity change — the session's real staleness boundary;
+// its arm-side clear is that policy's business, which is why the stale
+// scenarios assert no-change rather than an absolute value.
+settleRaceSuite({
+  createHarness: async () => {
+    vi.mocked(fetchBookmarks).mockResolvedValue([]);
+    let pending = deferred<BookmarkSummary>();
+    vi.mocked(createBookmark).mockImplementation(() => pending.promise);
+    const { result, rerender } = renderHook(
+      ({ bookId }) => useBookmarksSession({ bookId }),
+      { initialProps: { bookId: 1 } }
+    );
+    await act(async () => {});
+    return {
+      async arm() {
+        pending = deferred<BookmarkSummary>();
+        act(() => result.current.addBookmark({ chapter: 1, block: 1 }));
+        const current = pending;
+        return {
+          resolve: async (value?: unknown) => {
+            await act(async () =>
+              current.resolve(
+                (value as BookmarkSummary | undefined) ?? row(99, 1, 1)
+              )
+            );
+          },
+          reject: async () => {
+            await act(async () => current.reject(new Error("gone")));
+          },
+        };
+      },
+      failed: () => result.current.failed,
+      invalidate: () => rerender({ bookId: 2 }),
+    };
+  },
 });

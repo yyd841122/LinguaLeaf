@@ -1,5 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settleRaceSuite } from "@lingualeaf/reading-model/testing";
 import { useTaskFollower } from "../src/taskFollower";
 
 // The task-follower seam (spec: .scratch/task-follower/spec.md 决策 4):
@@ -193,4 +195,110 @@ describe("useTaskFollower outage", () => {
     expect(onTick).toHaveBeenCalledTimes(1);
     expect(result.current.outage).toBe(false);
   });
+});
+
+describe("useTaskFollower teardown retire (settle-channel 01 Q7)", () => {
+  it("discards an in-flight tick's failure after teardown", async () => {
+    const pending = deferred<{ n: number }>();
+    const fetchTick = vi
+      .fn<() => Promise<{ n: number }>>()
+      .mockReturnValueOnce(pending.promise)
+      .mockResolvedValue({ n: 2 });
+    const onTick = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ active }) =>
+        useTaskFollower({ active, fetchTick, onTick, intervalMs: INTERVAL }),
+      { initialProps: { active: true } }
+    );
+    await actAdvance(INTERVAL);
+    expect(fetchTick).toHaveBeenCalledTimes(1);
+
+    // The cleanup's invalidate retires the in-flight tick: its failure
+    // must not light the outage any more than its success could patch.
+    rerender({ active: false });
+    await act(async () => pending.reject(new Error("server gone")));
+    expect(result.current.outage).toBe(false);
+    expect(onTick).not.toHaveBeenCalled();
+  });
+
+  it("re-arms a fresh follow after teardown with a full interval before the first tick", async () => {
+    const fetchTick = vi
+      .fn<() => Promise<{ n: number }>>()
+      .mockResolvedValue({ n: 1 });
+    const onTick = vi.fn();
+    const { rerender } = renderHook(
+      ({ active }) =>
+        useTaskFollower({ active, fetchTick, onTick, intervalMs: INTERVAL }),
+      { initialProps: { active: true } }
+    );
+    await actAdvance(INTERVAL);
+    expect(onTick).toHaveBeenCalledTimes(1);
+
+    rerender({ active: false });
+    rerender({ active: true });
+    await actAdvance(INTERVAL - 1);
+    expect(onTick).toHaveBeenCalledTimes(1);
+    await actAdvance(1);
+    expect(onTick).toHaveBeenCalledTimes(2);
+  });
+
+  it("StrictMode's double mount leaves one live follow", async () => {
+    const fetchTick = vi
+      .fn<() => Promise<{ n: number }>>()
+      .mockResolvedValue({ n: 1 });
+    const onTick = vi.fn();
+    renderHook(
+      () =>
+        useTaskFollower({
+          active: true,
+          fetchTick,
+          onTick,
+          intervalMs: INTERVAL,
+        }),
+      { wrapper: ({ children }) => <StrictMode>{children}</StrictMode> }
+    );
+    await actAdvance(INTERVAL);
+    expect(fetchTick).toHaveBeenCalledTimes(1);
+    expect(onTick).toHaveBeenCalledTimes(1);
+  });
+});
+
+// The same four adjudication claims against the real follow loop
+// (settle-channel 01). Invalidate point = the follower's public
+// invalidate(), which (unlike an arm-side clear) leaves the outage flag
+// exactly where it is.
+settleRaceSuite({
+  createHarness: async () => {
+    const pendingTicks: ReturnType<typeof deferred<{ n: number }>>[] = [];
+    const fetchTick = vi
+      .fn<() => Promise<{ n: number }>>()
+      .mockImplementation(() => {
+        const d = deferred<{ n: number }>();
+        pendingTicks.push(d);
+        return d.promise;
+      });
+    const onTick = vi.fn();
+    const { result } = renderHook(() =>
+      useTaskFollower({ active: true, fetchTick, onTick, intervalMs: INTERVAL })
+    );
+    await actAdvance(0);
+    return {
+      async arm() {
+        await actAdvance(INTERVAL);
+        const d = pendingTicks[pendingTicks.length - 1]!;
+        return {
+          resolve: async (value?: unknown) => {
+            await act(async () =>
+              d.resolve((value as { n: number } | undefined) ?? { n: 1 })
+            );
+          },
+          reject: async () => {
+            await act(async () => d.reject(new Error("server gone")));
+          },
+        };
+      },
+      failed: () => result.current.outage,
+      invalidate: () => act(() => result.current.invalidate()),
+    };
+  },
 });

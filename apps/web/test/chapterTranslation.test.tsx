@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { settleRaceSuite } from "@lingualeaf/reading-model/testing";
 import type {
   ChapterPayload,
   ChapterTranslationState,
@@ -404,4 +405,50 @@ describe("useChapterTranslation follow", () => {
     expect(handlers.onTick).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+});
+
+// The same four adjudication claims, run against the real trigger flow
+// (settle-channel 01). Invalidate point = the route identity key change
+// (chapterNumber), the owner's own staleness boundary.
+settleRaceSuite({
+  createHarness: async () => {
+    let post = deferred<Response>();
+    stubTranslateFetch({
+      postResponse: () => post.promise,
+      getResponse: () => Promise.resolve(new Response(JSON.stringify(chapter))),
+    });
+    const handlers = callbacks();
+    const { result, rerender } = renderHook(
+      ({ chapterNumber }) =>
+        useChapterTranslation({
+          active: false,
+          bookId: 7,
+          chapterNumber,
+          ...handlers,
+        }),
+      { initialProps: { chapterNumber: 2 } }
+    );
+    await act(async () => {});
+    return {
+      async arm() {
+        post = deferred<Response>();
+        act(() => result.current.start());
+        const current = post;
+        return {
+          resolve: async (value?: unknown) => {
+            await act(async () =>
+              current.resolve(value instanceof Response ? value : accepted())
+            );
+          },
+          reject: async () => {
+            await act(async () =>
+              current.resolve(new Response(null, { status: 500 }))
+            );
+          },
+        };
+      },
+      failed: () => result.current.startFailed,
+      invalidate: () => rerender({ chapterNumber: 3 }),
+    };
+  },
 });

@@ -1,11 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import type {
   ChapterPayload,
   ChapterTranslationState,
 } from "../../server/src/wire";
 import { fetchJson } from "./api";
 import { useTaskFollower } from "./taskFollower";
-import { useOwner } from "@lingualeaf/reading-model/react";
+import { useOwner, useSettle } from "@lingualeaf/reading-model/react";
 
 // The chapter translation trigger state machine (ADR-0004): owns the POST,
 // the stale-response discard after navigation, the startFailed lifecycle,
@@ -42,43 +42,31 @@ export function useChapterTranslation(options: {
 }): { start: () => void; startFailed: boolean; pollFailed: boolean } {
   const { active, bookId, chapterNumber, onTranslationState, onTick } = options;
   // The on-demand translation flow (ADR-0004): `startFailed` says the
-  // trigger POST did not land; it clears on its own recovery (a retry or
-  // a landing response) — a loop's last state must not outlive its
-  // credibility (CODING_STANDARDS). The running poll's outage flag lives
-  // in the task-follower below.
-  const [startFailed, setStartFailed] = useState(false);
-  // The route as of the latest render: a trigger's 202 that resolves after
-  // a navigation is stale and must not patch the new chapter's state.
+  // trigger POST did not land; it clears on its own recovery (a retry, a
+  // landing response, or a route change) — a loop's last state must not
+  // outlive its credibility (CODING_STANDARDS). The running poll's outage
+  // flag lives in the task-follower below. The flag rides the shared
+  // settle channel (settle-channel 01); the clears below are intent-side
+  // writes — the channel never clears on run's start.
   const owner = useOwner(bookId, chapterNumber);
+  const { failed: startFailed, clear, run } = useSettle(owner);
 
   useEffect(() => {
-    setStartFailed(false);
-  }, [bookId, chapterNumber]);
+    clear();
+  }, [bookId, chapterNumber, clear]);
 
   // The translate trigger: the POST's 202 body is the chapter in its
   // brand-new translating state, patched in immediately (the shelf's
   // "202 body joins first" precedent — a failed refresh cannot masquerade
   // as a failed trigger). From there the poll below follows the lifecycle;
   // the button's disabled state keys on the server's status, never on the
-  // POST having returned.
+  // POST having returned. No invalidate at arm: the double-click's losing
+  // 409 may still speak until the winning 202 lands and clears it.
   const start = () => {
-    setStartFailed(false);
-    const ticket = owner.mark();
-    translateChapter(bookId, chapterNumber)
-      .then((state) => {
-        if (ticket.stale()) return;
-        // A landed trigger is the start-failure's recovery: in the
-        // double-click race the losing 409's notice must not outlive the
-        // translating state this response patches in.
-        setStartFailed(false);
-        onTranslationState(state);
-      })
-      .catch(() => {
-        // The endpoint's 409s (already translating / no service) and every
-        // other failure land here: a catchable notice, not a white screen.
-        if (ticket.stale()) return;
-        setStartFailed(true);
-      });
+    clear();
+    void run(translateChapter(bookId, chapterNumber), {
+      onFresh: (state) => onTranslationState(state),
+    });
   };
 
   // While this chapter translates, follow the task on the shared
@@ -87,7 +75,8 @@ export function useChapterTranslation(options: {
   // response that leaves 'translating' carries the fresh lines with it.
   // The active fact rides the payload, so route changes and settle both
   // tear the follow down; a landed tick is also the trigger-failure
-  // notice's recovery.
+  // notice's recovery — an explicit intent-side clear, freshness already
+  // judged by the follower's own channel.
   const { outage: pollFailed } = useTaskFollower({
     active,
     fetchTick: () =>
@@ -96,7 +85,7 @@ export function useChapterTranslation(options: {
       ),
     onTick: (chapterData) => {
       onTick(chapterData);
-      setStartFailed(false);
+      clear();
     },
     intervalMs: TRANSLATION_POLL_MS,
   });

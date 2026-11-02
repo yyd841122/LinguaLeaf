@@ -113,3 +113,69 @@ export function wordLookupRaceSuite<Gateway>(suite: RaceSuite<Gateway>): void {
     });
   });
 }
+
+export type SettleHarness = {
+  // Start exactly one adjudicated op through the real station and leave it
+  // in flight; the returned handles settle it and await the station's
+  // adjudication flush.
+  arm(): Promise<{
+    resolve: (value?: unknown) => Promise<void>;
+    reject: () => Promise<void>;
+  }>;
+  // The channel flag as the station exposes it (failed / startFailed /
+  // outage — the station's own name for it).
+  failed: () => boolean;
+  // Make every ticket the station has minted so far stale, the station's
+  // own way (its real invalidate point — identity-key change, public
+  // invalidate, teardown).
+  invalidate: () => void | Promise<void>;
+};
+
+// Hosts own rendering, jsdom, and transport fakes (same discipline as
+// wordLookupRaceSuite above): this factory registers the four universal
+// adjudication claims against whatever real station mount the host hands
+// it. The landed/null-ticket scenarios stay kernel-level (apps/web/test/
+// useSettle.test.tsx) until settle-channel 02's flushSave and popup adopt
+// those hooks. Flag expectations are phrased as no-change across a stale
+// landing: a station whose invalidate point also clears the flag (an
+// arm-side clear) keeps that policy, and the suite must not assume
+// otherwise.
+export function settleRaceSuite(suite: {
+  createHarness(): SettleHarness | Promise<SettleHarness>;
+}): void {
+  describe("shared settle adjudication races", () => {
+    it("raises the flag on a fresh failure", async () => {
+      const harness = await suite.createHarness();
+      const before = harness.failed();
+      await (await harness.arm()).reject();
+      expect(before).toBe(false);
+      expect(harness.failed()).toBe(true);
+    });
+
+    it("clears the flag when a fresh success lands after a failure", async () => {
+      const harness = await suite.createHarness();
+      await (await harness.arm()).reject();
+      expect(harness.failed()).toBe(true);
+      await (await harness.arm()).resolve();
+      expect(harness.failed()).toBe(false);
+    });
+
+    it("leaves the flag untouched when a stale success lands late", async () => {
+      const harness = await suite.createHarness();
+      const pending = await harness.arm();
+      await harness.invalidate();
+      const before = harness.failed();
+      await pending.resolve();
+      expect(harness.failed()).toBe(before);
+    });
+
+    it("writes nothing when a stale failure arrives late", async () => {
+      const harness = await suite.createHarness();
+      const pending = await harness.arm();
+      await harness.invalidate();
+      const before = harness.failed();
+      await pending.reject();
+      expect(harness.failed()).toBe(before);
+    });
+  });
+}

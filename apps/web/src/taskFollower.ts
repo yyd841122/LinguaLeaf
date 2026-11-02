@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useOwner } from "@lingualeaf/reading-model/react";
+import { useEffect, useRef } from "react";
+import { useOwner, useSettle } from "@lingualeaf/reading-model/react";
 
 // The one follower for server-side background tasks (spec:
 // .scratch/task-follower/spec.md): while `active`, re-asks `fetchTick` on
@@ -9,7 +9,9 @@ import { useOwner } from "@lingualeaf/reading-model/react";
 // response patches first), a failed tick never touches page data, a landed
 // tick clears the outage, and a tick that was in flight when invalidate()
 // fired is discarded — a snapshot from before a mutation must not patch over
-// it (the resurrected-row bug class from the 2026-10-23 audit).
+// it (the resurrected-row bug class from the 2026-10-23 audit). The flag
+// and the per-tick verdict now ride the shared settle channel
+// (settle-channel 01); the rules themselves are unchanged.
 
 export type TaskFollower = {
   // Set when the latest tick failed, cleared when one lands. Rendering it
@@ -30,12 +32,13 @@ export function useTaskFollower<T>(options: {
   intervalMs: number;
 }): TaskFollower {
   const { active, fetchTick, onTick, intervalMs } = options;
-  const [outage, setOutage] = useState(false);
   const owner = useOwner();
+  const { failed: outage, clear, run } = useSettle(owner);
 
-  // The interval re-arms only on active/intervalMs; the callbacks ride
-  // refs so a page re-render (new inline closures) never resets the
-  // cadence — the latest closure wins at tick time.
+  // The interval re-arms only on active/intervalMs (run/clear are
+  // referentially stable, so the flag flipping never resets the cadence);
+  // the callbacks ride refs so a page re-render (new inline closures)
+  // never resets the cadence — the latest closure wins at tick time.
   const fetchTickRef = useRef(fetchTick);
   fetchTickRef.current = fetchTick;
   const onTickRef = useRef(onTick);
@@ -45,30 +48,20 @@ export function useTaskFollower<T>(options: {
     if (!active) return;
     // A fresh follow starts clean: an outage from a previous follow must
     // not leak across a teardown/re-arm (a route change does both).
-    setOutage(false);
-    let cancelled = false;
+    clear();
     const interval = window.setInterval(() => {
-      const ticket = owner.mark();
-      fetchTickRef
-        .current()
-        .then((data) => {
-          if (cancelled || ticket.stale()) return;
-          setOutage(false);
-          onTickRef.current(data);
-        })
-        .catch(() => {
-          // Keep the page as-is; the next tick retries. But say so — a
-          // frozen progress label alone would hide the outage. A stale
-          // round never speaks: its success is discarded, and so is its
-          // failure — the next fresh tick re-asks within one interval.
-          if (!cancelled && !ticket.stale()) setOutage(true);
-        });
+      void run(fetchTickRef.current(), {
+        onFresh: (data) => onTickRef.current(data),
+      });
     }, intervalMs);
     return () => {
-      cancelled = true;
+      // Teardown retires the in-flight tick through the token: invalidate
+      // is the cancelled flag's formal self (settle-channel 01, Q7) — the
+      // round's success is discarded, and so is its failure.
+      owner.invalidate();
       window.clearInterval(interval);
     };
-  }, [active, intervalMs, owner]);
+  }, [active, intervalMs, owner, clear, run]);
 
   return { outage, invalidate: owner.invalidate };
 }
