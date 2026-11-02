@@ -1,5 +1,6 @@
 import { act, cleanup, fireEvent, renderHook } from "@testing-library/react";
 import { StrictMode, useEffect } from "react";
+import { settleRaceSuite } from "@lingualeaf/reading-model/testing";
 import type { BookmarkTarget } from "../src/bookmarks";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useProgressSession } from "../src/progressSession";
@@ -787,4 +788,56 @@ describe("useProgressSession target ops across books", () => {
       expect(jump).toHaveBeenCalledTimes(previousJumps);
     }
   );
+});
+
+// The save-failure notice's adjudication through the station's own surface
+// (settle-channel 02). The flush writes server-side and its only local
+// surface is the flag, so the host declares applies: false — the suite
+// pins the flag claims alone and reads no applied() signal that cannot
+// move. The null-ticket flush path is unreachable through this surface
+// (every scheduleSave happens after the arm's ticket ref is set), so the
+// null scenario stays kernel-level by design.
+settleRaceSuite({
+  applies: false,
+  createHarness: async () => {
+    vi.mocked(fetchReadingProgress).mockResolvedValue(null);
+    vi.mocked(saveReadingProgress).mockResolvedValue(undefined);
+    const view = renderHook(useProgressSession, { initialProps: route });
+    await actAdvance(0);
+    return {
+      async arm() {
+        // Schedule a scroll save and fire its debounce: exactly one flush
+        // goes in flight per arm (the scroll replaces any announce still
+        // pending from the arm effect).
+        visibleBlock = 2;
+        fireEvent.scroll(window);
+        const flush = deferred<void>();
+        vi.mocked(saveReadingProgress).mockImplementationOnce(
+          () => flush.promise
+        );
+        await actAdvance(500);
+        return {
+          resolve: async () => {
+            await act(async () => {
+              flush.resolve();
+            });
+          },
+          reject: async () => {
+            await act(async () => {
+              flush.reject(new Error("flush failed"));
+            });
+          },
+        };
+      },
+      failed: () => view.result.current.saveFailed,
+      applied: () => [],
+      // The route change is the station's real invalidate point: the next
+      // route's arm invalidates every earlier ticket (the :376 pin's rule).
+      invalidate: async () => {
+        view.rerender({ ...route, bookId: 8 });
+        await actAdvance(0);
+      },
+      dispose: () => view.unmount(),
+    };
+  },
 });

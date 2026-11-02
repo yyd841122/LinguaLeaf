@@ -1,10 +1,19 @@
 import { useState, type ComponentProps } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { ReadingView, type Block, type WordClick } from "../src/ReadingView";
 import { WordLookupPopup, wordLookupGateway } from "../src/WordLookupPopup";
 import { WordLookupPopup as KernelPopup } from "@lingualeaf/reading-model/react";
-import { wordLookupRaceSuite } from "@lingualeaf/reading-model/testing";
+import {
+  settleRaceSuite,
+  wordLookupRaceSuite,
+} from "@lingualeaf/reading-model/testing";
 import type { WordLookupResult, WordStatus } from "@lingualeaf/reading-model";
 import { speakWord } from "../src/wordLookup";
 
@@ -1123,4 +1132,128 @@ wordLookupRaceSuite({
     }),
   click: (button) => fireEvent.click(button),
   waitFor,
+});
+
+// The popup station's adjudication through the kernel popup over the real
+// web gateway (settle-channel 02). The popup can hold at most one fresh
+// arm at a time — savingKeys serializes the writes per word, and a word
+// change both clears the flag and stales the previous arm — so the
+// double-arm recovery claim has no mountable precondition and rides as a
+// visible skip: the attempt's own arm-side clear is the popup's recovery
+// by design (CODING_STANDARDS, credibility — re-clicking dismisses the
+// notice). What the popup does mount is the stale-landing claim, over the
+// onStatusApplied stream its onLanded wiring feeds.
+settleRaceSuite({
+  serialArms: true,
+  landed: true,
+  async createHarness() {
+    const lookups: Record<string, WordLookupResult> = {
+      woke: { ...WOKE_ENTRY, status: "learning" },
+      book: { ...BOOK_ENTRY, status: "learning" },
+    };
+    const pending = new Map<
+      string,
+      { response: ReturnType<typeof deferredResponse>; status: WordStatus }
+    >();
+    const landedFacts: {
+      word: string;
+      lemma: string | null;
+      status: WordStatus;
+    }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === "PUT") {
+          const key = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+          const { status } = JSON.parse(String(init.body)) as {
+            status: WordStatus;
+          };
+          const response = deferredResponse();
+          pending.set(key, { response, status });
+          return response.promise;
+        }
+        if (!init?.method || init.method === "GET") {
+          const word = decodeURIComponent(url.slice(url.lastIndexOf("/") + 1));
+          const entry = lookups[word];
+          if (url.startsWith("/api/lookup/") && entry) {
+            return Promise.resolve(new Response(JSON.stringify(entry)));
+          }
+        }
+        throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
+      })
+    );
+    const popup = (word: string) => (
+      <KernelPopup
+        click={{ word, point: { x: 100, y: 100 } }}
+        gateway={wordLookupGateway}
+        onClose={() => {}}
+        onStatusApplied={(fact) => landedFacts.push(fact)}
+      />
+    );
+    const view = render(popup("woke"));
+    // The harness hands back a found-phase popup: the claims arm against
+    // live buttons, not a loading placeholder.
+    await screen.findByRole("button", { name: "学习中" });
+    // The fresh application is the pressed patch on the shown state, read
+    // as a delta against the statuses the lookups arrived with — the
+    // server's current status renders pressed without any application
+    // happening in the scenario.
+    const buttonName = (status: WordStatus) =>
+      ({ learning: "学习中", known: "已掌握", ignored: "已忽略" })[status];
+    const baseline = new Set(
+      (["learning", "known", "ignored"] as const).filter(
+        (status) =>
+          screen
+            .getByRole("button", { name: buttonName(status) })
+            .getAttribute("aria-pressed") === "true"
+      )
+    );
+    let current = "woke";
+    const settle = async (key: string, fail: boolean) => {
+      const save = pending.get(key);
+      if (!save) throw new Error(`no pending save for ${key}`);
+      pending.delete(key);
+      await act(async () => {
+        save.response.resolve(
+          fail
+            ? new Response(JSON.stringify({ error: "boom" }), { status: 500 })
+            : new Response(JSON.stringify({ lemma: key, status: save.status }))
+        );
+      });
+    };
+    return {
+      async arm() {
+        const key = lookups[current]?.lemma ?? current;
+        fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+        await Promise.resolve();
+        if (!pending.has(key))
+          throw new Error(`the arm's save never left: ${key}`);
+        return {
+          resolve: () => settle(key, false),
+          reject: () => settle(key, true),
+        };
+      },
+      failed: () => screen.queryByText("状态保存失败，请重试。") !== null,
+      applied: () =>
+        (["learning", "known", "ignored"] as const).filter(
+          (status) =>
+            !baseline.has(status) &&
+            screen
+              .getByRole("button", { name: buttonName(status) })
+              .getAttribute("aria-pressed") === "true"
+        ),
+      landed: () => landedFacts,
+      // Moving to another word is the popup's real invalidate point — it
+      // also clears the flag (the notice belonged to the previous word).
+      async invalidate() {
+        current = "book";
+        view.rerender(popup("book"));
+        await screen.findByRole("button", { name: "学习中" });
+      },
+      dispose() {
+        view.unmount();
+        vi.unstubAllGlobals();
+      },
+    };
+  },
 });

@@ -1,7 +1,16 @@
 import { WordLookupPopup as KernelPopup } from "@lingualeaf/reading-model/react";
-import { wordLookupRaceSuite } from "@lingualeaf/reading-model/testing";
+import {
+  settleRaceSuite,
+  wordLookupRaceSuite,
+} from "@lingualeaf/reading-model/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { importBook } from "../src/reader/import-book";
@@ -657,6 +666,52 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     );
     expect(await screen.findByText("Second")).toBeInTheDocument();
   });
+
+  it("a slow reopen cannot replace a document the reader already chose", async () => {
+    const base = createMemoryLibraryStore();
+    // Holder object: assignment happens inside openDocument's closure,
+    // which control-flow narrowing cannot see.
+    const slowOpen: { release: (() => void) | null } = { release: null };
+    const library: LibraryStore = {
+      ...base,
+      openDocument(id) {
+        if (id !== "doc:Journey Book") return base.openDocument(id);
+        const stored = base.openDocument(id);
+        return new Promise((resolve) => {
+          slowOpen.release = () => void stored.then(resolve);
+        });
+      },
+    };
+    renderWithSeams({ library });
+
+    // Both documents on the recents list.
+    await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
+    await screen.findByText("First");
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    const other = await buildEpub({
+      title: "Other Book",
+      docs: [
+        { href: "text/x.xhtml", body: "<h1>Only</h1><p>Other words.</p>" },
+      ],
+    });
+    await pickFile(await fixtureFile("b.epub", other));
+    await screen.findByText("Other");
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+
+    // Journey's open hangs; the reader picks Other while it is in flight.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Journey Book" })
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Other Book" }));
+    expect(await screen.findByText("Other")).toBeInTheDocument();
+
+    // The slow answer lands late: the choice stands.
+    slowOpen.release?.();
+    await waitFor(() =>
+      expect(screen.queryByText("North")).not.toBeInTheDocument()
+    );
+    expect(screen.getByText("Other")).toBeInTheDocument();
+  });
 });
 
 wordLookupRaceSuite({
@@ -699,4 +754,204 @@ wordLookupRaceSuite({
     }),
   click: (button) => fireEvent.click(button),
   waitFor,
+});
+
+// ─── settle-channel 02: the tint bulk read's races ───
+
+// A backend whose chapter bulk reads (statesFor → getMany) hang until the
+// test releases them, delivering what the read captured at call time — the
+// real backend's read is a call-time read, so a late release carries the
+// pre-patch store, not whatever has landed since. The put/enroll deferral
+// rides the shared deferredBackend unchanged.
+function bulkDeferredBackend() {
+  const base = deferredBackend();
+  const holds: Array<() => void> = [];
+  const backend: StateBackend = {
+    ...base.backend,
+    getMany(keys) {
+      const read = base.memory.getMany(keys);
+      return new Promise<Map<string, VocabState>>((resolve) => {
+        holds.push(() => void read.then(resolve));
+      });
+    },
+  };
+  return {
+    ...base,
+    backend,
+    releaseHold: async (index: number) => {
+      const release = holds[index];
+      if (!release) throw new Error(`no held bulk read at ${index}`);
+      await act(async () => {
+        release();
+      });
+    },
+  };
+}
+
+describe("ReaderPage — the tint bulk read's races (settle-channel 02)", () => {
+  beforeEach(() => {
+    stubDictionaryFetch(POPUP_DICT);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("a late bulk read keeps the reader's patch (merge-wins)", async () => {
+    const harness = bulkDeferredBackend();
+    // Pre-patch store: the held read will carry learning for woke.
+    harness.memory.map.set("woke", "learning");
+    renderWithSeams({
+      store: createVocabularyStore(
+        new OfflineDictionary(POPUP_DICT),
+        harness.backend
+      ),
+    });
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+    // The chapter renders (the bulk read hangs on the held getMany) and
+    // the reader opens woke's popup.
+    await openPopupFor("Woke");
+    fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+    await harness.settleKey("woke");
+    await waitFor(() => expect(wordEl("Woke")).toHaveClass("word-settled"));
+
+    // The held read lands late carrying woke's pre-patch state: the
+    // patched key keeps the reader's value, so the tint stands.
+    await harness.releaseHold(0);
+    expect(wordEl("Woke")).toHaveClass("word-settled");
+    expect(harness.memory.map.get("woke")).toBe("known");
+  });
+
+  it("a chapter's late bulk read tints nothing after the switch", async () => {
+    const harness = bulkDeferredBackend();
+    // A state both chapters' word sets reach, so the stale read's answer
+    // would tint the new chapter if it were not discarded.
+    harness.memory.map.set("words", "known");
+    renderWithSeams({
+      store: createVocabularyStore(
+        new OfflineDictionary(POPUP_DICT),
+        harness.backend
+      ),
+    });
+    await pickFile(await fixtureFile("book.epub", await TOC_EPUB()));
+    await screen.findByText("First");
+
+    // Chapter 1's bulk read hangs; the reader moves on to chapter 2,
+    // whose own read hangs behind it.
+    fireEvent.click(screen.getByRole("button", { name: "South" }));
+    await screen.findByText("Second");
+
+    // The stale read lands: chapter 1's answer must not tint chapter 2.
+    await harness.releaseHold(0);
+    expect(document.querySelector(".word-settled")).toBeNull();
+
+    // Positive control: the current chapter's read does tint.
+    await harness.releaseHold(1);
+    await waitFor(() =>
+      expect(document.querySelector(".word-settled")).not.toBeNull()
+    );
+  });
+});
+
+// The popup station over the store seam (settle-channel 02): the same
+// claims as the web mount, a rejectable deferred backend instead of the
+// wire. serialArms for the reason recorded there — one fresh arm at a
+// time; the arm-side clear is the popup's recovery by design.
+settleRaceSuite({
+  serialArms: true,
+  landed: true,
+  async createHarness() {
+    const memory = memoryBackend();
+    const pending = new Map<
+      string,
+      Array<{ resolve: () => void; reject: () => void }>
+    >();
+    const backend: StateBackend = {
+      async get(key) {
+        return memory.get(key);
+      },
+      getMany: (keys) => memory.getMany(keys),
+      put(key, status) {
+        let resolve!: () => void;
+        let reject!: () => void;
+        const promise = new Promise<void>((res, rej) => {
+          resolve = res;
+          reject = rej;
+        });
+        const byKey = pending.get(key) ?? [];
+        byKey.push({ resolve, reject });
+        pending.set(key, byKey);
+        return promise.then(() => memory.put(key, status));
+      },
+      enroll(key) {
+        const existing = memory.map.get(key) ?? null;
+        if (existing) return Promise.resolve(existing);
+        void memory.put(key, "learning");
+        return Promise.resolve("learning");
+      },
+    };
+    for (const key of ["woke", "book"]) memory.map.set(key, "learning");
+    const gateway = createVocabularyStore(
+      new OfflineDictionary(POPUP_DICT),
+      backend
+    );
+    const landedFacts: {
+      word: string;
+      lemma: string | null;
+      status: VocabState;
+    }[] = [];
+    const popup = (word: string) => (
+      <KernelPopup
+        click={{ word, point: { x: 100, y: 100 } }}
+        gateway={gateway}
+        onClose={() => {}}
+        onStatusApplied={(fact) => landedFacts.push(fact)}
+      />
+    );
+    const view = render(popup("woke"));
+    await screen.findByRole("button", { name: "学习中" });
+    // Pressed-delta baseline, as the web mount records it: the lookups'
+    // own statuses render pressed without any application in-scenario.
+    const buttonName = (status: VocabState) =>
+      ({ learning: "学习中", known: "已掌握", ignored: "已忽略" })[status];
+    const pressedNow = () =>
+      (["learning", "known", "ignored"] as const).filter(
+        (status) =>
+          screen
+            .getByRole("button", { name: buttonName(status) })
+            .getAttribute("aria-pressed") === "true"
+      );
+    const baseline = new Set(pressedNow());
+    let current = "woke";
+    const settle = async (key: string, fail: boolean) => {
+      const entry = pending.get(key)?.shift();
+      if (!entry) throw new Error(`no pending save for ${key}`);
+      await act(async () => {
+        if (fail) entry.reject();
+        else entry.resolve();
+        await Promise.resolve();
+      });
+    };
+    return {
+      async arm() {
+        const key = gateway.stateKey(current);
+        fireEvent.click(screen.getByRole("button", { name: "已掌握" }));
+        await Promise.resolve();
+        if (!pending.has(key))
+          throw new Error(`the arm's save never left: ${key}`);
+        return {
+          resolve: () => settle(key, false),
+          reject: () => settle(key, true),
+        };
+      },
+      failed: () => screen.queryByText("状态保存失败，请重试。") !== null,
+      applied: () => pressedNow().filter((status) => !baseline.has(status)),
+      landed: () => landedFacts,
+      async invalidate() {
+        current = "book";
+        view.rerender(popup("book"));
+        await screen.findByRole("button", { name: "学习中" });
+      },
+      dispose() {},
+    };
+  },
 });

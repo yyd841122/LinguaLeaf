@@ -122,31 +122,52 @@ export type SettleHarness = {
     resolve: (value?: unknown) => Promise<void>;
     reject: () => Promise<void>;
   }>;
-  // The channel flag as the station exposes it (failed / startFailed /
-  // outage — the station's own name for it).
+  // The channel flag as the station exposes it (failed / saveFailed /
+  // startFailed / outage — the station's own name for it).
   failed: () => boolean;
   // What the station has applied through its fresh successes so far (the
   // merged rows, the patched state, the landed ticks). The suite uses it
   // to prove a stale round applied nothing — flag silence alone cannot
-  // tell "discarded" from "cleared" (review Q2).
+  // tell "discarded" from "cleared" (review Q2). A station whose fresh
+  // success has no visible application surface (flushSave's write lives
+  // server-side) returns whatever constant it likes and declares
+  // applies: false — the suite then reads no signal that cannot move.
   applied: () => unknown[];
   // Make every ticket the station has minted so far stale, the station's
   // own way (its real invalidate point — identity-key change, public
   // invalidate, teardown).
   invalidate: () => void | Promise<void>;
+  // Stations wiring the onLanded hook additionally report what landed:
+  // the facts that reach the host regardless of freshness (the popup's
+  // onStatusApplied stream). Required when the suite declares landed.
+  landed?: () => unknown[];
 };
 
 // Hosts own rendering, jsdom, and transport fakes (same discipline as
-// wordLookupRaceSuite above): this factory registers the four universal
+// wordLookupRaceSuite above): this factory registers the universal
 // adjudication claims against whatever real station mount the host hands
-// it. The landed/null-ticket scenarios stay kernel-level (apps/web/test/
-// useSettle.test.tsx) until settle-channel 02's flushSave and popup adopt
-// those hooks. Flag expectations are phrased as no-change across a stale
-// landing: a station whose invalidate point also clears the flag (an
-// arm-side clear) keeps that policy, and the suite must not assume
-// otherwise.
+// it. The landed/null-ticket scenarios stay kernel-level
+// (apps/web/test/useSettle.test.tsx) except the stale-landing claim a
+// landed station mounts below (settle-channel 02's popup). Flag
+// expectations are phrased as no-change across a stale landing: a station
+// whose invalidate point also clears the flag (an arm-side clear) keeps
+// that policy, and the suite must not assume otherwise.
 export function settleRaceSuite(suite: {
   createHarness(): SettleHarness | Promise<SettleHarness>;
+  // The station's fresh success has no visible application surface — the
+  // suite then drops the applied() assertions (a constant array is not
+  // evidence) and pins the flag claims alone. flushSave mounts this way.
+  applies?: boolean;
+  // The station can hold at most one fresh arm at a time (the popup:
+  // savingKeys serializes the writes per word, and a word change both
+  // clears the flag and stales the previous arm), so the double-arm
+  // recovery claim has no mountable precondition there — the attempt's
+  // own arm-side clear is that station's recovery by design, and the
+  // claim is registered as skipped rather than forced green vacuously.
+  serialArms?: boolean;
+  // The station wires the onLanded hook (the popup): mount the
+  // stale-landing claim, which reads harness.landed().
+  landed?: boolean;
 }): void {
   describe("shared settle adjudication races", () => {
     it("raises the flag on a fresh failure", async () => {
@@ -157,20 +178,24 @@ export function settleRaceSuite(suite: {
       expect(harness.failed()).toBe(true);
     });
 
-    it("clears the flag and applies when a fresh success lands after a failure", async () => {
-      const harness = await suite.createHarness();
-      // Two arms before either settles: the recovery must come from the
-      // success's own verdict, not from an arm-side clear that an
-      // interleaved start performs anyway (review Q2).
-      const loser = await harness.arm();
-      const winner = await harness.arm();
-      await loser.reject();
-      expect(harness.failed()).toBe(true);
-      expect(harness.applied()).toEqual([]);
-      await winner.resolve();
-      expect(harness.failed()).toBe(false);
-      expect(harness.applied().length).toBeGreaterThan(0);
-    });
+    (suite.serialArms ? it.skip : it)(
+      "clears the flag and applies when a fresh success lands after a failure",
+      async () => {
+        const harness = await suite.createHarness();
+        // Two arms before either settles: the recovery must come from the
+        // success's own verdict, not from an arm-side clear that an
+        // interleaved start performs anyway (review Q2).
+        const loser = await harness.arm();
+        const winner = await harness.arm();
+        await loser.reject();
+        expect(harness.failed()).toBe(true);
+        if (suite.applies !== false) expect(harness.applied()).toEqual([]);
+        await winner.resolve();
+        expect(harness.failed()).toBe(false);
+        if (suite.applies !== false)
+          expect(harness.applied().length).toBeGreaterThan(0);
+      }
+    );
 
     it("leaves flag and application untouched when a stale success lands late", async () => {
       const harness = await suite.createHarness();
@@ -184,7 +209,8 @@ export function settleRaceSuite(suite: {
       const appliedBefore = harness.applied();
       await stale.resolve();
       expect(harness.failed()).toBe(true);
-      expect(harness.applied()).toEqual(appliedBefore);
+      if (suite.applies !== false)
+        expect(harness.applied()).toEqual(appliedBefore);
     });
 
     it("writes nothing when a stale failure arrives late", async () => {
@@ -194,7 +220,31 @@ export function settleRaceSuite(suite: {
       const before = harness.failed();
       await pending.reject();
       expect(harness.failed()).toBe(before);
-      expect(harness.applied()).toEqual([]);
+      if (suite.applies !== false) expect(harness.applied()).toEqual([]);
     });
+
+    if (suite.landed) {
+      it("reports a stale landing while the lit flag stays lit", async () => {
+        const harness = await suite.createHarness();
+        if (!harness.landed)
+          throw new Error("a landed host must expose landed()");
+        const stale = await harness.arm();
+        await harness.invalidate();
+        // The current arm's fresh failure lights the flag: only a lit
+        // flag can catch a landing that clears what it must not.
+        await (await harness.arm()).reject();
+        expect(harness.failed()).toBe(true);
+        const landedBefore = harness.landed().length;
+        await stale.resolve();
+        // The landed report is unconditional (GLOSSARY 落回裁决's
+        // 「先落页、后验陈旧」 variant): the fact reaches the host even
+        // though this round lost the verdict…
+        expect(harness.landed().length).toBeGreaterThan(landedBefore);
+        // …while the stale verdict itself writes nothing: the flag stays
+        // lit and no fresh application appears.
+        expect(harness.failed()).toBe(true);
+        expect(harness.applied()).toEqual([]);
+      });
+    }
   });
 }
