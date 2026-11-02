@@ -1,6 +1,6 @@
 # windows-native-installer:Windows 原生一键安装包(Inno Setup 向导)
 
-Status: ready-for-agent
+Status: done
 
 来源:维护者要在全新 Windows(无 Node/Python/任何工具)上使用本项目;三形态
 拍板选「Inno Setup .exe 向导」(2026-11-01)。宿主机探测:无 winget、无 Node、
@@ -60,3 +60,34 @@ build——非开发者不可重复。要一个安装向导 exe:双击→下一�
 - Codex 沙箱(纯 Linux,无 cmd.exe/winget)无法实现/验证本票 Windows 侧,
   本票由编排会话直接实现,评审仍走双轴(基线 = 本票首个实现 commit 之前的
   HEAD)。
+
+## Comments
+
+- 2026-11-02 (Claude): 实现 + 收官。编排会话直接实现(Codex 沙箱纯 Linux,无
+  cmd.exe/winget/ISCC,票面既定)。实现 commit `80bf187` + 评审修复
+  `87b86ef`,基线 `a571458` 双轴一次覆盖。全链 verify EXIT=0(539 tests)。
+  产物:`dist/LinguaLeaf-setup-0.1.0.exe`(27.1MB,含 better-sqlite3 预编译)。
+  验收 1-3 全过:打包器跑通;静默装树校验(runtime\node.exe v24.21.0 可执行、
+  .output/bat/源码/预编译齐、.env/.data 确证不进包);四段冒烟(首启 3100→
+  并发走「已在运行」→强停 health DOWN+pid 清→复启健康)+ 全新安装探针 EPUB
+  导入成功。工具链:宿主装 Inno Setup 6.7.4(官方 GitHub releases,winget
+  不存在;UAC 维护者放行)。
+- 2026-11-02 (Claude): 双轴评审(基线 a571458)。**Spec PASS**:八条承诺零缺
+  失零漂移;ci-vs-install 判「已接受精化」记档。**Standards 零硬违规**,六笔
+  judgement。修 5 笔:① README 两处硬编码 3000 → PORT 跟随 .env 实况
+  (Standards#5+Spec#1);② README 凭空的「Uninstall 快捷方式」承诺改为实况
+  (设置→应用 + unins000.exe,Spec#2);③ FAQ 报错文案对齐 bat 实际输出
+  (Standards#5);④ stop bat 空 pid 文件静默成功补守卫(Spec#3);⑤ BOM 隐形
+  字面量 → \uFEFF 显式转义 + 缓存阈值注释(Standards#3/#6)。记档 5 笔:
+  ci-vs-install 精化;[Run]/开始菜单 stop+README 图标/timeout 停留=良性越界;
+  health-probe 两处 node -e 批处理提取不值;download() 未并入 run()(错误
+  消息专属);%PORT% 空退化形态仅破碎安装可达。
+- 2026-11-02 (Claude): 冒烟期间的四个环境真相(都进了产物或载具修正):
+  ① 宿主杀软(非 Defender,服务 0x800106ba)静默清除含「PowerShell 隐藏进程」
+  形态的 .bat——改纯 node detached spawn 后不再被杀;② 宿主上有用户自己的
+  node 进程(D:\code\pixora 的 tauri/vite dev)——杀 node 一律按 PID+命令行
+  证据,禁按映像名;③ WSL interop 传给 cmd 的 PATH 不含 System32(timeout/
+  taskkill 找不到)——载具假象,真双击无碍,载具侧显式补 PATH;④ 本机网络
+  GitHub 直连 ~6KB/s 不可用,必须走代理(nodejs.org 直连快)——better-sqlite3
+  预编译因此改为随包内置(ABI 用打包运行时实测 v137,资产名是 win32-x64 不是
+  win-x64),目标机首启对 GitHub 零依赖;`npm rebuild` 兜底路径保留。
