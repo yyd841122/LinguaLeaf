@@ -91,3 +91,11 @@ build——非开发者不可重复。要一个安装向导 exe:双击→下一�
   GitHub 直连 ~6KB/s 不可用,必须走代理(nodejs.org 直连快)——better-sqlite3
   预编译因此改为随包内置(ABI 用打包运行时实测 v137,资产名是 win32-x64 不是
   win-x64),目标机首启对 GitHub 零依赖;`npm rebuild` 兜底路径保留。
+
+- 2026-11-02 (维护者实测,Hyper-V VM 第二环境): 全新 Windows 11 **家庭版**
+  客机(Hyper-V PIXORA-CLEAN VM,无集成服务)完整演练通过——向导安装 →
+  HttpListener 临时文件通道推 .env/.data/exe(虚拟网卡 ~100MB/s)→ 首启装
+  依赖 → 书架数据完整、点词/标词/导入新书全过、停止快捷方式生效。家庭版
+  客机无 vmicguestsservice,Copy-VMFile/PowerShell Direct 不可用,文件传输
+  走「宿主 HttpListener + VM curl」与「挂 VHD 拷贝」两条路(后者在本机
+  存储栈上 VHD Attached=True 但 Get-Disk 永不浮现,弃用)。验收闭环。
