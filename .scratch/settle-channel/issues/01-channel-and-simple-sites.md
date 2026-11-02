@@ -96,11 +96,12 @@ follow 开始(现 :52)。#1 建/删 op、#2 trigger、#3 逐 tick 均**不**清�
    启用站点级)。
 3. **站点既有用例零改写为预期**:公开面(useBookmarksSession/
    useChapterTranslation/useTaskFollower)与 mock 边界(../src/* fetch 助手)
-   不变,books 11 + chapter 7 + task 6 its 应 verbatim 绿。出现改写/删除
+   不变,books 11 + chapter 17 + task 6(计 34 枚;vitest 计 it.each 展开,
+   grep `it\(` 只见源行——计数以跑套件为准)应 verbatim 绿。出现改写/删除
    **逐条列名+理由**于本票 Comments,评审轴勾稽(禁丢旧行为证据)。
 4. **新增(3 枚,Q7)**:teardown 后旧 tick 失败侧不置 outage;teardown 后
    重挂恢复跟随;StrictMode 双挂载不产生双 tick 落回。
-5. useOwner.test 7 its 不动(属主令牌契约,不吞并)。
+5. useOwner.test 11 tests 不动(属主令牌契约,不吞并)。
 
 ## 验收门
 
@@ -112,3 +113,10 @@ follow 开始(现 :52)。#1 建/删 op、#2 trigger、#3 逐 tick 均**不**清�
 - react-locality 门禁绿(新符号只住 react/ 与 testing/,根入口零沾)。
 
 ## Comments
+
+- (2026-11-02 立票即纠)计数漂移记档:初稿写「books 11 + chapter 7 +
+  task 6 its / useOwner 7 its」,grep `^\s*it\(` 漏掉 `it.each` 展开数;
+  立票 commit(52e531d)的 pre-commit 全链跑出真相——chapterTranslation
+  **17**、progressSession **33**(02 票面)、useOwner **11**,bookmarks 11 与
+  taskFollower 6 恰好无 each。已按 vitest 实数修正本票与 spec;教训入档:
+  票面测试计数以跑套件的输出为准,grep 源行只当下界。

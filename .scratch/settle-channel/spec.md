@@ -38,7 +38,7 @@ ReaderPage.tsx:415 restoreRef(consume-once,非裁决)。
    站点既有用例力争零改写**(公开面与 mock 边界不变即可 verbatim 绿);
    出现改写须逐条列名+理由,评审轴勾稽——此系原「改写是目的本身」表述经
    Codex F10(实现与测试同改丢证据为 Top3 风险)评审后的细化,R3 已拍。
-   属主令牌契约测试(useOwner.test 7 its)不吞并。
+   属主令牌契约测试(useOwner.test 11 tests)不吞并。
 5. **Q6 清旗语义(B)**:通道只保证两条凭票裁决写入(新鲜失败→起旗、新鲜
    成功→清旗);意图侧清旗 = 显式 `channel.clear()`,清旗全清单进各票;
    run 从不在开始自动清旗(逐 tick 清会让 outage 闪烁、建删 op 多眨眼)。
