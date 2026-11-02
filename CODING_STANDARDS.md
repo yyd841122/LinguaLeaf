@@ -394,6 +394,34 @@ it. Platform facts a stub or fixture answers (chrome.*, network, baked
 assets) additionally need a static check against their declaration, because
 no stub can prove a grant.
 
+## No-change claims test against a lit state; reviewers probe with a mutation
+
+A test asserting that a behavior does NOT change something — a flag stays
+down, a list stays put, a notice stays quiet — must first put that something
+into the distinguishing state, then run the behavior, then assert the
+no-change. From the resting state the assertion is vacuous: the mutant that
+breaks the claim (clear the flag on a stale success, raise it on a stale
+failure) passes the same green. The reviewer-side probe runs the same idea
+backwards — for a diff (or ticket) claiming "tests pin behavior X", flip X
+in the head and name the test that goes red; if none does, the evidence gap
+is the finding. Promise-chain state writes also flush inside `act` before
+the flag is read — an unflushed read passes vacuously on the stale value.
+
+Why: settle-channel 01's Codex review mutation-verified three mutants
+(verdict before landed; clear after fresh; stale success clears the flag)
+surviving all ten kernel tests and the twelve suite scenarios — the suite's
+stale-success case landed from a dark flag in every host
+(.scratch/settle-channel/issues/01-channel-and-simple-sites.md, review
+threadId 01a19c79). The fix (b7ba61c) re-armed every no-change scenario from
+a raised flag, added the suite's applied() observation, and proved the catch
+by injecting the mutant: four reds, including the pre-existing bookmarks
+stale-delete pin.
+
+At review: when a diff adds or touches a "stays / does not / nothing" test,
+check the state it starts from distinguishes pass from fail; when a ticket
+or wrap-up claims test evidence for a behavior, run the mutation in the head
+before trusting the green.
+
 ## Lookup tables keyed by external strings probe with hasOwn
 
 A plain object used as a lookup table (`ns -> rules`, `code -> label`) is

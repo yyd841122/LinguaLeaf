@@ -26,6 +26,10 @@ Real-browser verification and live-DB diagnosis — acceptance disputes, flows n
 
 Node-driver end-to-end against a running server — mock translator, orphan-port discipline: `docs/agents/local-e2e.md`.
 
+### Delegation lanes
+
+Which side implements and which reviews (Claude direct vs Codex sandbox), the selection rule, threadId recording, caller checkpoints: `docs/agents/delegation-lanes.md`.
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**

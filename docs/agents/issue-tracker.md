@@ -17,7 +17,12 @@ Issues and specs for this repo live as markdown files in `.scratch/`.
   re-verify when claiming, and record a drift in the ticket's `## Comments`
   while correcting the spec (per-book-toggles 01's spec said 两个字号 where the
   code had three; jump-target-protocol 01's spec said 12 target tests where
-  the code had 9 — both were transcribed upstream and caught only downstream).
+  the code had 9 — both were transcribed upstream and caught only
+  downstream). Test counts come from a test run's output, never a source
+  grep — `grep 'it('` misses `it.each` expansions (settle-channel 01's spec
+  said 7 where the run had 17); counts quoted into commit messages are
+  copied verbatim from the latest actual run, never computed (the fix
+  commit said 567 where the run had 566, then amended).
 - 收官审查门与 `/implement` 内置 review 的分工:独立门(cc-suite lane)聚焦内置
   review 看不见的面——真机行为、跨端一致性、独立模型视角;票面确要整 diff 双跑时
   明说「冗余可接受」(extension-reader 07 双跑重合约六成,成本一次 Codex 全程)。
