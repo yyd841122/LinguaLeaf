@@ -298,6 +298,7 @@ settleRaceSuite({
         };
       },
       failed: () => result.current.outage,
+      applied: () => onTick.mock.calls,
       invalidate: () => act(() => result.current.invalidate()),
     };
   },

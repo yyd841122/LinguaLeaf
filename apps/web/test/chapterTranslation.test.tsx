@@ -409,14 +409,27 @@ describe("useChapterTranslation follow", () => {
 
 // The same four adjudication claims, run against the real trigger flow
 // (settle-channel 01). Invalidate point = the route identity key change
-// (chapterNumber), the owner's own staleness boundary.
+// (chapterNumber), the owner's own staleness boundary. The suite arms two
+// ops before settling either, so the POST stub queues one deferred per
+// call — arms at different chapters (the invalidating rerender lands
+// mid-scenario) must each get their own pending response.
 settleRaceSuite({
   createHarness: async () => {
-    let post = deferred<Response>();
-    stubTranslateFetch({
-      postResponse: () => post.promise,
-      getResponse: () => Promise.resolve(new Response(JSON.stringify(chapter))),
+    const postQueue: ReturnType<typeof deferred<Response>>[] = [];
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? "GET";
+      if (method === "POST" && url.endsWith("/translate")) {
+        const d = deferred<Response>();
+        postQueue.push(d);
+        return d.promise;
+      }
+      if (method === "GET" && /\/api\/books\/\d+\/chapters\/\d+$/.test(url)) {
+        return new Response(JSON.stringify(chapter));
+      }
+      throw new Error(`Unexpected request: ${method} ${url}`);
     });
+    vi.stubGlobal("fetch", fetchMock);
     const handlers = callbacks();
     const { result, rerender } = renderHook(
       ({ chapterNumber }) =>
@@ -431,23 +444,23 @@ settleRaceSuite({
     await act(async () => {});
     return {
       async arm() {
-        post = deferred<Response>();
         act(() => result.current.start());
-        const current = post;
+        const d = postQueue[postQueue.length - 1]!;
         return {
           resolve: async (value?: unknown) => {
             await act(async () =>
-              current.resolve(value instanceof Response ? value : accepted())
+              d.resolve(value instanceof Response ? value : accepted())
             );
           },
           reject: async () => {
             await act(async () =>
-              current.resolve(new Response(null, { status: 500 }))
+              d.resolve(new Response(null, { status: 500 }))
             );
           },
         };
       },
       failed: () => result.current.startFailed,
+      applied: () => handlers.onTranslationState.mock.calls,
       invalidate: () => rerender({ chapterNumber: 3 }),
     };
   },

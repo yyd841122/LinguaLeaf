@@ -310,6 +310,7 @@ settleRaceSuite({
         };
       },
       failed: () => result.current.failed,
+      applied: () => result.current.bookmarks,
       invalidate: () => rerender({ bookId: 2 }),
     };
   },

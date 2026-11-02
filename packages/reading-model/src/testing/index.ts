@@ -125,6 +125,11 @@ export type SettleHarness = {
   // The channel flag as the station exposes it (failed / startFailed /
   // outage — the station's own name for it).
   failed: () => boolean;
+  // What the station has applied through its fresh successes so far (the
+  // merged rows, the patched state, the landed ticks). The suite uses it
+  // to prove a stale round applied nothing — flag silence alone cannot
+  // tell "discarded" from "cleared" (review Q2).
+  applied: () => unknown[];
   // Make every ticket the station has minted so far stale, the station's
   // own way (its real invalidate point — identity-key change, public
   // invalidate, teardown).
@@ -152,21 +157,34 @@ export function settleRaceSuite(suite: {
       expect(harness.failed()).toBe(true);
     });
 
-    it("clears the flag when a fresh success lands after a failure", async () => {
+    it("clears the flag and applies when a fresh success lands after a failure", async () => {
       const harness = await suite.createHarness();
-      await (await harness.arm()).reject();
+      // Two arms before either settles: the recovery must come from the
+      // success's own verdict, not from an arm-side clear that an
+      // interleaved start performs anyway (review Q2).
+      const loser = await harness.arm();
+      const winner = await harness.arm();
+      await loser.reject();
       expect(harness.failed()).toBe(true);
-      await (await harness.arm()).resolve();
+      expect(harness.applied()).toEqual([]);
+      await winner.resolve();
       expect(harness.failed()).toBe(false);
+      expect(harness.applied().length).toBeGreaterThan(0);
     });
 
-    it("leaves the flag untouched when a stale success lands late", async () => {
+    it("leaves flag and application untouched when a stale success lands late", async () => {
       const harness = await suite.createHarness();
-      const pending = await harness.arm();
+      const stale = await harness.arm();
       await harness.invalidate();
-      const before = harness.failed();
-      await pending.resolve();
-      expect(harness.failed()).toBe(before);
+      // A fresh failure of the current owner lights the flag first: only
+      // then can "a stale success cleared it" be caught red-handed
+      // (review Q2 — from a dark flag the mutant stays green).
+      await (await harness.arm()).reject();
+      expect(harness.failed()).toBe(true);
+      const appliedBefore = harness.applied();
+      await stale.resolve();
+      expect(harness.failed()).toBe(true);
+      expect(harness.applied()).toEqual(appliedBefore);
     });
 
     it("writes nothing when a stale failure arrives late", async () => {
@@ -176,6 +194,7 @@ export function settleRaceSuite(suite: {
       const before = harness.failed();
       await pending.reject();
       expect(harness.failed()).toBe(before);
+      expect(harness.applied()).toEqual([]);
     });
   });
 }
