@@ -6,7 +6,7 @@ rem Resolve the serving port from .env (default 3000) so the health check
 rem and the browser URL follow the user's configuration. Node writes the
 rem value to a file and set /p reads it: for /f mangles quoted commands
 rem containing special characters, redirection does not.
-"runtime\node.exe" --env-file-if-exists=.env -e "console.log(process.env.PORT ?? 3000)" > ".data\port.tmp" 2>nul
+"runtime\node.exe" --env-file-if-exists=.env -e "console.log(process.env.PORT||3000)" > ".data\port.tmp" 2>nul
 set /p PORT=<".data\port.tmp"
 del ".data\port.tmp" >nul 2>&1
 rem Already running? Health check first, then just open the browser.
@@ -27,11 +27,28 @@ if not exist "node_modules" (
     pause
     exit /b 1
   )
-  rem Fetch the native SQLite binding: its install script was skipped above,
-  rem prebuild-install downloads the platform prebuild here.
-  call "runtime\npm.cmd" rebuild better-sqlite3 --no-audit --no-fund
+  rem Native binding: ci skipped lifecycle scripts. The installer ships the
+  rem matching prebuild (_prebuilds\); the network rebuild is only the
+  rem fallback for payloads from before it was bundled.
+  if not exist "node_modules\better-sqlite3\build\Release\better_sqlite3.node" (
+    if exist "_prebuilds\better_sqlite3.node" (
+      mkdir "node_modules\better-sqlite3\build\Release" 2>nul
+      copy /y "_prebuilds\better_sqlite3.node" "node_modules\better-sqlite3\build\Release\" >nul
+    )
+  )
+  if not exist "node_modules\better-sqlite3\build\Release\better_sqlite3.node" (
+    echo Fetching SQLite native module ^(needs internet, about 1 minute^)...
+    call "runtime\npm.cmd" rebuild better-sqlite3 --no-audit --no-fund
+    if errorlevel 1 (
+      echo SQLite native module setup failed. Check your internet connection, then run this again.
+      pause
+      exit /b 1
+    )
+  )
+  rem Load-verify the binding before declaring the install ready.
+  "runtime\node.exe" -e "require('better-sqlite3')" >nul 2>&1
   if errorlevel 1 (
-    echo SQLite native module setup failed. Check your internet connection, then run this again.
+    echo SQLite native module failed to load. See README-install.txt troubleshooting.
     pause
     exit /b 1
   )

@@ -40,8 +40,12 @@ const run = (cmd, args, opts = {}) => {
   }
 };
 
-const download = (url, dest) => {
-  const r = spawnSync("curl", ["-fL", "--noproxy", "*", "-o", dest, url], {
+const download = (url, dest, { viaProxy = false } = {}) => {
+  const args = ["-fL"];
+  // GitHub release downloads stall at a few KB/s on the direct route from
+  // this network; nodejs.org is fast direct. Pick per source.
+  if (!viaProxy) args.push("--noproxy", "*");
+  const r = spawnSync("curl", [...args, "-o", dest, url], {
     stdio: "inherit",
   });
   if (r.status !== 0) {
@@ -101,6 +105,7 @@ for (const name of [
 }
 
 const nodeZip = path.join(CACHE, `node-${NODE_VERSION}-win-x64.zip`);
+// Cached copy is trusted only above 20 MB (a real win-x64 zip is ~36 MB).
 if (!fs.existsSync(nodeZip) || fs.statSync(nodeZip).size < 20 * 1024 * 1024) {
   console.log(`==> download ${NODE_ZIP_URL}`);
   download(NODE_ZIP_URL, nodeZip);
@@ -125,6 +130,51 @@ fs.renameSync(
   path.join(STAGE, "payload/app/runtime")
 );
 fs.rmSync(nodeRaw, { recursive: true, force: true });
+
+// Ship the better-sqlite3 prebuild matching the bundled runtime: production
+// installs skip lifecycle scripts, and the prebuild-install fallback needs
+// GitHub access on the target machine — flaky networks stalled first launch
+// there. The ABI comes from the actual staged runtime, never guessed.
+console.log("==> bundle better-sqlite3 win-x64 prebuild");
+const bs3Version = JSON.parse(
+  fs.readFileSync(path.join(ROOT, "package-lock.json"), "utf8")
+).packages["node_modules/better-sqlite3"].version;
+const abi = spawnSync(
+  path.join(STAGE, "payload/app/runtime/node.exe"),
+  ["-p", "process.versions.modules"],
+  { encoding: "utf8" }
+);
+if (abi.status !== 0) {
+  console.error("build-installer: could not read runtime ABI");
+  process.exit(abi.status ?? 1);
+}
+const nodeAbi = abi.stdout.trim();
+const prebuildUrl = `https://github.com/WiseLibs/better-sqlite3/releases/download/v${bs3Version}/better-sqlite3-v${bs3Version}-node-v${nodeAbi}-win32-x64.tar.gz`;
+const prebuildTar = path.join(
+  CACHE,
+  `better-sqlite3-v${bs3Version}-node-v${nodeAbi}-win32-x64.tar.gz`
+);
+if (!fs.existsSync(prebuildTar) || fs.statSync(prebuildTar).size < 100 * 1024) {
+  console.log(`==> download ${prebuildUrl}`);
+  download(prebuildUrl, prebuildTar, { viaProxy: true });
+}
+const prebuildRaw = path.join(STAGE, "bs3-raw");
+fs.rmSync(prebuildRaw, { recursive: true, force: true });
+fs.mkdirSync(prebuildRaw, { recursive: true });
+run("tar", ["-xf", prebuildTar, "-C", prebuildRaw]);
+const nodeFile = "build/Release/better_sqlite3.node";
+if (!fs.existsSync(path.join(prebuildRaw, nodeFile))) {
+  console.error(
+    "build-installer: prebuild tar lacks build/Release/better_sqlite3.node"
+  );
+  process.exit(1);
+}
+fs.mkdirSync(path.join(STAGE, "payload/app/_prebuilds"), { recursive: true });
+fs.copyFileSync(
+  path.join(prebuildRaw, nodeFile),
+  path.join(STAGE, "payload/app/_prebuilds/better_sqlite3.node")
+);
+fs.rmSync(prebuildRaw, { recursive: true, force: true });
 
 const iss = `[Setup]
 AppId={{${APP_ID}}}
@@ -158,7 +208,7 @@ Filename: "{app}\\start-lingualeaf.bat"; Description: "立即启动 LinguaLeaf(�
 const issPath = path.join(STAGE, "installer.iss");
 // BOM is required: without it ISCC reads the file as ANSI and the Chinese
 // [Messages]/[Icons] strings garble.
-fs.writeFileSync(issPath, "﻿" + iss);
+fs.writeFileSync(issPath, "\uFEFF" + iss);
 
 const iscc = ISCC_CANDIDATES.find((p) => fs.existsSync(p));
 if (!iscc) {
