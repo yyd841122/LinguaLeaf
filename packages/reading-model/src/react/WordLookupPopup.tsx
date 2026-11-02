@@ -6,6 +6,7 @@ import { speakWord } from "../speak.js";
 import type { WordLookupResult, WordStatus } from "../word-lookup.js";
 import type { StatusApplied } from "../status-join.js";
 import { useOwner } from "./useOwner.js";
+import { useSettle } from "./useSettle.js";
 
 export type WordClick = { word: string; point: ClickPoint };
 export interface WordLookupGateway {
@@ -73,22 +74,24 @@ export function WordLookupPopup({
   const [state, setState] = useState<LookupState>({ phase: "loading" });
   // A save failure belongs to the word it was attempted for: clicking
   // another word restarts the popup's story, and the old notice must not
-  // outlive it (CODING_STANDARDS, credibility).
-  const [saveFailed, setSaveFailed] = useState(false);
-  // In-flight saves follow their own PUT, not the word change: markers key
-  // by statusKey and live exactly as long as that PUT, so an old save
+  // outlive it (CODING_STANDARDS, credibility). The settle channel owns
+  // the notice's verdicts — fresh failure raises, fresh success clears,
+  // a stale round writes nothing — and the flag rides its owner (below).
+  // In-flight saves follow their own PUT, not the word change: markers
+  // key by statusKey and live exactly as long as that PUT, so an old save
   // settling cannot erase the new word's marker mid-write
   // (CODING_STANDARDS, per-entity async UI state keys by entity). A word
   // revisited while its write is still in flight shows its row disabled
   // until the write lands — the owner token's key-comparison revival rule.
   const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set());
   const owner = useOwner(word);
+  const settle = useSettle(owner);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setState({ phase: "loading" });
-    setSaveFailed(false);
+    settle.clear();
     gateway
       .lookup(word)
       .then((lookup) => {
@@ -113,34 +116,31 @@ export function WordLookupPopup({
     if (state.phase !== "found") return;
     const key = statusKey(state.lookup);
     if (savingKeys.has(key)) return;
-    setSaveFailed(false);
+    // The arm-side clear is the popup's recovery by design: re-clicking
+    // dismisses the old notice before the retry leaves.
+    settle.clear();
     setSavingKeys((keys) => new Set(keys).add(key));
     const applied = {
       word: state.lookup.word,
       lemma: state.lookup.lemma,
       status,
     };
-    const ticket = owner.mark();
-    gateway
-      .setStatus(key, status)
-      .then(() => {
+    // The marker retires when the attempt settles either way — run's
+    // outcome carries the rejection, so the finally always fires.
+    void settle
+      .run(gateway.setStatus(key, status), {
         // The saved fact belongs to the word even after the popup moves
-        // (popup-status-backedge spec, decision 3).
-        onStatusApplied(applied);
+        // (popup-status-backedge spec, decision 3) — landed is unconditional.
+        onLanded: () => onStatusApplied(applied),
         // A click since this PUT started moved the popup to another word:
         // the stale verdict must not patch it (the reading page's rule for
         // a navigation's stale trigger response).
-        if (ticket.stale()) return;
-        setState((current) =>
-          current.phase === "found"
-            ? { ...current, lookup: { ...current.lookup, status } }
-            : current
-        );
-      })
-      .catch(() => {
-        // Nor does a failed attempt's notice follow the reader to the
-        // next word.
-        if (!ticket.stale()) setSaveFailed(true);
+        onFresh: () =>
+          setState((current) =>
+            current.phase === "found"
+              ? { ...current, lookup: { ...current.lookup, status } }
+              : current
+          ),
       })
       .finally(() =>
         setSavingKeys((keys) => {
@@ -253,7 +253,7 @@ export function WordLookupPopup({
               </button>
             ))}
           </div>
-          {saveFailed ? (
+          {settle.failed ? (
             <p className="lookup-status" role="status">
               状态保存失败，请重试。
             </p>

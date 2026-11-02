@@ -75,6 +75,13 @@ server left the shelf showing a stuck importing row with no hint — the human
 reported 「页面上没有任何提示」 and both review axes missed it
 (`.scratch/lingualeaf-v1/issues/08-import-progress-tolerance.md`).
 
+The raising and clearing of that notice is adjudicated, not hand-rolled: a
+fresh failure raises the flag, a fresh success clears it, a stale round
+writes nothing — writes that belong to the settle channel (useSettle,
+GLOSSARY 落回裁决), not to a bare `useState` beside the retry loop. A new
+async station adopts the channel rather than pairing its own flag with its
+own ticket checks (`.scratch/settle-channel/`).
+
 At review: for every catch in a retry loop, name what the user sees after N
 consecutive failures. "Nothing — the next tick retries" is the bug.
 
@@ -363,6 +370,15 @@ over route A with a server-side change between them could settle in the
 wrong order, and the site kept its cleanup
 (.scratch/owner-token/spec.md, 2026-10-27). The premise was locked wrong at
 grilling time; the gate, not the review, is what held.
+
+The adjudication mechanism itself is not re-derived per station: replacing
+a counter or a cleanup flag with tokens goes through the owner token and
+the settle channel (useSettle) — the ext reader's reopenSeq counter became
+a per-click invalidate and its bulk-read cancelled flag a teardown
+invalidate (settle-channel 02, `.scratch/settle-channel/`). Invalidate's
+permanent revocation is what keeps an A→A re-click from reviving the first
+click's answer — the revival this entry names, which a key comparison
+cannot prevent.
 
 At review: when a diff deletes an effect cleanup flag or swaps it for a
 comparison-based guard, trace the guard through a re-entrant key cycle

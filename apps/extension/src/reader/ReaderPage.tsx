@@ -1,4 +1,8 @@
-import { wordFromEvent } from "@lingualeaf/reading-model/react";
+import {
+  useOwner,
+  useSettle,
+  wordFromEvent,
+} from "@lingualeaf/reading-model/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
@@ -320,20 +324,30 @@ export function ReaderPage({
 
   // 重开扩展回到原处: a recents click opens the stored book at its saved
   // position (GLOSSARY: 扩展阅读页 remembers, the storage seam persists).
-  // The open is async; only the latest click's answer may land — a slow
-  // A must not replace a B the reader already chose.
-  const reopenSeq = useRef(0);
-  const reopenDocument = async (entry: LibraryEntry) => {
-    const seq = ++reopenSeq.current;
-    const book = await library.openDocument(entry.id);
-    if (!book || seq !== reopenSeq.current) return;
-    setWordStates(new Map());
-    restoreRef.current = entry.progress;
-    setState({
-      phase: "reading",
-      docId: entry.id,
-      book,
-      chapterIndex: entry.progress.chapterIndex,
+  // The open is async; the settling channel (GLOSSARY 落回裁决) drops every
+  // answer but the latest click's: each click invalidates the previous
+  // click's ticket before its own leaves, so a slow A cannot replace a B
+  // the reader already chose — and an A→A re-click cannot revive the first
+  // answer either (invalidate kills for good; the seq counter this
+  // replaces compared, which is the revival trap CODING_STANDARDS names).
+  // A failed open rides the outcome unspoken: no error surface, the
+  // picker stays for another try.
+  const reopenOwner = useOwner();
+  const reopenSettle = useSettle(reopenOwner);
+  const reopenDocument = (entry: LibraryEntry) => {
+    reopenOwner.invalidate();
+    void reopenSettle.run(library.openDocument(entry.id), {
+      onFresh: (book) => {
+        if (!book) return;
+        setWordStates(new Map());
+        restoreRef.current = entry.progress;
+        setState({
+          phase: "reading",
+          docId: entry.id,
+          book,
+          chapterIndex: entry.progress.chapterIndex,
+        });
+      },
     });
   };
 
@@ -345,6 +359,15 @@ export function ReaderPage({
   // Per-chapter 生词本 states for the tints. Bulk reads land by merge:
   // keys the local map already holds win, so a popup patch (or a bulk read
   // that began before it) can never revert what the reader just changed.
+  // The read adjudicates through its own channel: teardown invalidates the
+  // read's ticket (the cancelled flag this replaces), so a chapter's late
+  // answer cannot speak for the chapter the reader moved to. A failed read
+  // stays silent — the tint is best-effort, and the flag has no surface.
+  const tintOwner = useOwner();
+  const tintSettle = useSettle(tintOwner);
+  // Destructured: the channel object follows the flag, but run is stable —
+  // the effect must not re-arm because a read failed somewhere.
+  const runTintRead = tintSettle.run;
   const book = state.phase === "reading" ? state.book : null;
   const chapterIndex = state.phase === "reading" ? state.chapterIndex : -1;
   useEffect(() => {
@@ -360,11 +383,8 @@ export function ReaderPage({
           keys.add(resolvedStore.stateKey(segment.word));
       }
     }
-    let cancelled = false;
-    resolvedStore
-      .statesFor([...keys])
-      .then((found) => {
-        if (cancelled) return;
+    void runTintRead(resolvedStore.statesFor([...keys]), {
+      onFresh: (found) => {
         setWordStates((current) => {
           const next = new Map(current);
           for (const [key, value] of found) {
@@ -372,15 +392,12 @@ export function ReaderPage({
           }
           return next;
         });
-      })
-      .catch(() => {
-        // The tint read is best-effort: a failed read leaves the words
-        // untinted rather than crashing the reading view.
-      });
+      },
+    });
     return () => {
-      cancelled = true;
+      tintOwner.invalidate();
     };
-  }, [book, chapterIndex, resolvedStore]);
+  }, [book, chapterIndex, resolvedStore, runTintRead, tintOwner]);
 
   // Progress persistence: on a scroll, the topmost visible block index is
   // written to the seam, throttled — a closed tab loses at most one
@@ -646,7 +663,7 @@ export function ReaderPage({
                 <button
                   type="button"
                   className="reader-recent"
-                  onClick={() => void reopenDocument(entry)}
+                  onClick={() => reopenDocument(entry)}
                 >
                   {entry.title}
                 </button>

@@ -712,6 +712,42 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     );
     expect(screen.getByText("Other")).toBeInTheDocument();
   });
+
+  it("a failed reopen stays silent on the picker and stays retryable", async () => {
+    const base = createMemoryLibraryStore();
+    const flaky: { reject: boolean } = { reject: true };
+    const library: LibraryStore = {
+      ...base,
+      openDocument(id) {
+        if (flaky.reject) {
+          flaky.reject = false;
+          return Promise.reject(new Error("storage hiccup"));
+        }
+        return base.openDocument(id);
+      },
+    };
+    renderWithSeams({ library });
+    await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
+    await screen.findByText("First");
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+
+    // The open fails: no error phase, no dead end — the picker with its
+    // recents stays usable, and nothing rethrows.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Journey Book" })
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    );
+    expect(document.querySelector('input[type="file"]')).not.toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Journey Book" })
+    ).toBeInTheDocument();
+
+    // Another try lands: the same recents entry reopens the document.
+    fireEvent.click(screen.getByRole("button", { name: "Journey Book" }));
+    expect(await screen.findByText("First")).toBeInTheDocument();
+  });
 });
 
 wordLookupRaceSuite({

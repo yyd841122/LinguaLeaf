@@ -7,7 +7,11 @@ import {
 } from "./readingProgress";
 import type { BookmarkTarget } from "./bookmarks";
 import { readingBlockSelector } from "./readingBlocks";
-import { useOwner, type OwnerTicket } from "@lingualeaf/reading-model/react";
+import {
+  useOwner,
+  useSettle,
+  type OwnerTicket,
+} from "@lingualeaf/reading-model/react";
 
 const SAVE_DEBOUNCE_MS = 500;
 // How long after the restore jump scroll events stay ignored: they are the
@@ -107,10 +111,12 @@ export function useProgressSession(options: {
     jumpedToOp: number | null;
   } | null>(null);
 
-  // Set when a save fails, cleared when one lands: a retry loop's last
+  // The notice's adjudication rides the settle channel (GLOSSARY 落回裁
+  // 决): a fresh failed flush raises its flag, a fresh landed flush
+  // clears it, a stale round writes nothing. A retry loop's last
   // rendered state must not outlive its credibility (CODING_STANDARDS,
   // audit 2026-10-23 — the silence made persistent outages look saved).
-  const [saveFailed, setSaveFailed] = useState(false);
+  const settle = useSettle(owner);
 
   // The notice's owner ticket (GLOSSARY 属主令牌), taken when the
   // autosave session arms. Every flush this arm puts in flight speaks
@@ -130,16 +136,12 @@ export function useProgressSession(options: {
     const pending = pendingSaveRef.current;
     pendingSaveRef.current = null;
     if (pending) {
-      const ticket = saveFeedbackTicketRef.current;
-      void saveReadingProgress(bookId, pending)
-        .then(() => {
-          if (ticket && !ticket.stale()) setSaveFailed(false);
-        })
-        .catch(() => {
-          // A failed save must never disturb reading; the next scroll
-          // retries, and this notice says the sync is not happening.
-          if (ticket && !ticket.stale()) setSaveFailed(true);
-        });
+      // The channel adjudicates: the flush still sends whatever the ref
+      // holds (a null — no armed session yet — sends and writes nothing),
+      // and only a fresh verdict moves the notice.
+      void settle.run(saveReadingProgress(bookId, pending), {
+        ticket: saveFeedbackTicketRef.current,
+      });
     }
   };
 
@@ -264,5 +266,5 @@ export function useProgressSession(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, progressLoaded, chapterNumber, bookId]);
 
-  return { saveFailed, armJumpTarget };
+  return { saveFailed: settle.failed, armJumpTarget };
 }
