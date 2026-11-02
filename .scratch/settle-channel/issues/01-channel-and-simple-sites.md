@@ -1,6 +1,6 @@
 # settle-channel 01:裁决通道内核 + settleRaceSuite + 简单三站
 
-Status: ready-for-agent
+Status: done
 
 来源:`../spec.md`(决策全录,维护者 2026-11-02 拍板)+ Codex 计划评审
 (threadId `01a19c40-a717-7661-85f2-017407816e27`)。基线:HEAD before this
@@ -120,3 +120,39 @@ follow 开始(现 :52)。#1 建/删 op、#2 trigger、#3 逐 tick 均**不**清�
   **17**、progressSession **33**(02 票面)、useOwner **11**,bookmarks 11 与
   taskFollower 6 恰好无 each。已按 vitest 实数修正本票与 spec;教训入档:
   票面测试计数以跑套件的输出为准,grep 源行只当下界。
+- (2026-11-02 收官)实现道翻转记档:维护者拍板将 Q9 实现道由「Codex 沙箱
+  实现」改为「**Claude 实现、Codex 审核**」。实现 commit 3dcea27 + 修笔
+  b7ba61c(自 e4ca1e8 amend,仅 message 计数 567→566 一处纠正)系编排会话
+  直接实现,无 Codex threadId;本条与下条评审 threadId 共同构成
+  「实现者 ≠ 评审者」的可溯链。
+- (2026-11-02 收官)Codex 实现审核(gpt-6.1-sol/high read-only,threadId
+  `01a19c79-8e1a-7ad3-902f-3f1951f49d97`,job audit-mvzay9yt-u02gmb):
+  裁决 **NEEDS FIXES**——生产实现符合票面(九语义逐条过、三站矩阵逐格过、
+  五处清旗落点逐一确认、零生产逻辑缺陷),唯两处**测试证据强度**缺口须修
+  (变异验证:验票移到 landed 前 / 清旗移到 fresh 后 / 陈旧成功也清旗,
+  三个变异下原测试仍全绿)。修笔 b7ba61c 全收:Q1 内核——spy ticket 三点
+  定序(landed→verdict→fresh)、landed 内 invalidate 钉「先落页后验陈旧」、
+  抛错两场景从已起旗态出发、null 票据从已起旗态钉全不写、两钩互不回退
+  用例;Q2 套件——SettleHarness 增 applied() 应用观察、新鲜恢复改双臂
+  先行、陈旧成功先起旗再落、chapter harness POST 逐调用排队。修笔过程
+  自抓两笔测试写法错(陈旧轮 spy 漏推 verdict;落回未裹 act 致清旗未提交
+  读旧态)——正是评审所指 vacuous pass 的活例。变异自证:生产注入「陈旧
+  成功也清旗」后新套件三宿 3 红 + 既有 bookmarks 陈旧删钉 1 红同抓,
+  还原后全绿。
+- (2026-11-02 收官)记档不修:① Codex 精度纠错——三站实际新增 195 行
+  删 0 行(444 计数含内核新文件);三站旧测试去新增 import 后与基线逐字节
+  一致,零语义漂移;② Codex 沙箱独立复跑 typecheck/lint/react-locality
+  EXIT=0、非 HTTP 有效验证 40 文件 406 tests 全绿(HTTP seam 与需写盘的
+  schema/harness 不计,EPERM/EROFS 系沙箱限制非缺陷);③ Codex 另于内存
+  补四枚边界测试(landed 内 invalidate、已起旗时 hook 抛错、null 保旗、
+  clear 与并发落回交错)全过——生产语义正确性的附加证据;④ #2 harness 的
+  chapterNumber 身份变化只证明单向离开,A→B→A 比较型票据复活系 useOwner
+  基线语义(word-lookup-kernel 票有同款 pinned-not-endorsed),若改另票;
+  ⑤ 评审提醒:退出码不等于完整 verify 门——收官已显式补跑(见下条)。
+- (2026-11-02 收官)收官证据:caller 检查点显式补跑 `npm run verify`
+  **EXIT=0**(typecheck → vitest 566/566 → lint → sql/task/storage/react
+  四 locality 门 → manifest 门 → build);此前 pre-commit 全链已随
+  3dcea27 / b7ba61c 两 commit 各复跑一轮全绿。测试计数 539→566:实现
+  +25(内核 10 + 套件 12 + teardown 3)+ 修笔 +2(spy 定序重写计入原
+  10 枚内,新增 landed-invalidate 与 hooks-不回退两枚)。02 票(难站
+  #4/#5/#6/#7 + CODING_STANDARDS 回指)按拍板待立,踩在本票落地现实上写。
