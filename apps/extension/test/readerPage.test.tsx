@@ -716,12 +716,20 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
   it("a failed reopen stays silent on the picker and stays retryable", async () => {
     const base = createMemoryLibraryStore();
     const flaky: { reject: boolean } = { reject: true };
+    // The rejection is gated: it only fires inside the act below, so the
+    // assertions read the settled after-failure state, never a
+    // pre-rejection snapshot (CODING_STANDARDS, no-change claims flush
+    // inside act).
+    let release!: () => void;
+    const gated = new Promise<void>((r) => {
+      release = r;
+    });
     const library: LibraryStore = {
       ...base,
       openDocument(id) {
         if (flaky.reject) {
           flaky.reject = false;
-          return Promise.reject(new Error("storage hiccup"));
+          return gated.then(() => Promise.reject(new Error("storage hiccup")));
         }
         return base.openDocument(id);
       },
@@ -730,15 +738,24 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
     fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
-
-    // The open fails: no error phase, no dead end — the picker with its
-    // recents stays usable, and nothing rethrows.
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
     );
-    await waitFor(() =>
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
-    );
+
+    // Let the rejection and its landing complete before reading anything.
+    await act(async () => {
+      release();
+      await gated;
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    // Silent by contract: no error phase, no alert, no status notice.
+    // The error phase would keep the picker and recents rendered, so the
+    // discriminating assertions are the absent failure surfaces, not the
+    // picker's presence.
+    expect(document.querySelector(".reader-error")).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
     expect(document.querySelector('input[type="file"]')).not.toBeNull();
     expect(
       screen.getByRole("button", { name: "Journey Book" })
