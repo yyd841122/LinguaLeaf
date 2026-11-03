@@ -1,6 +1,6 @@
 # annotated-blocks-kernel:逐词渲染内核两宿收编
 
-Status: ready-for-agent
+Status: done
 
 来源:architecture-review-20261102 候选 2(Strong;报告 gitignore)。决策八锁
 (2026-11-03,维护者「全按推荐」,含 Codex review-plan 评审吸收;评审稿
@@ -147,3 +147,40 @@ role/tabindex 无键盘)不迁,只动章节委托。
   独立跑通 typecheck + lint。ADR-0006 复用范围澄清(契约 6):本票把 React
   组件收进 reading-model/react,是该条款由 05a204d 开启的扩大路线的延续;
   ADR 文本本身不动。
+- 2026-11-03 (Claude): Lane B 实现收官。Codex 沙箱(gpt-6.1-sol/high
+  workspace-write,job `implement-mw07f3uf-qbccj3`,threadId
+  `01a19fb9-a985-7a32-aca1-12390ceb82fc`)一次通过,禁 git 纪律遵守
+  (.scratch/ 零触碰),编排侧按其三阶段 manifest 切片三 commit:
+  ①`ec332e2` 证词钉(两宿测试纯追加 342 行,零删除行,绿于现行手抄 JSX);
+  ②`2fff857` 纯迁移(内核 annotated-blocks.tsx + 共享套件
+  annotated-blocks-suite.ts + 两宿手抄体退役,既有断言零改写——切前切后
+  两轮 diff 复核删除行均为 0);③`b7aec49` CSS 上收(fragment 扩 + web
+  副本删 + generated 再生同 commit + 三枚 wiring/Generated 钉)。caller
+  检查点 1:②树 `npm run verify` EXIT=0,48 files 608 passed | 2 skipped
+  (610);检查点 2:最终树 EXIT=0,48 files 611 passed | 2 skipped (613)
+  (基线 582→+29 = 两宿 stage1+2 钉 26 + stage3 钉 3,账目逐项对齐)。
+  测试计数以实跑输出为准逐字抄。
+- 2026-11-03 (Claude): 双轴评审记档(基线 = 本票首个实现 commit 之前的
+  HEAD `70ef839`,Standards + Spec 一次覆盖)。Standards 零硬违规,5 条
+  judgement-call 记档不修:(i) stage-2/3 测试接线(fireEvent glue、CSS
+  fragment 读断言)两宿逐字重复——决策 6 锁「两宿各以自己的形态挂载」,
+  套件工厂头注释明示只管共享 DOM 契约,宿侧接线重复系设计对价;嫌重可后
+  续把 glue 提进 testing/;(ii) web ReadingView 的 BlockPayload→
+  AnnotatedBlock 内联映射可提 toAnnotatedBlock 具名函数;(iii) stage-2/3
+  import 中置——append-only 切片的副产物,零改写承诺下不动文件头部
+  import 区;(iv) stage-1 钉与共享套件主张部分重叠——先钉后迁本义(迁移
+  包络 vs 共享契约分属两证);(v) generated 产物格式不入评审(头部声明)。
+  Spec 八锁逐条核验成立、零缺失、零范围蔓延(PDF overlay 零 hunk;ext
+  data-position 因 ExtBlock 无 position 字段而照旧省略;showSlots=
+  showIpa&&paired 对 ext 无 DOM 变化——segmentOriginal 不配对时槽位全
+  null)。保真度注一条:web adapter 比 Q2 锁定字面形
+  `(_w, i) => block.wordStatuses[i] ?? null` 多 `block.kind === "sentence"`
+  三元守卫——statusOf 在 blocks.map 全 kind 边界构造,TS 窄化后才可访问
+  wordStatuses,内核只在句子分支调用,语义恒同,不修。
+- 2026-11-03 (Claude): ext 行为变化记档(决策 5/7 要求):b38b78b 起发出
+  的 word-settled 类自此有规则,ext known/ignored hover 退底色兑现
+  (ReaderPage.tsx 注释与 ADR-0005 声称的 withdraw 首次在 ext 成立)。
+  jsdom 对真实 hover/复制盲,wiring 以决策 6 清单五项静态对账钉全;浏览器
+  抽验不作本票 gate,留人工抽验:web/ext 各点一个 known 词确认 hover 无
+  底色、复制原句不含 IPA。关联票提醒:`.scratch/pdf-word-keyboard/`
+  (needs-triage)三个开放决策仍待拍板。
