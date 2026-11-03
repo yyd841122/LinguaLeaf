@@ -13,3 +13,9 @@ export {
   type SettleOutcome,
 } from "./useSettle.js";
 export { wordFromEvent } from "./wordFromEvent.js";
+export {
+  AnnotatedBlockView,
+  createWordHandlers,
+  type AnnotatedBlock,
+  type StatusReader,
+} from "./annotated-blocks.js";

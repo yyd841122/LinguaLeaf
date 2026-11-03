@@ -2333,3 +2333,57 @@ describe("ReadingView — annotated blocks characterization", () => {
     expect(event.defaultPrevented).toBe(false);
   });
 });
+
+// ─── annotated-blocks stage 2: shared suite, positional status adapter ───
+import {
+  AnnotatedBlockView as SharedAnnotatedBlockView,
+  createWordHandlers as sharedWordHandlers,
+} from "@lingualeaf/reading-model/react";
+import {
+  annotatedBlocksSuite,
+  type AnnotatedBlocksScenario,
+} from "@lingualeaf/reading-model/testing";
+
+annotatedBlocksSuite({
+  statusSource: "positional",
+  render(scenario) {
+    const tree = (scenario: AnnotatedBlocksScenario) => (
+      <section
+        {...(scenario.onWordClick
+          ? sharedWordHandlers(scenario.onWordClick)
+          : {})}
+      >
+        {scenario.blocks.map((block, index) => (
+          <SharedAnnotatedBlockView
+            key={index}
+            block={block}
+            showIpa={scenario.showIpa ?? true}
+            showTranslation={scenario.showTranslation ?? true}
+            statusOf={(word, wordIndex) => {
+              scenario.onStatusRead?.(word, wordIndex);
+              return block.kind === "sentence"
+                ? (block.statuses[wordIndex] ?? null)
+                : null;
+            }}
+          />
+        ))}
+      </section>
+    );
+    const view = render(tree(scenario));
+    return {
+      container: view.container,
+      rerender: (next) => view.rerender(tree(next)),
+    };
+  },
+  click: (target, point) =>
+    fireEvent.click(target, { clientX: point.x, clientY: point.y }),
+  keyDown(target, key) {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(target, event);
+    return event;
+  },
+});

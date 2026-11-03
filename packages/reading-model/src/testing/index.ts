@@ -248,3 +248,9 @@ export function settleRaceSuite(suite: {
     }
   });
 }
+
+export {
+  annotatedBlocksSuite,
+  type AnnotatedBlocksFixture,
+  type AnnotatedBlocksScenario,
+} from "./annotated-blocks-suite.js";

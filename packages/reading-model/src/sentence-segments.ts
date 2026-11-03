@@ -2,8 +2,8 @@ import { WORD_PATTERN } from "./word-pattern.js";
 
 // One rendered unit of a sentence block's original line: a run of non-word
 // text, or a word optionally carrying its IPA transcription. The rendering
-// stays with each frontend (JSX in the app, escaped HTML strings in the
-// export); what is shared is the walk and the pairing decision.
+// is shared by the React hosts through the React entry; the export builds
+// escaped HTML strings. Both use this walk and pairing decision.
 export type TextSegment = { kind: "text"; text: string };
 export type WordSegment = { kind: "word"; word: string; ipa: string | null };
 export type Segment = TextSegment | WordSegment;

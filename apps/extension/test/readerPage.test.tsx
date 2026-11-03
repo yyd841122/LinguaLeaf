@@ -1161,3 +1161,70 @@ describe("ReaderPage — annotated blocks characterization", () => {
     expect(dialog.style.top).toBe("95px");
   });
 });
+
+// ─── annotated-blocks stage 2: shared suite, lookup status adapter ───
+import {
+  AnnotatedBlockView as SharedAnnotatedBlockView,
+  createWordHandlers as sharedWordHandlers,
+} from "@lingualeaf/reading-model/react";
+import {
+  annotatedBlocksSuite,
+  type AnnotatedBlocksScenario,
+} from "@lingualeaf/reading-model/testing";
+import { segmentOriginal } from "@lingualeaf/reading-model";
+
+annotatedBlocksSuite({
+  statusSource: "lookup",
+  render(scenario) {
+    const tree = (scenario: AnnotatedBlocksScenario) => {
+      const states = new Map<string, VocabState | null>();
+      for (const block of scenario.blocks) {
+        if (block.kind !== "sentence") continue;
+        let index = 0;
+        for (const segment of segmentOriginal(block.text, block.ipaSlots)
+          .segments) {
+          if (segment.kind !== "word") continue;
+          states.set(segment.word, block.statuses[index] ?? null);
+          index += 1;
+        }
+      }
+      const stateOf = (word: string) => states.get(word) ?? null;
+      return (
+        <section
+          {...(scenario.onWordClick
+            ? sharedWordHandlers(scenario.onWordClick)
+            : {})}
+        >
+          {scenario.blocks.map((block, index) => (
+            <SharedAnnotatedBlockView
+              key={index}
+              block={block}
+              showIpa={scenario.showIpa ?? true}
+              showTranslation={scenario.showTranslation ?? true}
+              statusOf={(word, wordIndex) => {
+                scenario.onStatusRead?.(word, wordIndex);
+                return stateOf(word);
+              }}
+            />
+          ))}
+        </section>
+      );
+    };
+    const view = render(tree(scenario));
+    return {
+      container: view.container,
+      rerender: (next) => view.rerender(tree(next)),
+    };
+  },
+  click: (target, point) =>
+    fireEvent.click(target, { clientX: point.x, clientY: point.y }),
+  keyDown(target, key) {
+    const event = new KeyboardEvent("keydown", {
+      key,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(target, event);
+    return event;
+  },
+});

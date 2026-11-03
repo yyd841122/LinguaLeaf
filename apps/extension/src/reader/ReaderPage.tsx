@@ -1,4 +1,6 @@
 import {
+  AnnotatedBlockView,
+  createWordHandlers,
   useOwner,
   useSettle,
   wordFromEvent,
@@ -7,20 +9,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   ChangeEvent,
   DragEvent,
-  KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
 } from "react";
-import {
-  segmentOriginal,
-  type Segment,
-  type StatusApplied,
-} from "@lingualeaf/reading-model";
-import type { ReactNode } from "react";
+import { segmentOriginal, type StatusApplied } from "@lingualeaf/reading-model";
 import {
   IMPORT_ERROR_COPY,
   importBookFromFile,
   readAsArrayBuffer,
-  type ExtBlock,
   type ExtBook,
 } from "./import-book";
 import {
@@ -91,110 +86,6 @@ function copyFor(error: unknown): string {
   // An unexpected failure must not masquerade as a broken file
   // (CODING_STANDARDS: missing and failed read differently to a reader).
   return "导入失败：出了点意外，请重试。";
-}
-
-// The original line's word units — the web reader's WordSegments shape,
-// driven by the same segmentOriginal walk, so word/slot pairing and the
-// data-word click targets are identical across frontends. An empty slot
-// renders the word as a plain lookup target: the gap is invisible, the
-// line stays aligned. 生词本 tints ride per word (ADR-0005): Learning
-// keeps the lookup affordance (查词底色), Known/Ignored drop it
-// (word-settled — the affordance withdraws from words the reader has).
-function WordSegments({
-  segments,
-  showSlots,
-  stateOf,
-}: {
-  segments: Segment[];
-  showSlots: boolean;
-  stateOf: (word: string) => VocabState | null;
-}) {
-  const nodes: ReactNode[] = [];
-  let index = 0;
-  for (const segment of segments) {
-    if (segment.kind === "text") {
-      nodes.push(segment.text);
-      continue;
-    }
-    const ipa = showSlots ? segment.ipa : undefined;
-    const settled =
-      stateOf(segment.word) === "known" || stateOf(segment.word) === "ignored";
-    nodes.push(
-      ipa ? (
-        <span
-          className={settled ? "ipa-word word-settled" : "ipa-word"}
-          data-word={segment.word}
-          key={index}
-          role="button"
-          tabIndex={0}
-        >
-          <span className="ipa-word-text">{segment.word}</span>
-          {/* Transcription rides as data-ipa and paints via ::before:
-              pseudo-element content never enters a text selection (the
-              shared stylesheet carries the rule). */}
-          <span className="ipa-word-ipa" data-ipa={ipa} />
-        </span>
-      ) : (
-        <span
-          className={settled ? "lookup-word word-settled" : "lookup-word"}
-          data-word={segment.word}
-          key={index}
-          role="button"
-          tabIndex={0}
-        >
-          {segment.word}
-        </span>
-      )
-    );
-    index += 1;
-  }
-  return <>{nodes}</>;
-}
-
-function BlockView({
-  block,
-  showIpa,
-  stateOf,
-}: {
-  block: ExtBlock;
-  showIpa: boolean;
-  stateOf: (word: string) => VocabState | null;
-}) {
-  if (block.kind === "sentence") {
-    // Two separate facts: whether slots pair with the words (same walk as
-    // the import that built them — they always do here), and whether the
-    // reader wants IPA at all. With IPA hidden the word units stay.
-    const { segments } = segmentOriginal(block.text, block.ipaSlots);
-    return (
-      <div className="sentence-block">
-        <p className="original-line">
-          <WordSegments
-            segments={segments}
-            showSlots={showIpa}
-            stateOf={stateOf}
-          />
-        </p>
-      </div>
-    );
-  }
-  if (block.kind === "code") {
-    return (
-      <pre className="code-block">
-        <code>{block.text}</code>
-      </pre>
-    );
-  }
-  if (block.kind === "image") {
-    return (
-      <figure className="image-block">
-        <span className="image-placeholder" aria-hidden="true">
-          🖼
-        </span>
-        {block.text ? <figcaption>{block.text}</figcaption> : null}
-      </figure>
-    );
-  }
-  return <p className="raw-block">{block.text}</p>;
 }
 
 export function ReaderPage({
@@ -457,30 +348,7 @@ export function ReaderPage({
     });
   };
 
-  // One delegated click listener for the chapter: word units carry
-  // data-word, everything else stays inert. Clicks carry 0/0 in synthetic
-  // environments; real clicks carry the pointer position.
-  const onSectionClick = (event: ReactMouseEvent<HTMLElement>) => {
-    const word = wordFromEvent(event);
-    if (word) {
-      setLookup({ word, point: { x: event.clientX, y: event.clientY } });
-    }
-  };
-  // Keyboard reaches the same words: Enter/Space on a focused word runs
-  // the same lookup, anchored to the word's own box.
-  const onWordKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const word = wordFromEvent(event);
-    if (!word) return;
-    event.preventDefault();
-    const box = target.getBoundingClientRect();
-    setLookup({
-      word,
-      point: { x: box.left + box.width / 2, y: box.bottom },
-    });
-  };
+  const chapterWordHandlers = createWordHandlers(setLookup);
 
   // Dragover must be cancelled for drop to fire; dragenter/leave counting
   // keeps the highlight from flickering across child elements.
@@ -593,13 +461,17 @@ export function ReaderPage({
           <section
             className="reader-chapter"
             aria-label={chapter.title}
-            onClick={onSectionClick}
-            onKeyDown={onWordKeyDown}
+            {...chapterWordHandlers}
           >
             <h2>{chapter.title}</h2>
             {chapter.blocks.map((block, index) => (
               <div key={index} data-block-index={index}>
-                <BlockView block={block} showIpa={showIpa} stateOf={stateOf} />
+                <AnnotatedBlockView
+                  block={block}
+                  showIpa={showIpa}
+                  showTranslation={false}
+                  statusOf={(word) => stateOf(word)}
+                />
               </div>
             ))}
           </section>
