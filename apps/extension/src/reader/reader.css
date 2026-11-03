@@ -157,6 +157,12 @@ body {
      covering the word — the tint must let the canvas glyphs show. */
   background: rgba(236, 239, 230, 0.55);
 }
+.pdf-word:focus-visible {
+  /* Keyboard focus needs a visible cue; focus-visible keeps it tied to
+     keyboard navigation. Translucency leaves the canvas glyphs readable,
+     just as the hover tint does. */
+  background: rgba(236, 239, 230, 0.55);
+}
 .pdf-ipa {
   position: absolute;
   color: #6a4fa3;

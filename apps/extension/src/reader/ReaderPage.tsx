@@ -3,14 +3,10 @@ import {
   createWordHandlers,
   useOwner,
   useSettle,
-  wordFromEvent,
+  type WordClick,
 } from "@lingualeaf/reading-model/react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type {
-  ChangeEvent,
-  DragEvent,
-  MouseEvent as ReactMouseEvent,
-} from "react";
+import type { ChangeEvent, DragEvent } from "react";
 import { segmentOriginal, type StatusApplied } from "@lingualeaf/reading-model";
 import {
   IMPORT_ERROR_COPY,
@@ -391,7 +387,7 @@ export function ReaderPage({
           onPage={(page) => setState({ ...state, page })}
           onScale={(scale) => setState({ ...state, scale })}
           onToggleIpa={() => setShowIpa((shown) => !shown)}
-          onWordClick={(word, point) => setLookup({ word, point })}
+          onWordClick={setLookup}
           onReopen={() => {
             void destroyPdf(state.session);
             setState({ phase: "empty" });
@@ -589,7 +585,7 @@ function PdfReader({
   onPage: (page: number) => void;
   onScale: (scale: number) => void;
   onToggleIpa: () => void;
-  onWordClick: (word: string, point: { x: number; y: number }) => void;
+  onWordClick: (click: WordClick) => void;
   onReopen: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -616,14 +612,7 @@ function PdfReader({
     };
   }, [session, page, scale, lookup, showIpa]);
 
-  // One delegated click for the overlay: word spans carry data-word,
-  // everything else stays inert — the same seam the chapter view uses.
-  const onOverlayClick = (event: ReactMouseEvent<HTMLElement>) => {
-    const word = wordFromEvent(event);
-    if (word) {
-      onWordClick(word, { x: event.clientX, y: event.clientY });
-    }
-  };
+  const wordHandlers = createWordHandlers(onWordClick);
 
   return (
     <main className="reader" aria-label="扩展阅读页">
@@ -657,7 +646,7 @@ function PdfReader({
       <div
         className="pdf-stage"
         ref={overlayRef}
-        onClick={onOverlayClick}
+        {...wordHandlers}
         role="presentation"
       >
         <canvas ref={canvasRef} />

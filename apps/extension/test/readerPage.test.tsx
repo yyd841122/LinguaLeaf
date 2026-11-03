@@ -14,6 +14,7 @@ import {
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { importBook } from "../src/reader/import-book";
+import * as pdf from "../src/reader/pdf";
 
 // The page meets real files, so the tests drive real bytes: the shared
 // deterministic builder (import-core/testing) assembles the EPUB, planted
@@ -1009,6 +1010,148 @@ settleRaceSuite({
   },
 });
 
+describe("ReaderPage — PDF word keyboard lookup", () => {
+  beforeEach(() => {
+    stubDictionaryFetch(POPUP_DICT);
+    // Only PDF decoding and canvas rendering are replaced: the page's
+    // delegation, vocabulary store, and popup all run as they do for EPUB.
+    vi.spyOn(pdf, "openPdf").mockResolvedValue({
+      title: "Keyboard PDF",
+      pageCount: 1,
+      doc: {
+        destroy: vi.fn().mockResolvedValue(undefined),
+      } as unknown as pdf.PdfSession["doc"],
+    });
+    vi.spyOn(pdf, "sampleTextLengths").mockResolvedValue([120]);
+    vi.spyOn(pdf, "renderPdfPage").mockImplementation(async (_, overlay) => {
+      const word = document.createElement("span");
+      word.className = "pdf-word";
+      word.dataset.pdfWord = "Woke";
+      word.dataset.word = "Woke";
+      word.setAttribute("role", "button");
+      word.tabIndex = 0;
+      word.textContent = "Woke";
+      const ipa = document.createElement("span");
+      ipa.className = "pdf-ipa";
+      ipa.dataset.ipa = "woʊk";
+      ipa.textContent = "woʊk";
+      word.appendChild(ipa);
+      overlay.appendChild(word);
+      return { wordCount: 1, ipaCount: 1 };
+    });
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  async function openPdfWord() {
+    renderWithSeams({
+      store: createVocabularyStore(
+        new OfflineDictionary(POPUP_DICT),
+        memoryBackend()
+      ),
+    });
+    await pickFile(
+      new File(["PDF decoder fixture"], "keyboard.pdf", {
+        type: "application/pdf",
+      })
+    );
+    return waitFor(() => {
+      const word = wordEl("Woke");
+      expect(word).toHaveClass("pdf-word");
+      return word!;
+    });
+  }
+
+  it.each(["Enter", " "])(
+    "opens the focused PDF word with %j and anchors at its bottom center",
+    async (key) => {
+      const word = await openPdfWord();
+      vi.spyOn(word, "getBoundingClientRect").mockReturnValue(
+        new DOMRect(100, 200, 80, 20)
+      );
+      word.focus();
+      expect(word).toHaveFocus();
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(word, event);
+      expect(event.defaultPrevented).toBe(true);
+      const dialog = await screen.findByRole("dialog", {
+        name: "词详情：Woke",
+      });
+      // Bottom-center point (140, 220), then the popup's (-20, +14) offset.
+      expect(dialog.style.left).toBe("120px");
+      expect(dialog.style.top).toBe("234px");
+    }
+  );
+
+  it.each(["Enter", " "])(
+    "resolves a nested PDF IPA target with %j and uses that target's box",
+    async (key) => {
+      const word = await openPdfWord();
+      const ipa = word.querySelector<HTMLElement>(".pdf-ipa")!;
+      vi.spyOn(word, "getBoundingClientRect").mockReturnValue(
+        new DOMRect(100, 200, 80, 20)
+      );
+      vi.spyOn(ipa, "getBoundingClientRect").mockReturnValue(
+        new DOMRect(300, 400, 40, 10)
+      );
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(ipa, event);
+      expect(event.defaultPrevented).toBe(true);
+      const dialog = await screen.findByRole("dialog", {
+        name: "词详情：Woke",
+      });
+      expect(dialog.style.left).toBe("300px");
+      expect(dialog.style.top).toBe("424px");
+    }
+  );
+
+  it.each(["word", "ipa"])(
+    "keeps pointer coordinates for clicks on the PDF %s",
+    async (target) => {
+      const word = await openPdfWord();
+      vi.spyOn(word, "getBoundingClientRect").mockReturnValue(
+        new DOMRect(100, 200, 80, 20)
+      );
+      fireEvent.click(
+        target === "word" ? word : word.querySelector(".pdf-ipa")!,
+        { clientX: 73, clientY: 81 }
+      );
+      const dialog = await screen.findByRole("dialog", {
+        name: "词详情：Woke",
+      });
+      expect(dialog.style.left).toBe("53px");
+      expect(dialog.style.top).toBe("95px");
+    }
+  );
+
+  it("leaves other keys and non-word keyboard targets alone", async () => {
+    const word = await openPdfWord();
+    for (const [target, key] of [
+      [word, "ArrowDown"],
+      [document.querySelector(".pdf-stage canvas")!, " "],
+    ] as const) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(target, event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
 // ─── annotated-blocks stage 1: host characterization (no kernel imports) ───
 describe("ReaderPage — annotated blocks characterization", () => {
   beforeEach(() => stubDictionaryFetch(POPUP_DICT));
@@ -1239,6 +1382,19 @@ import { fileURLToPath as annotatedFilePath } from "node:url";
 describe("ReaderPage — shared settled-hover CSS wiring", () => {
   beforeEach(() => stubDictionaryFetch(POPUP_DICT));
   afterEach(() => vi.unstubAllGlobals());
+
+  it("gives PDF keyboard focus the translucent hover tint", () => {
+    const local = readAnnotatedCss(
+      resolveAnnotatedCss(
+        annotatedDirname(annotatedFilePath(import.meta.url)),
+        "../src/reader/reader.css"
+      ),
+      "utf8"
+    );
+    expect(local).toMatch(
+      /\.pdf-word:focus-visible\s*\{[^}]*background:\s*rgba\(236,\s*239,\s*230,\s*0\.55\);[^}]*\}/
+    );
+  });
 
   it("imports the withdrawal fragment and emits IPA and plain settled targets", async () => {
     const shared = readAnnotatedCss(
