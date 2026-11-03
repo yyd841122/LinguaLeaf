@@ -1,6 +1,6 @@
 # pdf-word-keyboard:PDF overlay 词单元无键盘路径
 
-Status: ready-for-agent
+Status: done
 
 来源:annotated-blocks-kernel 立票评审(Codex review-plan,threadId
 `01a19f8f-0a34-7640-95df-db4e46164768`)发现,2026-11-03 现场复核成立。
@@ -72,3 +72,9 @@ Lane: **B**(纯 TS/React、票面自包含、沙箱内可验证)。
 - 保真度注: 负例「其他键与非词目标不响应」同时钉 preventDefault 不触发
   与 dialog 不挂载,非空洞断言。
 - **待人工浏览器抽验(上方验收门三项,翻 done 前必做)**。
+
+### 2026-11-03 收官(人工抽验归档,Status 翻 done)
+
+- 维护者真机抽验三项全绿(focus-visible 底色 / Enter-Space 弹窗锚词框
+  中下 / known-ignored 与章节一致),决策 2 的真机几何疑虑就此结案。
+- 全链门禁与双轴评审见上节;实现 commit `74df19a`,票面 commit `b9cc5f6`。
