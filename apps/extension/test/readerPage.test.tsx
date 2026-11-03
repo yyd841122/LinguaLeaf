@@ -1008,3 +1008,156 @@ settleRaceSuite({
     };
   },
 });
+
+// ─── annotated-blocks stage 1: host characterization (no kernel imports) ───
+describe("ReaderPage — annotated blocks characterization", () => {
+  beforeEach(() => stubDictionaryFetch(POPUP_DICT));
+  afterEach(() => vi.unstubAllGlobals());
+
+  async function openPinnedChapter() {
+    const library = createMemoryLibraryStore();
+    await library.saveDocument({
+      id: "annotated-pins",
+      title: "Annotated pins",
+      book: {
+        title: "Annotated pins",
+        chapters: [
+          {
+            title: "Pinned chapter",
+            level: null,
+            blocks: [
+              { kind: "sentence", text: "Woke, Woke!", ipaSlots: ["woʊk", ""] },
+              { kind: "code", text: "const Woke = 1;" },
+              { kind: "raw", text: "Raw Woke" },
+              { kind: "image", text: "Woke portrait" },
+              {
+                kind: "sentence",
+                text: "book Woke.",
+                ipaSlots: ["bad-length"],
+              },
+              { kind: "image", text: "" },
+            ],
+          },
+        ],
+      },
+    });
+    const memory = memoryBackend();
+    memory.map.set("woke", "known");
+    memory.map.set("book", "ignored");
+    renderWithSeams({
+      library,
+      store: createVocabularyStore(new OfflineDictionary(POPUP_DICT), memory),
+    });
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Annotated pins" })
+    );
+    const section = await screen.findByRole("region", {
+      name: "Pinned chapter",
+    });
+    await waitFor(() => expect(wordEl("Woke")).toHaveClass("word-settled"));
+    return section;
+  }
+
+  it("keeps lookup statuses and wrappers across plain blocks without adding annotation rows", async () => {
+    const section = await openPinnedChapter();
+    const wrappers = [...section.querySelectorAll("[data-block-index]")];
+    expect(wrappers.map((el) => el.getAttribute("data-block-index"))).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+    const roots = wrappers.map((el) => el.firstElementChild!);
+    expect(roots.map((el) => el.tagName)).toEqual([
+      "DIV",
+      "PRE",
+      "P",
+      "FIGURE",
+      "DIV",
+      "FIGURE",
+    ]);
+    expect(roots.every((el) => !el.hasAttribute("data-position"))).toBe(true);
+    expect(roots[1]?.querySelector("code")).toHaveTextContent(
+      "const Woke = 1;"
+    );
+    expect(roots[2]).toHaveTextContent("Raw Woke");
+    expect(roots[3]?.querySelector("figcaption")).toHaveTextContent(
+      "Woke portrait"
+    );
+    expect(roots[5]?.querySelector("figcaption")).toBeNull();
+    const words = [...section.querySelectorAll<HTMLElement>("[data-word]")];
+    expect(words.map((el) => el.className)).toEqual([
+      "ipa-word word-settled",
+      "lookup-word word-settled",
+      "lookup-word word-settled",
+      "lookup-word word-settled",
+    ]);
+    for (const word of words) {
+      expect(word).toHaveAttribute("role", "button");
+      expect(word).toHaveAttribute("tabindex", "0");
+    }
+    expect(roots[0]?.querySelector(".original-line")?.textContent).toBe(
+      "Woke, Woke!"
+    );
+    expect(section.querySelector(".ipa-word-ipa")).toBeEmptyDOMElement();
+    expect(section.querySelector(".ipa-word-ipa")).toHaveAttribute(
+      "data-ipa",
+      "woʊk"
+    );
+    expect(section.querySelector(".ipa-line, .translation-line")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "音标" }));
+    expect(
+      section.querySelector(".ipa-word-ipa, .ipa-line, .translation-line")
+    ).toBeNull();
+    expect(section.querySelectorAll("[data-word]")).toHaveLength(4);
+    expect(section.querySelectorAll(".word-settled")).toHaveLength(4);
+  });
+
+  it("delegates nested keyboard targets, prevents only lookup keys, and anchors at their box", async () => {
+    const section = await openPinnedChapter();
+    const target = section.querySelector<HTMLElement>(".ipa-word-text")!;
+    const box = vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      left: 32,
+      width: 40,
+      bottom: 91,
+    } as DOMRect);
+    for (const key of ["Enter", " "]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(target, event);
+      expect(event.defaultPrevented).toBe(true);
+      const dialog = await screen.findByRole("dialog", {
+        name: "词详情：Woke",
+      });
+      expect(dialog.style.left).toBe("32px");
+      expect(dialog.style.top).toBe("105px");
+      fireEvent.keyDown(document, { key: "Escape" });
+    }
+    expect(box).toHaveBeenCalledTimes(2);
+    const other = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(target, other);
+    const nonWord = new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(section.querySelector(".raw-block")!, nonWord);
+    fireEvent.click(section.querySelector(".raw-block")!);
+    expect(other.defaultPrevented).toBe(false);
+    expect(nonWord.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.click(target, { clientX: 73, clientY: 81 });
+    const dialog = await screen.findByRole("dialog", { name: "词详情：Woke" });
+    expect(dialog.style.left).toBe("53px");
+    expect(dialog.style.top).toBe("95px");
+  });
+});

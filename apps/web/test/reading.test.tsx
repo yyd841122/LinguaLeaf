@@ -2144,3 +2144,192 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
     }
   });
 });
+
+// ─── annotated-blocks stage 1: host characterization (no kernel imports) ───
+describe("ReadingView — annotated blocks characterization", () => {
+  const sentence = (
+    position: number,
+    patch: Partial<Extract<Block, { kind: "sentence" }>> = {}
+  ): Block => ({
+    kind: "sentence",
+    position,
+    originalText: "Echo, Echo!",
+    ipaSlots: ["ɛkoʊ", ""],
+    ipaText: null,
+    translationText: null,
+    wordStatuses: ["known", "learning"],
+    ...patch,
+  });
+  const chapter = (blocks: Block[]) => ({ position: 1, title: "Pins", blocks });
+
+  it("keeps positional statuses separate and resets them across interleaved blocks", () => {
+    const blocks: Block[] = [
+      sentence(0),
+      { position: 1, kind: "code", originalText: "const Echo = 1;" },
+      { position: 2, kind: "raw", originalText: "Raw Echo" },
+      { position: 3, kind: "image", originalText: "Echo portrait" },
+      sentence(4, { wordStatuses: [null, "ignored"] }),
+      { position: 5, kind: "image", originalText: "" },
+    ];
+    const view = render(<ReadingView chapter={chapter(blocks)} />);
+    const roots = [...view.container.querySelector(".blocks")!.children];
+    expect(roots.map((el) => el.tagName)).toEqual([
+      "DIV",
+      "PRE",
+      "P",
+      "FIGURE",
+      "DIV",
+      "FIGURE",
+    ]);
+    expect(roots.map((el) => el.getAttribute("data-position"))).toEqual([
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+    ]);
+    expect(roots[1]?.querySelector("code")).toHaveTextContent(
+      "const Echo = 1;"
+    );
+    expect(roots[2]).toHaveTextContent("Raw Echo");
+    expect(roots[3]?.querySelector("figcaption")).toHaveTextContent(
+      "Echo portrait"
+    );
+    expect(roots[5]?.querySelector("figcaption")).toBeNull();
+    expect(roots[3]?.querySelector(".image-placeholder")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    const words = dataWordEls(view.container);
+    expect(words.map((el) => el.className)).toEqual([
+      "ipa-word word-settled",
+      "lookup-word",
+      "ipa-word",
+      "lookup-word word-settled",
+    ]);
+    for (const word of words) {
+      expect(word).toHaveAttribute("role", "button");
+      expect(word).toHaveAttribute("tabindex", "0");
+    }
+    const original = view.container.querySelector(".original-line")!;
+    expect(original.textContent).toBe("Echo, Echo!");
+    expect(original.querySelector(".ipa-word-ipa")).toBeEmptyDOMElement();
+    expect(original.querySelector(".ipa-word-ipa")).toHaveAttribute(
+      "data-ipa",
+      "ɛkoʊ"
+    );
+
+    view.rerender(
+      <ReadingView
+        chapter={chapter([
+          sentence(0, { wordStatuses: ["learning", "ignored"] }),
+        ])}
+      />
+    );
+    expect(dataWordEls(view.container).map((el) => el.className)).toEqual([
+      "ipa-word",
+      "lookup-word word-settled",
+    ]);
+  });
+
+  it("keeps null annotation rows, rejects mismatched slots, and honors both toggles", () => {
+    const view = render(
+      <ReadingView
+        chapter={chapter([
+          sentence(0, { ipaSlots: null }),
+          sentence(1, {
+            ipaSlots: ["bad"],
+            ipaText: "flat",
+            translationText: "译文",
+          }),
+        ])}
+      />
+    );
+    expect(view.container.querySelectorAll(".ipa-word")).toHaveLength(0);
+    const rows = view.container.querySelectorAll(".ipa-line");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toBeEmptyDOMElement();
+    expect(rows[1]).toHaveTextContent("flat");
+    const translations = view.container.querySelectorAll(".translation-line");
+    expect(translations[0]).toBeEmptyDOMElement();
+    expect(translations[1]).toHaveTextContent("译文");
+    view.rerender(
+      <ReadingView
+        chapter={chapter([sentence(0)])}
+        showIpa={false}
+        showTranslation={false}
+      />
+    );
+    expect(view.container.querySelectorAll("[data-word]")).toHaveLength(2);
+    expect(
+      view.container.querySelector(
+        ".ipa-word-ipa, .ipa-line, .translation-line"
+      )
+    ).toBeNull();
+  });
+
+  it("delegates pointer and keyboard events using the actual nested target's box", () => {
+    const click = vi.fn();
+    const view = render(
+      <ReadingView chapter={chapter([sentence(0)])} onWordClick={click} />
+    );
+    const target = view.container.querySelector<HTMLElement>(".ipa-word-text")!;
+    vi.spyOn(target, "getBoundingClientRect").mockReturnValue({
+      left: 32,
+      width: 40,
+      bottom: 91,
+    } as DOMRect);
+    vi.spyOn(target.parentElement!, "getBoundingClientRect").mockReturnValue({
+      left: 500,
+      width: 200,
+      bottom: 900,
+    } as DOMRect);
+    fireEvent.click(target, { clientX: 73, clientY: 81 });
+    expect(click).toHaveBeenLastCalledWith({
+      word: "Echo",
+      point: { x: 73, y: 81 },
+    });
+    for (const key of ["Enter", " "]) {
+      const event = new KeyboardEvent("keydown", {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      fireEvent(target, event);
+      expect(event.defaultPrevented).toBe(true);
+      expect(click).toHaveBeenLastCalledWith({
+        word: "Echo",
+        point: { x: 52, y: 91 },
+      });
+    }
+    const other = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(target, other);
+    const annotation = view.container.querySelector(".translation-line")!;
+    const nonWord = new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(annotation, nonWord);
+    fireEvent.click(annotation);
+    expect(other.defaultPrevented).toBe(false);
+    expect(nonWord.defaultPrevented).toBe(false);
+    expect(click).toHaveBeenCalledTimes(3);
+  });
+
+  it("leaves keyboard defaults alone without an onWordClick callback", () => {
+    const view = render(<ReadingView chapter={chapter([sentence(0)])} />);
+    const event = new KeyboardEvent("keydown", {
+      key: " ",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(dataWordEls(view.container)[0]!, event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+});
