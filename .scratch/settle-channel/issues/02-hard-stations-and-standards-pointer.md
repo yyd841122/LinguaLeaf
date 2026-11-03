@@ -1,6 +1,6 @@
 # settle-channel 02:难站四枚(#4 外携票据 / #5 不凭票落页 / #6 点击作废 / #7 cleanup 作废 + merge-wins)+ CODING_STANDARDS 回指
 
-Status: ready-for-agent
+Status: done
 
 来源:`../spec.md`(D1-D5/Q6-Q11 全拍,2026-11-02)+ 01 票
 (`01-channel-and-simple-sites.md`,Status: done)落地现实:useSettle 九语义
@@ -152,3 +152,44 @@ false)+ #5(web wordLookup.test 与 ext readerPage.test 各一 mount——
   现文已准确);③ 计数取证:progressSession 33 / wordLookup 27 /
   readerPage 19 取自 `npx vitest run` 三文件实跑输出(2026-11-03),
   非 grep 源行。
+- (2026-11-03 收官)实现记档(Lane A 照拍板:编排会话直接实现,实现侧
+  零 Codex threadId)。三 commit:① a1ddb79「先钉后迁」——套件三声明 +
+  #4/#5 宿挂载 + ext 三枚竞态钉,生产零改动,新测试绿于现行手抄裁决
+  (证词侧:迁移提交在此包络下换机制,包络未破即行为等价见证);②
+  8a46dc8 四站迁移 + 静默钉 + CODING_STANDARDS 两处回指;③ 3f35529 评审
+  修笔(下条)。迁移过程自抓两笔:弹窗 savingKeys 的 finally 退役初版
+  遗漏(按钮会永久禁用)——改挂 run 的 outcome(内核吞拒不穿透,成败
+  两路必达);#7 若把 channel 对象整体入 deps,旗变 identity 翻转会让
+  失败触发 effect 重挂(行为漂移)——解构 runTintRead 稳定引用入 deps。
+- (2026-11-03 收官)Codex 实现审核(gpt-6.1-sol/high read-only,threadId
+  `01a19e90-153d-7a43-9c2c-803275dd6e9e`,job audit-mvzvt3pf-k7dul7):
+  裁决 **NEEDS FIXES**,唯一发现 P2——静默 reopen 钉虚过:waitFor(no
+  alert) 可先于拒绝微任务处理即绿,且 error phase 本就保留 picker 与
+  recents,原断言不区分「留在 empty」与「进了 error 页」,变异「失败
+  路由 error 页」全绿(CODING_STANDARDS「No-change claims…」的 vacuous
+  pass 活例,01 的同款教训在站点级复发)。修笔全收:受控 Promise 门控
+  拒绝、拒绝与落回在 act 内完成、判别断言改 .reader-error/alert/status
+  三失败面全无、重试成功正控;突变注入后修笔钉恰好独红(1 failed 其余
+  26 绿),还原全绿。评审其余全过:四站矩阵清旗逐格、三声明语义、双宿
+  landed 真亮旗、包络 33/27/19 零改写、内核/01 三站/ext 薄壳零 diff;
+  心证清单十变异各点名测试。记档两笔:① 必查项「run reject 漏 finally」
+  前提不成立(finally 覆盖两路),评审自行否定;② 评审时点工作树含编排
+  侧变异注入中的内核临时改动,评审正确排除、结论系于固定 commit 区间。
+- (2026-11-03 收官)变异自证(编排侧实跑,评审心证清单子集):M2「陈旧
+  成功也清旗」注入内核 → 10 红:settleRaceSuite 主张3 六宿全红(01 三站
+  + #4 + #5 双宿)、02 新增 landed 场景双宿红、既有 lit-state 钉两枚
+  (bookmarks 陈旧删、progressSession :347)同抓;M3「landed 凭新鲜才发」
+  → 13 红:内核 3 枚(01 钉)+ wordLookupRaceSuite 双宿 + landed 场景
+  双宿 + ext 页面钉。均还原全绿(内核零 diff 复核)。
+- (2026-11-03 收官)收官证据:caller 检查点 `npm run verify` **EXIT=0**
+  (48 files,**582 passed | 2 skipped (584)**,计数逐字抄实跑输出;01
+  收官 566 → 本票 +16 passed +2 skipped,与四宿挂载主张/landed 场景
+  +四枚 ext 新钉的账目相符)。typecheck/lint/vitest/locality 四门/build
+  全链随 pre-commit 于 8a46dc8、3f35529 各复跑一轮全绿。
+- (2026-11-03 收官)记档不修:onLanded/onFresh 同步抛出时 run 的
+  promise reject 经 void 链成未处理拒绝噪声——内核语义 7 定死为调用方
+  缺陷,评审同判(informational),静默钉与弹窗用例均不触及,留原样。
+- (2026-11-03 收官)实践侧教训(入记忆账本,不入本票执行面):cc-suite
+  守态 until-loop 里内联 node -e 的引号转义在 shell 单引号内必炸
+  (SyntaxError → 判终态恒假 → 循环空转数小时,job 本体 07:22 即
+  completed)——终态判断脚本落临时文件再调,勿内联带引号 JS。
