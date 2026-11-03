@@ -38,6 +38,13 @@ Never modify `CLAUDE.md` directly — it only imports `AGENTS.md`.
 This keeps Claude Code, Codex CLI, and Antigravity CLI (`agy`) on the same
 context; Codex and `agy` both read `AGENTS.md` natively.
 
+## Running tests
+
+Go through `npm test` — its `pretest` hook rebuilds reading-model and
+import-core, so tests never execute a stale dist. Bare `npx vitest run`
+skips that rebuild and runs old code after an edit to `packages/*/src`.
+Targeted runs pass paths through: `npm test -- apps/web/test/foo.test.tsx`.
+
 ## Project Structure
 
 - `.claude/` — Claude Code skills, agents, rules, hooks, commands

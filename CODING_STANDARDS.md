@@ -352,6 +352,29 @@ At review: for every `useState` reading through a param or prop, name the
 event that re-reads it when that value changes. "It remounts" is a claim to
 check against the route table, not an assumption.
 
+## A hook object whose identity follows a flag stays out of dep arrays
+
+A hook's returned object that carries state — a settle channel's `failed`,
+any object backed by `useState` — changes identity when that state flips.
+Put the object whole into an effect's dependency array and the effect
+re-runs on the flip: a failed read re-arms the read, a raised flag re-fires
+the work that raised it. An effect calls methods, not the object, so
+destructure the referentially stable ones (the hook freezes them in
+`useCallback`) and depend on those.
+
+Why: settle-channel 02's ext bulk read (apps/extension/src/reader/
+ReaderPage.tsx) reached `run` through the channel object, and
+`[book, chapterIndex, resolvedStore, tintSettle]` would have re-armed the
+chapter's tint read on every failure→flag flip — a behavior drift no test
+pins, caught by reasoning about `useMemo([failed, clear, run])` before any
+run went red (settle-channel issues/02, Comments). The landed shape
+destructures `runTintRead` and depends on it plus the stable owner.
+
+At review: when a diff adds a hook-returned object to a dependency array,
+name what flips its identity. If the answer is a flag, ask whether the flip
+should re-run the effect — usually it should not — and check the stable
+method was destructured instead.
+
 ## Cleanup flags revoke once; key comparison can revive
 
 An effect-cleanup `cancelled` flag and a comparison-based staleness token (key
@@ -417,7 +440,11 @@ down, a list stays put, a notice stays quiet — must first put that something
 into the distinguishing state, then run the behavior, then assert the
 no-change. From the resting state the assertion is vacuous: the mutant that
 breaks the claim (clear the flag on a stale success, raise it on a stale
-failure) passes the same green. The reviewer-side probe runs the same idea
+failure) passes the same green. The asserted elements must distinguish the
+after-state too: the error phase keeps the picker and the recents rendered,
+so "the picker is still there" survives the mutant "a failure shows the
+error page" — assert the failure surface's absence, read after the
+rejection has landed inside `act`. The reviewer-side probe runs the same idea
 backwards — for a diff (or ticket) claiming "tests pin behavior X", flip X
 in the head and name the test that goes red; if none does, the evidence gap
 is the finding. Promise-chain state writes also flush inside `act` before
@@ -431,10 +458,16 @@ stale-success case landed from a dark flag in every host
 threadId 01a19c79). The fix (b7ba61c) re-armed every no-change scenario from
 a raised flag, added the suite's applied() observation, and proved the catch
 by injecting the mutant: four reds, including the pre-existing bookmarks
-stale-delete pin.
+stale-delete pin. The distinguishing-elements half recurred at station level
+in settle-channel 02 (review threadId 01a19e90): the silent-reopen pin
+asserted the picker and recents — both of which the error phase renders —
+so "failure routes to the error page" passed green until the fix asserted
+the failure surfaces' absence after an act-gated rejection.
 
 At review: when a diff adds or touches a "stays / does not / nothing" test,
-check the state it starts from distinguishes pass from fail; when a ticket
+check the state it starts from distinguishes pass from fail, and check the
+asserted elements distinguish the after-state — if every asserted element
+renders in the failure state too, the claim is decorative; when a ticket
 or wrap-up claims test evidence for a behavior, run the mutation in the head
 before trusting the green.
 
