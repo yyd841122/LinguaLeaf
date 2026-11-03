@@ -237,14 +237,6 @@ html {
   margin: 0 1.25rem 0.75rem;
 }
 
-/* 生词本 (ADR-0005): Known/Ignored words keep their lookup but drop the
-   hover tint — the affordance withdraws from words the reader knows or
-   chose to ignore. Word color and IPA rendering stay untouched. */
-.lookup-word.word-settled:hover,
-.ipa-word.word-settled:hover {
-  background: none;
-}
-
 /* Header buttons use .lookup-head-button; the shared sheet styles them
    through .lookup-head-actions button and its :hover rule. */
 

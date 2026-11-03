@@ -1228,3 +1228,85 @@ annotatedBlocksSuite({
     return event;
   },
 });
+// ─── annotated-blocks stage 3: CSS wiring pins ───
+import { readFileSync as readAnnotatedCss } from "node:fs";
+import {
+  dirname as annotatedDirname,
+  resolve as resolveAnnotatedCss,
+} from "node:path";
+import { fileURLToPath as annotatedFilePath } from "node:url";
+
+describe("ReaderPage — shared settled-hover CSS wiring", () => {
+  beforeEach(() => stubDictionaryFetch(POPUP_DICT));
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("imports the withdrawal fragment and emits IPA and plain settled targets", async () => {
+    const shared = readAnnotatedCss(
+      resolveAnnotatedCss(
+        annotatedDirname(annotatedFilePath(import.meta.url)),
+        "../../../packages/reading-model/src/annotated-shared.css"
+      ),
+      "utf8"
+    );
+    const fragment = shared.match(
+      /\/\* @shared lookup-word-hover \*\/([\s\S]*?)(?=\/\* @shared |$)/
+    )?.[1];
+    expect(fragment).toMatch(
+      /\.lookup-word\.word-settled:hover,\s*\.ipa-word\.word-settled:hover\s*\{\s*background:\s*none;\s*\}/
+    );
+    const local = readAnnotatedCss(
+      resolveAnnotatedCss(
+        annotatedDirname(annotatedFilePath(import.meta.url)),
+        "../src/reader/reader.css"
+      ),
+      "utf8"
+    );
+    expect(local).toMatch(
+      /@import\s+"@lingualeaf\/reading-model\/annotated-shared\.css";/
+    );
+    const library = createMemoryLibraryStore();
+    await library.saveDocument({
+      id: "css-pins",
+      title: "CSS pins",
+      book: {
+        title: "CSS pins",
+        chapters: [
+          {
+            title: "CSS chapter",
+            level: null,
+            blocks: [
+              {
+                kind: "sentence",
+                text: "Woke run book quiet.",
+                ipaSlots: ["woʊk", "", "bʊk", ""],
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const memory = memoryBackend();
+    memory.map.set("woke", "known");
+    memory.map.set("run", "ignored");
+    memory.map.set("book", "learning");
+    renderWithSeams({
+      library,
+      store: createVocabularyStore(new OfflineDictionary(POPUP_DICT), memory),
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "CSS pins" }));
+    const section = await screen.findByRole("region", { name: "CSS chapter" });
+    await waitFor(() => expect(wordEl("Woke")).toHaveClass("word-settled"));
+    expect(
+      [...section.querySelectorAll("[data-word]")].map((word) => word.className)
+    ).toEqual([
+      "ipa-word word-settled",
+      "lookup-word word-settled",
+      "ipa-word",
+      "lookup-word",
+    ]);
+    expect(section.querySelectorAll(".ipa-word.word-settled")).toHaveLength(1);
+    expect(section.querySelectorAll(".lookup-word.word-settled")).toHaveLength(
+      1
+    );
+  });
+});

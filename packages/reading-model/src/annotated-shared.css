@@ -87,6 +87,11 @@
 .ipa-word:hover {
   background: #ecefe6;
 }
+/* Known/Ignored keep their lookup but withdraw its hover tint (ADR-0005). */
+.lookup-word.word-settled:hover,
+.ipa-word.word-settled:hover {
+  background: none;
+}
 
 /* @shared lookup-popup */
 .lookup-popup {

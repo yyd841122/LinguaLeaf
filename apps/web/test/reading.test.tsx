@@ -2387,3 +2387,70 @@ annotatedBlocksSuite({
     return event;
   },
 });
+// ─── annotated-blocks stage 3: CSS wiring pins ───
+import { readFileSync as readAnnotatedCss } from "node:fs";
+import {
+  dirname as annotatedDirname,
+  resolve as resolveAnnotatedCss,
+} from "node:path";
+import { fileURLToPath as annotatedFilePath } from "node:url";
+
+describe("ReadingView — shared settled-hover CSS wiring", () => {
+  it("imports the withdrawal fragment, emits both selectors, and has no local copy", () => {
+    const shared = readAnnotatedCss(
+      resolveAnnotatedCss(
+        annotatedDirname(annotatedFilePath(import.meta.url)),
+        "../../../packages/reading-model/src/annotated-shared.css"
+      ),
+      "utf8"
+    );
+    const fragment = shared.match(
+      /\/\* @shared lookup-word-hover \*\/([\s\S]*?)(?=\/\* @shared |$)/
+    )?.[1];
+    expect(fragment).toMatch(
+      /\.lookup-word\.word-settled:hover,\s*\.ipa-word\.word-settled:hover\s*\{\s*background:\s*none;\s*\}/
+    );
+    const local = readAnnotatedCss(
+      resolveAnnotatedCss(
+        annotatedDirname(annotatedFilePath(import.meta.url)),
+        "../src/style.css"
+      ),
+      "utf8"
+    );
+    expect(local).toMatch(
+      /@import\s+"@lingualeaf\/reading-model\/annotated-shared\.css";/
+    );
+    expect(local).not.toMatch(/\.(?:lookup-word|ipa-word)\.word-settled:hover/);
+    const view = render(
+      <ReadingView
+        chapter={{
+          position: 1,
+          title: "CSS pins",
+          blocks: [
+            {
+              position: 0,
+              kind: "sentence",
+              originalText: "Known Ignored Learning New.",
+              ipaSlots: ["noʊn", "", "lɝnɪŋ", ""],
+              ipaText: null,
+              translationText: null,
+              wordStatuses: ["known", "ignored", "learning", null],
+            },
+          ],
+        }}
+      />
+    );
+    expect(dataWordEls(view.container).map((word) => word.className)).toEqual([
+      "ipa-word word-settled",
+      "lookup-word word-settled",
+      "ipa-word",
+      "lookup-word",
+    ]);
+    expect(
+      view.container.querySelectorAll(".ipa-word.word-settled")
+    ).toHaveLength(1);
+    expect(
+      view.container.querySelectorAll(".lookup-word.word-settled")
+    ).toHaveLength(1);
+  });
+});

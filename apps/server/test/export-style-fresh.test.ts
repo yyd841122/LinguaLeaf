@@ -16,3 +16,12 @@ it("style.generated.ts is fresh against its CSS sources and popup constants", ()
     `freshness gate failed:\n${result.stderr}${result.stdout}`
   ).toBe(0);
 });
+
+// ─── annotated-blocks stage 3: generated CSS wiring pin ───
+import { EXPORT_STYLE } from "../src/export/style.generated.js";
+
+it("includes the settled-hover withdrawal declaration in the generated export style", () => {
+  expect(EXPORT_STYLE).toMatch(
+    /\.lookup-word\.word-settled:hover,\s*\.ipa-word\.word-settled:hover\s*\{\s*background:\s*none;\s*\}/
+  );
+});
