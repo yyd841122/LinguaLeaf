@@ -184,3 +184,13 @@ role/tabindex 无键盘)不迁,只动章节委托。
   抽验不作本票 gate,留人工抽验:web/ext 各点一个 known 词确认 hover 无
   底色、复制原句不含 IPA。关联票提醒:`.scratch/pdf-word-keyboard/`
   (needs-triage)三个开放决策仍待拍板。
+- 2026-11-03 (Claude): 人工抽验通过,归档结案。用户真机双检全绿:
+  (1) known/ignored 词 hover 无查词底色(in-learning 仍有底色,预期);
+  (2) 复制原句不含 IPA。此前「功能倒回去」疑云结案为观感误会:编排侧
+  Loop A 已证构建层无回归——web 服务产物 .output/web/assets 与 ext 产物
+  apps/extension/dist/assets 内退底色规则俱全且优先级压过基础 hover
+  (0,3,0 > 0,2,0,无 !important),两宿源码 CSS 无自有 hover 覆盖;
+  ext 的亮底色是 b38b78b 以来的历史缺口(类发出无规则),本票 b7aec49
+  首次补齐,旧构建的 ext 看到的正是这个旧缺口。web 侧该功能 ADR-0005
+  时代上线至今未回退(迁移仅搬入共享表)。诊断零 instrumentation,
+  无需清理。
