@@ -30,12 +30,18 @@ export function useProgressSession(options: {
   bookId: number;
   chapterNumber: number;
   ready: boolean;
-}): { saveFailed: boolean; armJumpTarget: (target: BookmarkTarget) => void } {
+}) {
   const { bookId, chapterNumber, ready } = options;
   const [armedTarget, setArmedTarget] = useState<
     (BookmarkTarget & { op: number }) | null
   >(null);
   const jumpOpRef = useRef(0);
+  const [landedJump, setLandedJump] = useState<{
+    bookId: number;
+    chapter: number;
+    block: number;
+    op: number;
+  } | null>(null);
   // Arms a landing without navigating. Each call mints a monotonically
   // advancing op that never resets, so repeated intents for the same
   // chapter and block still re-scroll. Arm in the same event as the
@@ -44,6 +50,7 @@ export function useProgressSession(options: {
   const armJumpTarget = (target: BookmarkTarget) => {
     jumpOpRef.current += 1;
     setArmedTarget({ ...target, op: jumpOpRef.current });
+    return jumpOpRef.current;
   };
   // "unavailable" = the progress could not be asked for (server hiccup):
   // nothing to restore, and the autosave must not write either, or it would
@@ -200,7 +207,21 @@ export function useProgressSession(options: {
         scheduleSave({ chapter: chapterNumber, block: target.block });
       }
       lastRestoreRef.current = { bookId, chapterNumber, jumpedToOp: target.op };
-      return jumpToBlockEl(blockEl);
+      const dispose = jumpToBlockEl(blockEl);
+      // scrollIntoView is synchronous (no smooth behavior); the next frame
+      // observes the committed layout before a consumer measures its button.
+      const frame = window.requestAnimationFrame(() => {
+        setLandedJump({
+          bookId,
+          chapter: target.chapter,
+          block: target.block,
+          op: target.op,
+        });
+      });
+      return () => {
+        dispose();
+        window.cancelAnimationFrame(frame);
+      };
     }
     if (fresh) {
       // The target names a block this chapter does not render — a stale
@@ -266,5 +287,5 @@ export function useProgressSession(options: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, progressLoaded, chapterNumber, bookId]);
 
-  return { saveFailed: settle.failed, armJumpTarget };
+  return { saveFailed: settle.failed, armJumpTarget, landedJump };
 }

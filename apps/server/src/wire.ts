@@ -141,3 +141,35 @@ export type BookmarkError = {
   code: BookmarkErrorCode;
   error: string;
 };
+
+export type NoteType = "progress" | "feeling" | "idea" | "question";
+export type NoteAnchor =
+  { chapter: null; block: null } | { chapter: number; block: number };
+export type NoteContent = { type: NoteType; text: string };
+export type NoteSummary = NoteContent & {
+  id: number;
+  chapter: number | null;
+  block: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+export type CreateNoteRequest = {
+  type?: NoteType;
+  text: string;
+} & Partial<NoteAnchor>;
+export type NotesResponse = { notes: NoteSummary[] };
+export type NoteResponse = { note: NoteSummary };
+export type NoteErrorCode =
+  | "book-not-found"
+  | "book-not-ready"
+  | "invalid-position"
+  | "invalid-note"
+  | "note-target-not-found"
+  | "note-not-found"
+  | "note-exists"
+  | "note-limit-reached";
+export type NoteError = {
+  code: NoteErrorCode;
+  error: string;
+  note?: NoteSummary;
+};

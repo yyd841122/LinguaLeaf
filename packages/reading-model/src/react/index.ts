@@ -18,4 +18,5 @@ export {
   createWordHandlers,
   type AnnotatedBlock,
   type StatusReader,
+  type BlockNoteControl,
 } from "./annotated-blocks.js";

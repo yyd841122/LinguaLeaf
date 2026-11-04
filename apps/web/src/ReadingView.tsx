@@ -2,6 +2,7 @@ import {
   AnnotatedBlockView,
   createWordHandlers,
   type WordClick,
+  type BlockNoteControl,
 } from "@lingualeaf/reading-model/react";
 import { memo } from "react";
 import type { BlockPayload, ChapterPayload } from "../../server/src/wire";
@@ -19,6 +20,7 @@ export const ReadingView = memo(function ReadingView({
   showIpa = true,
   showTranslation = true,
   onWordClick,
+  noteControl,
 }: {
   chapter: Pick<ChapterPayload, "position" | "title" | "blocks">;
   ipaSize?: number;
@@ -27,6 +29,7 @@ export const ReadingView = memo(function ReadingView({
   showIpa?: boolean;
   showTranslation?: boolean;
   onWordClick?: (click: WordClick) => void;
+  noteControl?: (position: number) => BlockNoteControl;
 }) {
   const wordHandlers = onWordClick ? createWordHandlers(onWordClick) : {};
   return (
@@ -74,6 +77,7 @@ export const ReadingView = memo(function ReadingView({
             }
             showIpa={showIpa}
             showTranslation={showTranslation}
+            note={noteControl?.(block.position)}
           />
         ))}
       </div>

@@ -100,6 +100,26 @@ const wordStatesTable = `
     );
 `;
 
+// Notes are book data (ADR-0007). NULL anchors name the book itself;
+// SQLite's ordinary UNIQUE treats NULLs as distinct, hence the partial index.
+const notesTable = `
+    CREATE TABLE IF NOT EXISTS notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+      chapter_position INTEGER,
+      block_position INTEGER,
+      type TEXT NOT NULL CHECK (type IN ('progress', 'feeling', 'idea', 'question')),
+      text TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      CHECK ((chapter_position IS NULL AND block_position IS NULL)
+          OR (chapter_position IS NOT NULL AND block_position IS NOT NULL)),
+      UNIQUE (book_id, chapter_position, block_position)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS notes_book_anchor
+      ON notes(book_id) WHERE chapter_position IS NULL;
+`;
+
 export function migrateSchema(database: Database.Database): void {
   // One guard for the "old database lacks this column" shape: check the
   // PRAGMA snapshot, add the column in place (SQLite cannot add a column
@@ -114,7 +134,7 @@ export function migrateSchema(database: Database.Database): void {
     }
   };
   database.exec(
-    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}${bookmarksTable}`
+    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}${bookmarksTable}${notesTable}`
   );
   // Databases created before ticket 03's word-pairing work lack the slots
   // column; add it in place so an existing .data file keeps working. Runs

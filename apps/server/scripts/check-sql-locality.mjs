@@ -22,6 +22,7 @@ const TABLE_OWNERS = new Map([
   ["blocks", "book-store.ts"],
   ["reading_progress", "book-store.ts"],
   ["bookmarks", "book-store.ts"],
+  ["notes", "book-store.ts"],
   ["word_states", "vocab-store.ts"],
 ]);
 const tableSql = (table) =>

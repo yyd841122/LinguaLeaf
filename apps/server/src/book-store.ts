@@ -3,11 +3,14 @@ import type {
   BookStatus,
   BookmarkSummary,
   ImportStage,
+  NoteAnchor,
+  NoteContent,
+  NoteSummary,
   TranslationStatus,
 } from "./wire.js";
 
 // The book store: every SQL statement over the book tables — books,
-// chapters, blocks, reading_progress, bookmarks — lives here and nowhere
+// chapters, blocks, reading_progress, bookmarks, notes — lives here and nowhere
 // else. The interface is plain functions (dictionary.ts idiom), database
 // first. What the module hides: the column lists (one per table), the
 // ipa_slots JSON codec, the decode from snake_case rows to the readers'
@@ -650,7 +653,152 @@ export function deleteBookmark(
     .run(bookId, bookmarkId);
 }
 
-// Deletes the book; its chapters, blocks, reading_progress, and bookmarks
+export const MAX_NOTES_PER_BOOK = 100;
+export const MAX_NOTE_TEXT_LENGTH = 10_000;
+
+type NoteSqlRow = {
+  id: number;
+  chapter_position: number | null;
+  block_position: number | null;
+  type: NoteContent["type"];
+  text: string;
+  created_at: string;
+  updated_at: string;
+};
+const NOTE_COLUMNS =
+  "id, chapter_position, block_position, type, text, created_at, updated_at";
+const decodeNote = (row: NoteSqlRow): NoteSummary => ({
+  id: row.id,
+  chapter: row.chapter_position,
+  block: row.block_position,
+  type: row.type,
+  text: row.text,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+export function listNotes(
+  database: Database.Database,
+  bookId: number
+): NoteSummary[] {
+  return (
+    database
+      .prepare(
+        `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ?
+    ORDER BY chapter_position, block_position`
+      )
+      .all(bookId) as NoteSqlRow[]
+  ).map(decodeNote);
+}
+
+function findNote(
+  database: Database.Database,
+  bookId: number,
+  id: number
+): NoteSummary | undefined {
+  const row = database
+    .prepare(`SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND id = ?`)
+    .get(bookId, id) as NoteSqlRow | undefined;
+  return row && decodeNote(row);
+}
+
+export type AddNoteResult =
+  | { outcome: "created" | "existing"; note: NoteSummary }
+  | { outcome: "target-not-found" }
+  | { outcome: "limit-reached" };
+
+export function addNote(
+  database: Database.Database,
+  bookId: number,
+  anchor: NoteAnchor,
+  content: NoteContent
+): AddNoteResult {
+  return database.transaction((): AddNoteResult => {
+    if (
+      anchor.chapter !== null &&
+      !database
+        .prepare(
+          `SELECT 1 FROM chapters c
+      JOIN blocks b ON b.chapter_id = c.id
+      WHERE c.book_id = ? AND c.position = ? AND b.position = ?`
+        )
+        .get(bookId, anchor.chapter, anchor.block)
+    )
+      return { outcome: "target-not-found" };
+    const existing = (
+      anchor.chapter === null
+        ? database
+            .prepare(
+              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position IS NULL`
+            )
+            .get(bookId)
+        : database
+            .prepare(
+              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position = ? AND block_position = ?`
+            )
+            .get(bookId, anchor.chapter, anchor.block)
+    ) as NoteSqlRow | undefined;
+    if (existing) return { outcome: "existing", note: decodeNote(existing) };
+    const count = database
+      .prepare("SELECT COUNT(*) AS n FROM notes WHERE book_id = ?")
+      .get(bookId) as { n: number };
+    if (count.n >= MAX_NOTES_PER_BOOK) return { outcome: "limit-reached" };
+    const now = new Date().toISOString();
+    const inserted = database
+      .prepare(
+        `INSERT INTO notes
+      (book_id, chapter_position, block_position, type, text, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        bookId,
+        anchor.chapter,
+        anchor.block,
+        content.type,
+        content.text,
+        now,
+        now
+      );
+    const note = findNote(database, bookId, Number(inserted.lastInsertRowid));
+    if (!note) throw new Error("inserted note missing");
+    return { outcome: "created", note };
+  })();
+}
+
+export function updateNote(
+  database: Database.Database,
+  bookId: number,
+  id: number,
+  content: NoteContent
+): NoteSummary | undefined {
+  return database.transaction(() => {
+    const old = findNote(database, bookId, id);
+    if (!old) return undefined;
+    // Strictly increasing even for two edits in the same millisecond: clients
+    // merge snapshots by updatedAt and must be able to order both writes.
+    const now = new Date(
+      Math.max(Date.now(), Date.parse(old.updatedAt) + 1)
+    ).toISOString();
+    database
+      .prepare(
+        "UPDATE notes SET type = ?, text = ?, updated_at = ? WHERE book_id = ? AND id = ?"
+      )
+      .run(content.type, content.text, now, bookId, id);
+    return findNote(database, bookId, id);
+  })();
+}
+
+export function deleteNote(
+  database: Database.Database,
+  bookId: number,
+  id: number
+): void {
+  database
+    .prepare("DELETE FROM notes WHERE book_id = ? AND id = ?")
+    .run(bookId, id);
+}
+
+// Deletes the book; its chapters, blocks, reading_progress, bookmarks, and notes
 // go with it through their ON DELETE CASCADE foreign keys (the pragma is
 // on).
 export function deleteBook(database: Database.Database, bookId: number): void {

@@ -19,6 +19,29 @@ export type AnnotatedBlock = (
 // The index is sentence-local, zero-based, and counts only word segments.
 export type StatusReader = (word: string, index: number) => WordStatus | null;
 
+export type BlockNoteControl = {
+  exists: boolean;
+  disabled?: boolean;
+  onClick: (button: HTMLButtonElement) => void;
+};
+
+function NoteButton({ control }: { control: BlockNoteControl | undefined }) {
+  return control ? (
+    <button
+      type="button"
+      className={`block-note-button${control.exists ? " has-note" : ""}`}
+      aria-label={control.exists ? "编辑笔记" : "写笔记"}
+      disabled={control.disabled}
+      onClick={(event) => {
+        event.stopPropagation();
+        control.onClick(event.currentTarget);
+      }}
+    >
+      ✎
+    </button>
+  ) : null;
+}
+
 function WordSegments({
   segments,
   showSlots,
@@ -73,16 +96,25 @@ export function AnnotatedBlockView({
   statusOf,
   showIpa,
   showTranslation,
+  note,
 }: {
   block: AnnotatedBlock;
   statusOf: StatusReader;
   showIpa: boolean;
   showTranslation: boolean;
+  note?: BlockNoteControl | undefined;
 }) {
+  const noteClass = note
+    ? ` note-enabled${note.exists ? " has-note" : ""}`
+    : "";
   if (block.kind === "sentence") {
     const { paired, segments } = segmentOriginal(block.text, block.ipaSlots);
     return (
-      <div className="sentence-block" data-position={block.position}>
+      <div
+        className={`sentence-block${noteClass}`}
+        data-position={block.position}
+      >
+        <NoteButton control={note} />
         <p className="original-line">
           <WordSegments
             segments={segments}
@@ -101,14 +133,19 @@ export function AnnotatedBlockView({
   }
   if (block.kind === "code") {
     return (
-      <pre className="code-block" data-position={block.position}>
+      <pre className={`code-block${noteClass}`} data-position={block.position}>
+        <NoteButton control={note} />
         <code>{block.text}</code>
       </pre>
     );
   }
   if (block.kind === "image") {
     return (
-      <figure className="image-block" data-position={block.position}>
+      <figure
+        className={`image-block${noteClass}`}
+        data-position={block.position}
+      >
+        <NoteButton control={note} />
         <span className="image-placeholder" aria-hidden="true">
           🖼
         </span>
@@ -117,7 +154,8 @@ export function AnnotatedBlockView({
     );
   }
   return (
-    <p className="raw-block" data-position={block.position}>
+    <p className={`raw-block${noteClass}`} data-position={block.position}>
+      <NoteButton control={note} />
       {block.text}
     </p>
   );

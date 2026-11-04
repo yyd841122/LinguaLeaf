@@ -13,6 +13,12 @@ import { runChapterTranslationTask } from "./translate/chapter-task.js";
 import { runImportTask } from "./import/import-task.js";
 import {
   addBookmark,
+  addNote,
+  listNotes,
+  updateNote,
+  deleteNote,
+  MAX_NOTES_PER_BOOK,
+  MAX_NOTE_TEXT_LENGTH,
   beginChapterTranslation,
   createImportingBook,
   deleteBook,
@@ -33,7 +39,14 @@ import {
 } from "./book-store.js";
 import { tokenizeWords } from "./dict/ipa-line.js";
 import { loadWordStatuses, tokenStatuses } from "./vocab-store.js";
-import type { BookmarkError, ChapterPayload, ImportRejection } from "./wire.js";
+import type {
+  BookmarkError,
+  ChapterPayload,
+  ImportRejection,
+  NoteAnchor,
+  NoteContent,
+  NoteError,
+} from "./wire.js";
 
 const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -364,6 +377,136 @@ export function createBooksRouter(
     if (Number.isInteger(bookmarkId)) {
       deleteBookmark(database, book.id, bookmarkId);
     }
+    response.status(204).end();
+  });
+
+  const rejectNote = (
+    response: Response,
+    status: number,
+    code: NoteError["code"],
+    error: string
+  ): void => {
+    response.status(status).json({ code, error } satisfies NoteError);
+  };
+  const noteContent = (
+    body: Record<string, unknown> | undefined,
+    response: Response,
+    creating: boolean
+  ): NoteContent | undefined => {
+    const type = creating && body?.type === undefined ? "idea" : body?.type;
+    const text = body?.text;
+    if (
+      (type !== "progress" &&
+        type !== "feeling" &&
+        type !== "idea" &&
+        type !== "question") ||
+      typeof text !== "string" ||
+      !text.trim() ||
+      text.length > MAX_NOTE_TEXT_LENGTH
+    ) {
+      rejectNote(
+        response,
+        400,
+        "invalid-note",
+        `type must be valid and text must contain 1–${MAX_NOTE_TEXT_LENGTH} characters`
+      );
+      return undefined;
+    }
+    return { type, text };
+  };
+  router.get("/:id/notes", (request, response) => {
+    const book = respondIfNotReadable(request, response);
+    if (book) response.json({ notes: listNotes(database, book.id) });
+  });
+  router.post("/:id/notes", json(), (request, response) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    const chapter = body?.chapter;
+    const block = body?.block;
+    let anchor: NoteAnchor;
+    if (
+      (chapter === undefined && block === undefined) ||
+      (chapter === null && block === null)
+    ) {
+      anchor = { chapter: null, block: null };
+    } else if (isPositiveInteger(chapter) && isPositiveInteger(block)) {
+      anchor = { chapter, block };
+    } else {
+      rejectNote(
+        response,
+        400,
+        "invalid-position",
+        "chapter and block must both be absent, null, or positive integers"
+      );
+      return;
+    }
+    const content = noteContent(body, response, true);
+    if (!content) return;
+    const book = respondIfNotReadable(request, response);
+    if (!book) return;
+    const result = addNote(database, book.id, anchor, content);
+    if (result.outcome === "target-not-found") {
+      rejectNote(
+        response,
+        404,
+        "note-target-not-found",
+        "note target block not found"
+      );
+    } else if (result.outcome === "limit-reached") {
+      rejectNote(
+        response,
+        409,
+        "note-limit-reached",
+        `a book holds at most ${MAX_NOTES_PER_BOOK} notes`
+      );
+    } else if (result.outcome === "existing") {
+      response.status(409).json({
+        code: "note-exists",
+        error: "this position already has a note",
+        note: result.note,
+      } satisfies NoteError);
+    } else {
+      response.status(201).json({ note: result.note });
+    }
+  });
+  router.put("/:id/notes/:noteId", json(), (request, response) => {
+    const body = request.body as Record<string, unknown> | undefined;
+    if (
+      body &&
+      (Object.hasOwn(body, "chapter") || Object.hasOwn(body, "block"))
+    ) {
+      rejectNote(
+        response,
+        400,
+        "invalid-position",
+        "a note's anchor cannot be changed"
+      );
+      return;
+    }
+    const content = noteContent(body, response, false);
+    if (!content) return;
+    const book = respondIfNotReadable(request, response);
+    if (!book) return;
+    const id = Number(request.params.noteId);
+    const note = Number.isSafeInteger(id)
+      ? updateNote(database, book.id, id, content)
+      : undefined;
+    if (!note)
+      rejectNote(
+        response,
+        404,
+        "note-not-found",
+        "note not found in this book"
+      );
+    else response.json({ note });
+  });
+  router.delete("/:id/notes/:noteId", (request, response) => {
+    const book = bookFromParams(request);
+    if (!book) {
+      respondBookNotFound(response);
+      return;
+    }
+    const id = Number(request.params.noteId);
+    if (Number.isSafeInteger(id)) deleteNote(database, book.id, id);
     response.status(204).end();
   });
 

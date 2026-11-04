@@ -750,6 +750,12 @@ describe("ReadingPage through the component boundary", () => {
       "fetch",
       vi.fn(async (input: unknown, init?: RequestInit) => {
         const url = String(input);
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+          return new Response(JSON.stringify({ notes: [] }));
+        }
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+          return new Response(JSON.stringify({ bookmarks: [] }));
+        }
         calls.push({ url, init: init ?? {} });
         if (url.endsWith("/progress") && init?.method === "PUT") {
           return putBehavior === "fail"
@@ -786,7 +792,7 @@ describe("ReadingPage through the component boundary", () => {
             })
           );
         }
-        return new Response(null, { status: 404 });
+        throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
       })
     );
     return { calls };
@@ -827,6 +833,12 @@ describe("ReadingPage through the component boundary", () => {
     };
     const fetchMock = vi.fn(async (input: unknown, init?: RequestInit) => {
       const url = String(input);
+      if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+        return new Response(JSON.stringify({ notes: [] }));
+      }
+      if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+        return new Response(JSON.stringify({ bookmarks: [] }));
+      }
       if (url.endsWith("/api/lookup/woke")) {
         return new Response(
           JSON.stringify({
@@ -859,7 +871,7 @@ describe("ReadingPage through the component boundary", () => {
           })
         );
       }
-      return new Response(null, { status: 404 });
+      throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
     });
     vi.stubGlobal("fetch", fetchMock);
     try {
@@ -908,8 +920,14 @@ describe("ReadingPage through the component boundary", () => {
     // Saved block 3 belongs to THIS chapter: the restore path runs.
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: unknown) => {
+      vi.fn(async (input: unknown, init?: RequestInit) => {
         const url = String(input);
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+          return new Response(JSON.stringify({ notes: [] }));
+        }
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+          return new Response(JSON.stringify({ bookmarks: [] }));
+        }
         if (url.endsWith("/chapters/2")) {
           return new Response(
             JSON.stringify({
@@ -935,7 +953,7 @@ describe("ReadingPage through the component boundary", () => {
             })
           );
         }
-        return new Response(null, { status: 404 });
+        throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
       })
     );
     renderReadingPage();
@@ -1050,6 +1068,12 @@ describe("ReadingPage's translate button through the component boundary", () => 
       "fetch",
       vi.fn(async (input: unknown, init?: RequestInit) => {
         const url = String(input);
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+          return new Response(JSON.stringify({ notes: [] }));
+        }
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+          return new Response(JSON.stringify({ bookmarks: [] }));
+        }
         calls.push({ url, init: init ?? {} });
         if (url.endsWith("/chapters/2/translate")) {
           if (options.postResponse) return options.postResponse();
@@ -1080,7 +1104,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
             })
           );
         }
-        return new Response(null, { status: 404 });
+        throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
       })
     );
     return { calls };
@@ -1243,6 +1267,12 @@ describe("ReadingPage's translate button through the component boundary", () => 
         "fetch",
         vi.fn(async (input: unknown, init?: RequestInit) => {
           const url = String(input);
+          if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+            return new Response(JSON.stringify({ notes: [] }));
+          }
+          if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+            return new Response(JSON.stringify({ bookmarks: [] }));
+          }
           calls.push({ url, init: init ?? {} });
           if (url.endsWith("/chapters/2")) {
             chapterGets += 1;
@@ -1280,7 +1310,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
               })
             );
           }
-          return new Response(null, { status: 404 });
+          throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
         })
       );
       renderReadingPage();
@@ -1493,6 +1523,12 @@ describe("ReadingPage's translate button through the component boundary", () => 
         "fetch",
         vi.fn(async (input: unknown, init?: RequestInit) => {
           const url = String(input);
+          if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+            return new Response(JSON.stringify({ notes: [] }));
+          }
+          if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+            return new Response(JSON.stringify({ bookmarks: [] }));
+          }
           calls.push({ url, init: init ?? {} });
           if (url.endsWith("/chapters/3")) {
             return new Response(JSON.stringify(chapter3));
@@ -1516,7 +1552,7 @@ describe("ReadingPage's translate button through the component boundary", () => 
               })
             );
           }
-          return new Response(null, { status: 404 });
+          throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
         })
       );
       renderReadingPage();
@@ -1615,8 +1651,14 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
   function stubChapterFetch(payload: Record<string, unknown>): void {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (input: unknown) => {
+      vi.fn(async (input: unknown, init?: RequestInit) => {
         const url = String(input);
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+          return new Response(JSON.stringify({ notes: [] }));
+        }
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/bookmarks")) {
+          return new Response(JSON.stringify({ bookmarks: [] }));
+        }
         if (url.endsWith("/chapters/2")) {
           return new Response(JSON.stringify(payload));
         }
@@ -1632,7 +1674,7 @@ describe("ReadingPage's untranslated-chapter semantics (ticket 03)", () => {
             })
           );
         }
-        return new Response(null, { status: 404 });
+        throw new Error(`unexpected fetch: ${init?.method ?? "GET"} ${url}`);
       })
     );
   }
@@ -1802,6 +1844,9 @@ describe("ReadingPage's bookmarks (reading-bookmarks 03)", () => {
       "fetch",
       vi.fn(async (input: unknown, init?: RequestInit) => {
         const url = String(input);
+        if ((init?.method ?? "GET") === "GET" && url.endsWith("/notes")) {
+          return new Response(JSON.stringify({ notes: [] }));
+        }
         const method = init?.method ?? "GET";
         calls.push({ url, init: init ?? {} });
         if (/\/chapters\/\d+$/.test(url)) {

@@ -51,6 +51,12 @@ import {
   fetchBookmarks,
 } from "../../../apps/web/src/bookmarks";
 import { downloadAttachment } from "../../../apps/web/src/download";
+import {
+  createNote,
+  fetchNotes,
+  updateNote,
+  deleteNote,
+} from "../../../apps/web/src/notes";
 import { sendHeartbeat } from "../../../apps/web/src/heartbeat";
 import { drainTasks } from "../src/task-lifecycle.js";
 
@@ -525,6 +531,105 @@ describe("bookmarks over the real server (bookmarks.ts)", () => {
     await expect(
       createBookmark(created.id, { chapter: 1, block: 1 })
     ).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+describe("notes over the real server (notes.ts)", () => {
+  it("round-trips book and block notes, duplicate conflict, PUT, and bodyless DELETE", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const anchor = { chapter: 2, block: 4 };
+    const note = await createNote(id, anchor, {
+      type: "question",
+      text: "Why stop here?",
+    });
+    expect(note).toEqual({
+      id: expect.any(Number),
+      ...anchor,
+      type: "question",
+      text: "Why stop here?",
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+    await expect(
+      createNote(id, anchor, { type: "idea", text: "A fresh draft" })
+    ).rejects.toMatchObject({
+      status: 409,
+      body: { code: "note-exists", note },
+    });
+    const bookNote = await createNote(
+      id,
+      { chapter: null, block: null },
+      { type: "feeling", text: "Overall feeling" }
+    );
+    await expect(fetchNotes(id)).resolves.toEqual([bookNote, note]);
+    const edited = await updateNote(id, note.id, {
+      type: "progress",
+      text: "Stopped to think",
+    });
+    expect(edited).toMatchObject({
+      ...note,
+      type: "progress",
+      text: "Stopped to think",
+      updatedAt: expect.any(String),
+    });
+    await expect(deleteNote(id, note.id)).resolves.toBeUndefined();
+    await expect(deleteNote(id, note.id)).resolves.toBeUndefined();
+    await expect(fetchNotes(id)).resolves.toEqual([bookNote]);
+    // A new import is an independent book; the original notes stay put.
+    const reimported = await uploadReadyBook(sampleBookPath);
+    await expect(fetchNotes(reimported)).resolves.toEqual([]);
+    await expect(fetchNotes(id)).resolves.toEqual([bookNote]);
+  });
+  it("preserves coded failure families through all real clients", async () => {
+    const { database } = await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    for (const call of [
+      () => fetchNotes(999),
+      () =>
+        createNote(
+          999,
+          { chapter: null, block: null },
+          { type: "idea", text: "Missing" }
+        ),
+      () => updateNote(999, 1, { type: "idea", text: "Missing" }),
+      () => deleteNote(999, 1),
+    ]) {
+      await expect(call()).rejects.toMatchObject({
+        status: 404,
+        body: { code: "book-not-found" },
+      });
+    }
+    await expect(
+      createNote(
+        id,
+        { chapter: 99, block: 1 },
+        { type: "idea", text: "Missing" }
+      )
+    ).rejects.toMatchObject({
+      status: 404,
+      body: { code: "note-target-not-found" },
+    });
+    await expect(
+      createNote(
+        id,
+        { chapter: null, block: null },
+        { type: "idea", text: " " }
+      )
+    ).rejects.toMatchObject({ status: 400, body: { code: "invalid-note" } });
+    await expect(
+      updateNote(id, 999, { type: "idea", text: "Gone" })
+    ).rejects.toMatchObject({ status: 404, body: { code: "note-not-found" } });
+    const importing = createImportingBook(
+      database,
+      "Waiting",
+      "markdown",
+      null
+    );
+    await expect(fetchNotes(importing)).rejects.toMatchObject({
+      status: 409,
+      body: { code: "book-not-ready" },
+    });
   });
 });
 

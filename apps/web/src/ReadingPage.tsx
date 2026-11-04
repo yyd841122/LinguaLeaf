@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router";
 import {
   applyStatusToBlocks,
   type StatusApplied,
+  type ClickPoint,
 } from "@lingualeaf/reading-model";
 import { fetchJson } from "./api";
 import { useChapterTranslation } from "./chapterTranslation";
@@ -11,6 +12,8 @@ import type {
   BookToc,
   BookmarkSummary,
   ChapterPayload,
+  NoteAnchor,
+  NoteSummary,
 } from "../../server/src/wire";
 import { useIpaSize } from "./IpaSizeControl";
 import { useBookmarksSession } from "./bookmarksSession";
@@ -25,6 +28,18 @@ import { useProgressSession } from "./progressSession";
 import { captureBookmarkTarget } from "./readingProgress";
 import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
+import { useNotesSession } from "./notesSession";
+import { NotePopup, NOTE_TYPE_LABELS, type NotePopupHandle } from "./NotePopup";
+import { readingBlockSelector } from "./readingBlocks";
+
+type NoteEditor = {
+  bookId: number;
+  anchor: NoteAnchor;
+  note: NoteSummary | null;
+  point: ClickPoint;
+  op: number;
+};
+type NoteOpenIntent = { bookId: number; note: NoteSummary; op: number };
 
 // A panel entry's text after the chapter title (reading-bookmarks 03):
 // the marked block's own original text, cut at ENTRY_PREFIX_MAX_CHARS
@@ -53,6 +68,7 @@ export function ReadingPage() {
   const { id, chapter } = useParams();
   const bookId = Number(id);
   const chapterNumber = Number(chapter);
+  const navigate = useNavigate();
   const [toc, setToc] = useState<BookToc | null>(null);
   const [content, setContent] = useState<ChapterPayload | null>(null);
   // The route the loaded content belongs to. A navigation's first render has
@@ -77,9 +93,25 @@ export function ReadingPage() {
   // The word-lookup popup (ticket 06): which word was clicked, and where to
   // anchor it. Clicking another word re-anchors; leaving the chapter closes.
   const [lookup, setLookup] = useState<WordClick | null>(null);
+  const notesSession = useNotesSession({ bookId });
+  const [noteEditor, setNoteEditor] = useState<NoteEditor | null>(null);
+  const popupRef = useRef<NotePopupHandle>(null);
+  const editorOp = useRef(0);
+  const [pendingNoteOpen, setPendingNoteOpen] = useState<NoteOpenIntent | null>(
+    null
+  );
+  const [bookNoteExpanded, setBookNoteExpanded] = useState(false);
+  const [bannerBook, setBannerBook] = useState(bookId);
+  if (!Object.is(bannerBook, bookId)) {
+    setBannerBook(bookId);
+    setBookNoteExpanded(false);
+    setNoteEditor(null);
+    setPendingNoteOpen(null);
+  }
 
   useEffect(() => {
     setLookup(null);
+    setNoteEditor(null);
   }, [bookId, chapterNumber]);
 
   useEffect(() => {
@@ -116,12 +148,88 @@ export function ReadingPage() {
     loadedRoute !== null &&
     loadedRoute.bookId === bookId &&
     loadedRoute.chapterNumber === chapterNumber;
-  const { saveFailed, armJumpTarget } = useProgressSession({
+  const { saveFailed, armJumpTarget, landedJump } = useProgressSession({
     bookId,
     chapterNumber,
     ready,
   });
+  const openNote = (
+    anchor: NoteAnchor,
+    note: NoteSummary | null,
+    button: HTMLElement
+  ) => {
+    if (!notesSession.loaded || popupRef.current?.requestClose() === false)
+      return;
+    const box = button.getBoundingClientRect();
+    setLookup(null);
+    setNoteEditor({
+      bookId,
+      anchor,
+      note,
+      point: { x: box.left, y: box.bottom },
+      op: ++editorOp.current,
+    });
+  };
+  useEffect(() => {
+    const intent = pendingNoteOpen;
+    if (!intent) return;
+    if (
+      error ||
+      intent.bookId !== bookId ||
+      intent.note.chapter !== chapterNumber
+    ) {
+      setPendingNoteOpen(null);
+      return;
+    }
+    if (
+      !ready ||
+      !notesSession.loaded ||
+      !landedJump ||
+      landedJump.bookId !== bookId ||
+      landedJump.op !== intent.op
+    )
+      return;
+    const button = document.querySelector<HTMLElement>(
+      `${readingBlockSelector(intent.note.block!)} .block-note-button`
+    );
+    setPendingNoteOpen(null);
+    if (button && intent.note.chapter !== null && intent.note.block !== null) {
+      openNote(
+        { chapter: intent.note.chapter, block: intent.note.block },
+        intent.note,
+        button
+      );
+    }
+    // openNote reads this render's loaded session and DOM. Its function
+    // identity changes each render; only landing/readiness consumes intent.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    pendingNoteOpen,
+    ready,
+    notesSession.loaded,
+    landedJump,
+    bookId,
+    chapterNumber,
+    error,
+  ]);
+
+  const jumpToNote = (note: NoteSummary) => {
+    if (popupRef.current?.requestClose() === false) return;
+    setLookup(null);
+    setTocOpen(false);
+    if (note.chapter === null || note.block === null) {
+      setPendingNoteOpen(null);
+      setBookNoteExpanded(true);
+      window.requestAnimationFrame(() => window.scrollTo(0, 0));
+      return;
+    }
+    const op = armJumpTarget({ chapter: note.chapter, block: note.block });
+    setPendingNoteOpen({ bookId, note, op });
+    if (chapterNumber !== note.chapter)
+      navigate(`/book/${bookId}/${note.chapter}`);
+  };
   const jumpAndClosePanel = (target: BookmarkTarget) => {
+    setPendingNoteOpen(null);
     armJumpTarget(target);
     setTocOpen(false);
   };
@@ -179,6 +287,8 @@ export function ReadingPage() {
   }
 
   const chapterCount = toc.chapters.length;
+  const bookNote =
+    notesSession.notes.find((note) => note.chapter === null) ?? null;
   // The chapter-level fact the two gates below key on (ticket 03): at
   // least one sentence block carries a non-empty translation. A wholly
   // untranslated chapter has no line to render and no toggle to offer;
@@ -377,6 +487,36 @@ export function ReadingPage() {
                 </Link>
               )}
             </section>
+            <section className="notes-area" aria-label="笔记">
+              <h2>笔记</h2>
+              {notesSession.notes.length === 0 ? (
+                <p>还没有笔记，移到句子块行首写一笔。</p>
+              ) : (
+                <ul className="notes-list">
+                  {notesSession.notes.map((note) => (
+                    <li key={note.id}>
+                      <button
+                        type="button"
+                        disabled={!notesSession.loaded}
+                        onClick={() => jumpToNote(note)}
+                      >
+                        <span className="note-badge">
+                          {NOTE_TYPE_LABELS[note.type]}
+                        </span>{" "}
+                        {note.chapter === null
+                          ? "文章笔记"
+                          : (toc.chapters.find(
+                              (entry) => entry.position === note.chapter
+                            )?.title ?? `第 ${note.chapter} 章`)}
+                        {" · "}
+                        {note.text.slice(0, 40)}
+                        {note.text.length > 40 ? "…" : ""}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </nav>
         )}
         {settingsOpen && (
@@ -397,6 +537,59 @@ export function ReadingPage() {
           </div>
         )}
       </div>
+      <section className="book-note-banner" aria-label="文章笔记">
+        {bookNote ? (
+          <>
+            <button
+              type="button"
+              aria-expanded={bookNoteExpanded}
+              onClick={() => setBookNoteExpanded((open) => !open)}
+            >
+              <span className="note-badge">
+                {NOTE_TYPE_LABELS[bookNote.type]}
+              </span>{" "}
+              {bookNote.text.slice(0, 60)}
+              {bookNote.text.length > 60 ? "…" : ""}
+              {" · "}
+              <time dateTime={bookNote.updatedAt}>
+                {new Date(bookNote.updatedAt).toLocaleString()}
+              </time>
+            </button>
+            {bookNoteExpanded && (
+              <div>
+                <p className="note-full-text">{bookNote.text}</p>
+                <button
+                  type="button"
+                  disabled={!notesSession.loaded}
+                  onClick={(event) =>
+                    openNote(
+                      { chapter: null, block: null },
+                      bookNote,
+                      event.currentTarget
+                    )
+                  }
+                >
+                  编辑文章笔记
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <button
+            type="button"
+            disabled={!notesSession.loaded}
+            onClick={(event) =>
+              openNote(
+                { chapter: null, block: null },
+                null,
+                event.currentTarget
+              )
+            }
+          >
+            写文章笔记
+          </button>
+        )}
+      </section>
       {content.translationAvailable ? null : (
         <p role="status" className="translation-hint">
           未配置翻译服务，暂时无法翻译；配置后此按钮恢复可用。
@@ -414,8 +607,43 @@ export function ReadingPage() {
         translationSize={translationSize}
         showIpa={showIpa}
         showTranslation={showTranslation && chapterHasTranslations}
-        onWordClick={setLookup}
+        onWordClick={(click) => {
+          if (popupRef.current?.requestClose() === false) return;
+          setNoteEditor(null);
+          setLookup(click);
+        }}
+        noteControl={(position) => {
+          const note =
+            notesSession.notes.find(
+              (row) => row.chapter === chapterNumber && row.block === position
+            ) ?? null;
+          return {
+            exists: note !== null,
+            disabled:
+              !notesSession.loaded ||
+              notesSession.pending.has(`${chapterNumber}:${position}`),
+            onClick: (button) =>
+              openNote(
+                { chapter: chapterNumber, block: position },
+                note,
+                button
+              ),
+          };
+        }}
       />
+      {noteEditor && noteEditor.bookId === bookId && (
+        <NotePopup
+          key={noteEditor.op}
+          ref={popupRef}
+          note={noteEditor.note}
+          point={noteEditor.point}
+          onClose={() => setNoteEditor(null)}
+          onSave={(id, value) =>
+            notesSession.save(noteEditor.anchor, id, value)
+          }
+          onDelete={notesSession.remove}
+        />
+      )}
       {lookup ? (
         <WordLookupPopup
           click={lookup}
@@ -433,6 +661,14 @@ export function ReadingPage() {
           书签操作失败，请重试。
         </p>
       ) : null}
+      {notesSession.failed && (
+        <p role="status" className="save-warning">
+          笔记操作失败，请重试。{" "}
+          <button type="button" onClick={() => void notesSession.refresh()}>
+            重新加载笔记
+          </button>
+        </p>
+      )}
       {startFailed ? (
         <p role="alert" className="error">
           翻译启动失败，请重试。
