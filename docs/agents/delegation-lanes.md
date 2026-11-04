@@ -27,6 +27,10 @@ Codex 在 workspace-write 沙箱按票面自主实现,双轴评审兜底。
 - 管线:立票 → `/cc-suite:implement`(或 codex-runner 直调)→ Codex 返回
   threadId → 编排侧补跑全链 verify → 双轴评审(Standards/Spec 并行)→
   收官。
+- 守态:`--background` 任务的终态用 `.claude/scripts/watch-codex-job.mjs <jobId>` 守(挂
+  Bash run_in_background,终态一行 TERMINAL 唤醒编排会话)。禁手搓 until-loop:内联带
+  引号 JS 曾 SyntaxError 空转数小时(settle-channel 02);脚本头注释带干跑口诀(先
+  `timeout 3` 验退出码 124,注入 fixture 可验终态路径)。
 
 ## 共同纪律
 

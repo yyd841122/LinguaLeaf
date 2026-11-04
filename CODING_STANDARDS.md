@@ -539,3 +539,26 @@ can send at the tested moment and find each one's branch; a fall-through
 that resolves a response instead of throwing is the finding. (The stub's
 answered shapes still follow "Client calls match real response shapes" —
 this rule is about the gap, not the shapes.)
+
+## Structural twins of an available named type sweep in a batch, not per diff
+
+When a diff brings a named type into scope at a file that still re-declares
+the same shape inline — a `useState<{ word: string; point: { x: number;
+y: number } } | null>` beside an imported `WordClick` — the reviewer notes
+the site for the batch sweep (`.scratch/types-alignment/`) and moves on;
+the adoption is a dedicated semantics-preserving pass, not a fix inside a
+ticket that never asked for it. A diff adopts the alias in-flight only when
+the twin declaration sits inside the diff or the ticket requests the type;
+otherwise the pull is scope creep dressed as cleanup.
+
+Why: two consecutive reviews flagged the same shape and recorded 不修 both
+times — the annotated-blocks-kernel review's 「toAnnotatedBlock 可提具名」
+(2026-11-02) and pdf-word-keyboard's `useState<{word; point}>` twin of the
+already-imported `WordClick` (.scratch/pdf-word-keyboard/spec.md Comments,
+2026-11-03). Same verdict re-paid each time; the rule makes it the default
+and gives the sites somewhere to accumulate.
+
+At review: when a diff makes a named type available at a file with an
+inline twin, name the site for the batch sweep and go on; flag it as a
+per-diff finding only when the ticket asked for the adoption and the diff
+skipped it.

@@ -30,6 +30,9 @@ Node-driver end-to-end against a running server — mock translator, orphan-port
 
 Which side implements and which reviews (Claude direct vs Codex sandbox), the selection rule, threadId recording, caller checkpoints: `docs/agents/delegation-lanes.md`.
 
+Lane B background-job watcher: `.claude/scripts/watch-codex-job.mjs <jobId>` —
+terminal-state poll for `--background` Codex jobs, run under Bash run_in_background.
+
 ## Shared Memory
 
 **Always write new instructions, rules, and memory to `AGENTS.md` only.**
