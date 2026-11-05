@@ -173,7 +173,9 @@ it("writes from a block, shows the persistent marker, edits, deletes, and leaves
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   const marker = screen.getByRole("button", { name: "编辑笔记" });
   expect(marker).toHaveClass("has-note");
-  expect(marker.parentElement).toHaveClass("has-note");
+  // The button trails the last text line inside the content element, so
+  // the note classes ride the block container two levels up.
+  expect(marker.closest(".sentence-block")).toHaveClass("has-note");
   fireEvent.click(screen.getByRole("button", { name: "目录" }));
   const notes = screen.getByRole("region", { name: "笔记" });
   expect(within(notes).getByRole("button")).toHaveTextContent(

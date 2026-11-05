@@ -114,13 +114,13 @@ export function AnnotatedBlockView({
         className={`sentence-block${noteClass}`}
         data-position={block.position}
       >
-        <NoteButton control={note} />
         <p className="original-line">
           <WordSegments
             segments={segments}
             showSlots={showIpa && paired}
             statusOf={statusOf}
           />
+          <NoteButton control={note} />
         </p>
         {showIpa && !paired && block.ipaText !== undefined ? (
           <p className="ipa-line">{block.ipaText ?? ""}</p>
@@ -134,8 +134,8 @@ export function AnnotatedBlockView({
   if (block.kind === "code") {
     return (
       <pre className={`code-block${noteClass}`} data-position={block.position}>
-        <NoteButton control={note} />
         <code>{block.text}</code>
+        <NoteButton control={note} />
       </pre>
     );
   }
@@ -145,18 +145,18 @@ export function AnnotatedBlockView({
         className={`image-block${noteClass}`}
         data-position={block.position}
       >
-        <NoteButton control={note} />
         <span className="image-placeholder" aria-hidden="true">
           🖼
         </span>
         {block.text ? <figcaption>{block.text}</figcaption> : null}
+        <NoteButton control={note} />
       </figure>
     );
   }
   return (
     <p className={`raw-block${noteClass}`} data-position={block.position}>
-      <NoteButton control={note} />
       {block.text}
+      <NoteButton control={note} />
     </p>
   );
 }

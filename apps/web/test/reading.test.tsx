@@ -687,13 +687,14 @@ it("hides both IPA forms when showIpa is false, keeping the original line", () =
   expect(paired?.querySelector(".ipa-word")).toBeNull();
   expect(unpaired?.querySelector(".ipa-line")).toBeNull();
 
-  // The original line survives as plain text, never hideable.
-  expect(paired?.querySelector(".original-line")?.textContent).toBe(
-    "Mr. Gupta woke early."
-  );
-  expect(unpaired?.querySelector(".original-line")?.textContent).toBe(
-    "A book without slots."
-  );
+  // The original line survives as plain text, never hideable. The note
+  // button trails the line inside the same <p>, so its glyph is stripped.
+  expect(
+    paired?.querySelector(".original-line")?.textContent?.replace(/✎$/, "")
+  ).toBe("Mr. Gupta woke early.");
+  expect(
+    unpaired?.querySelector(".original-line")?.textContent?.replace(/✎$/, "")
+  ).toBe("A book without slots.");
 
   // The translation toggle is independent and untouched.
   expect(unpaired?.querySelector(".translation-line")?.textContent).toBe(
@@ -1474,9 +1475,9 @@ describe("ReadingPage's translate button through the component boundary", () => 
       expect(screen.getByRole("alert").textContent).toBe(
         "翻译启动失败，请重试。"
       );
-      expect(document.querySelector(".original-line")?.textContent).toBe(
-        "Mr. Gupta woke early."
-      );
+      expect(
+        document.querySelector(".original-line")?.textContent?.replace(/✎$/, "")
+      ).toBe("Mr. Gupta woke early.");
       fireEvent.click(screen.getByRole("button", { name: "目录" }));
       expect(screen.getByRole("navigation", { name: "目录" })).toBeTruthy();
 
