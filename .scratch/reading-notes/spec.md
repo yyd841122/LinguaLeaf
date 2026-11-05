@@ -1,6 +1,6 @@
 # reading-notes:阅读笔记——句块级 + 书级批注(进度/感受/思路/疑问)
 
-Status: ready-for-agent
+Status: done
 
 (clarify 管线收官 2026-11-04:grill 两轮 14 题拍板 → 票面整理 → Codex
 review-plan 单轮评审 NEEDS REVISION 12 发现、引文全部现场重验属实 →
@@ -301,3 +301,25 @@ EPERM 假失败已由 .cc-suite.md 声明,全量测试与 verify 留编排侧补
   触发脏确认、原生 tab 语义三项实现细则,属呈现层,不另开拍板轮。
 - 上一轮增量(`0914e02`)的真机抽验由维护者尚未执行,折叠进本轮
   结束后的统一抽验清单。
+
+### 2026-11-05 收官(三轮真机抽验归档,Status 翻 done)
+
+- 维护者真机抽验**全绿**(2026-11-05,统一清单八项):标签页切换与
+  草稿跨切保留、每类型独立存取(保存不关浮层)、脏守 Esc 确认、
+  v1 旧笔记无损迁移(表重建迁移真机验证)、同块多类型列表徽标与
+  固定类型序、书级横幅同构标签页、段尾随文按钮(首轮欠项补验)、
+  书签零回归。
+- 账目五 commit:`c961400` 票面(clarify 管线:grill 14 题 +
+  review-plan 12 发现合并 + 2 产品题)→ `5256ccc` v1 实现 →
+  `d4d79b6` 段尾修订 → `0914e02` 类型即维度增量 → `5f26fed`
+  标签页增量。
+- 全链 verify 三轮 EXIT=0:661 → 673 → 680(659→671→678 passed|2
+  skipped,各轮基线递进对齐)。
+- 双轴评审三场:v1 场(vs c961400)12 发现合并+2 产品题拍板;增量场
+  (vs d4d79b6)零硬违规、stale 卡死分支编排侧当场修(NotePanels
+  stale 回落可编辑态);标签页场(vs 0914e02)零硬违规零当场修。
+  各场 judgement-call 记档不修清单见对应 commit message。
+- Lane B 三发:threadId `01a1a57b-34f9-7341-80bc-350e455a8aff` /
+  `01a1a989-6e59-7793-8ce8-37851cf26596` /
+  `01a1a9bc-e21e-7830-a9a9-5dc2d4e0375e`;守态全程
+  watch-codex-job.mjs,沙箱零触碰 .scratch 零 commit。
