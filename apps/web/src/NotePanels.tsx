@@ -1,4 +1,4 @@
-import { useImperativeHandle, useRef, useState, type Ref } from "react";
+import { useId, useImperativeHandle, useRef, useState, type Ref } from "react";
 import {
   NOTE_TYPES,
   type NoteContent,
@@ -38,6 +38,13 @@ export function NotePanels({
 }: NotePanelsProps & {
   ref: Ref<NotePanelsHandle>;
 }) {
+  const id = useId();
+  const [selectedType, setSelectedType] = useState<NoteType>(
+    () =>
+      NOTE_TYPES.find((type) =>
+        notes.some((note) => note.type === type && note.text)
+      ) ?? "progress"
+  );
   const [panels, setPanels] = useState(
     () =>
       Object.fromEntries(
@@ -118,60 +125,100 @@ export function NotePanels({
       });
     }
   };
+  const type = selectedType;
+  const panel = panels[type];
+  const pending = panel.phase === "saving" || panel.phase === "deleting";
   return (
     <div className="note-panels">
-      {NOTE_TYPES.map((type) => {
-        const panel = panels[type];
-        const pending = panel.phase === "saving" || panel.phase === "deleting";
-        return (
-          <form
-            key={type}
-            className={`note-panel${panel.savedText ? " has-note" : ""}`}
-            data-note-type={type}
-            aria-label={`${NOTE_TYPE_LABELS[type]}笔记`}
-            onSubmit={(event) => {
+      <div className="note-tabs" role="tablist" aria-label="笔记类型">
+        {NOTE_TYPES.map((tabType, index) => (
+          <button
+            key={tabType}
+            type="button"
+            role="tab"
+            id={`${id}-tab-${tabType}`}
+            aria-controls={`${id}-panel-${tabType}`}
+            aria-selected={tabType === selectedType}
+            tabIndex={tabType === selectedType ? 0 : -1}
+            className="note-type-title"
+            data-note-type={tabType}
+            onClick={() => setSelectedType(tabType)}
+            onKeyDown={(event) => {
+              let nextIndex: number;
+              switch (event.key) {
+                case "ArrowRight":
+                  nextIndex = (index + 1) % NOTE_TYPES.length;
+                  break;
+                case "ArrowLeft":
+                  nextIndex =
+                    (index + NOTE_TYPES.length - 1) % NOTE_TYPES.length;
+                  break;
+                case "Home":
+                  nextIndex = 0;
+                  break;
+                case "End":
+                  nextIndex = NOTE_TYPES.length - 1;
+                  break;
+                default:
+                  return;
+              }
               event.preventDefault();
-              void finish(type, false);
+              setSelectedType(NOTE_TYPES[nextIndex]!);
+              const tabs =
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                  '[role="tab"]'
+                );
+              tabs?.[nextIndex]?.focus();
             }}
           >
-            <fieldset disabled={pending}>
-              <legend className="note-type-title" data-note-type={type}>
-                {NOTE_TYPE_LABELS[type]}
-                {panel.savedText && <span aria-label="已有笔记"> ●</span>}
-              </legend>
-              <label>
-                {NOTE_TYPE_LABELS[type]}笔记内容
-                <textarea
-                  value={panel.text}
-                  maxLength={10_000}
-                  rows={3}
-                  onChange={(event) =>
-                    patch(type, {
-                      text: event.target.value,
-                      phase:
-                        event.target.value === panel.savedText
-                          ? "clean"
-                          : "dirty",
-                      message: null,
-                    })
-                  }
-                />
-              </label>
-              <div className="note-actions">
-                <button type="submit" disabled={!panel.text.trim()}>
-                  {panel.phase === "saving" ? "保存中…" : "保存"}
-                </button>
-                {panel.existing && (
-                  <button type="button" onClick={() => void finish(type, true)}>
-                    {panel.phase === "deleting" ? "删除中…" : "删除"}
-                  </button>
-                )}
-              </div>
-            </fieldset>
-            {panel.message && <p role="alert">{panel.message}</p>}
-          </form>
-        );
-      })}
+            {NOTE_TYPE_LABELS[tabType]}
+            {panels[tabType].savedText && <span aria-label="已有笔记"> ●</span>}
+          </button>
+        ))}
+      </div>
+      <form
+        key={type}
+        role="tabpanel"
+        id={`${id}-panel-${type}`}
+        aria-labelledby={`${id}-tab-${type}`}
+        className={`note-panel${panel.savedText ? " has-note" : ""}`}
+        data-note-type={type}
+        aria-label={`${NOTE_TYPE_LABELS[type]}笔记`}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void finish(type, false);
+        }}
+      >
+        <fieldset disabled={pending}>
+          <label>
+            {NOTE_TYPE_LABELS[type]}笔记内容
+            <textarea
+              value={panel.text}
+              maxLength={10_000}
+              rows={3}
+              onChange={(event) =>
+                patch(type, {
+                  text: event.target.value,
+                  phase:
+                    event.target.value === panel.savedText ? "clean" : "dirty",
+                  message: null,
+                })
+              }
+            />
+          </label>
+          <div className="note-actions">
+            <button type="submit" disabled={!panel.text.trim()}>
+              {panel.phase === "saving" ? "保存中…" : "保存"}
+            </button>
+            {panel.existing && (
+              <button type="button" onClick={() => void finish(type, true)}>
+                {panel.phase === "deleting" ? "删除中…" : "删除"}
+              </button>
+            )}
+          </div>
+        </fieldset>
+        {panel.message && <p role="alert">{panel.message}</p>}
+      </form>
     </div>
   );
 }
