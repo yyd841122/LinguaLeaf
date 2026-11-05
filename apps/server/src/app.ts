@@ -8,6 +8,7 @@ import type { Dictionary } from "./dict/dictionary.js";
 import type { Translator } from "./translate/translator.js";
 import { createBooksRouter } from "./books-router.js";
 import { createLookupRouter } from "./dict/lookup-router.js";
+import { createReviewRouter } from "./review-router.js";
 import { createVocabRouter } from "./vocab-router.js";
 import { learnWordIfAbsent } from "./vocab-store.js";
 import { activeTaskCount } from "./task-lifecycle.js";
@@ -76,6 +77,8 @@ export function createApp(
   });
 
   app.use("/api/books", createBooksRouter(database, dictionary, translator));
+
+  app.use("/api/review", createReviewRouter(database));
 
   // The popup's explicit state operations (ADR-0005).
   app.use("/api/vocab", createVocabRouter(database));

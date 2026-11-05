@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   applyStatusToBlocks,
   type StatusApplied,
@@ -44,7 +44,11 @@ type NoteEditor = {
   point: ClickPoint;
   op: number;
 };
-type NoteOpenIntent = { bookId: number; note: NoteSummary; op: number };
+type NoteOpenIntent = {
+  bookId: number;
+  note: Pick<NoteSummary, "id" | "chapter" | "block">;
+  op: number;
+};
 
 // A panel entry's text after the chapter title (reading-bookmarks 03):
 // the marked block's own original text, cut at ENTRY_PREFIX_MAX_CHARS
@@ -74,6 +78,7 @@ export function ReadingPage() {
   const bookId = Number(id);
   const chapterNumber = Number(chapter);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [toc, setToc] = useState<BookToc | null>(null);
   const [content, setContent] = useState<ChapterPayload | null>(null);
   // The route the loaded content belongs to. A navigation's first render has
@@ -193,6 +198,42 @@ export function ReadingPage() {
     chapterNumber,
     ready,
   });
+  useEffect(() => {
+    if (!searchParams.has("block") && !searchParams.has("note")) return;
+    const blockText = searchParams.get("block") ?? "";
+    const noteText = searchParams.get("note") ?? "";
+    const block = Number(blockText);
+    const noteId = Number(noteText);
+    if (
+      searchParams.getAll("block").length === 1 &&
+      searchParams.getAll("note").length === 1 &&
+      /^\d+$/.test(blockText) &&
+      /^\d+$/.test(noteText) &&
+      Number.isSafeInteger(block) &&
+      block > 0 &&
+      Number.isSafeInteger(noteId) &&
+      noteId > 0 &&
+      Number.isSafeInteger(bookId) &&
+      bookId > 0 &&
+      Number.isSafeInteger(chapterNumber) &&
+      chapterNumber > 0
+    ) {
+      const op = armJumpTarget({ chapter: chapterNumber, block });
+      setPendingNoteOpen({
+        bookId,
+        note: { id: noteId, chapter: chapterNumber, block },
+        op,
+      });
+    }
+    const clean = new URLSearchParams(searchParams);
+    clean.delete("block");
+    clean.delete("note");
+    setSearchParams(clean, { replace: true });
+    // armJumpTarget is render-scoped; the URL is the intent's identity.
+    // The clean replacement makes the consumption one-shot, including on
+    // direct entry or refresh, while unrelated query parameters survive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bookId, chapterNumber, searchParams, setSearchParams]);
   const openNote = (anchor: NoteAnchor, button: HTMLElement) => {
     if (!notesSession.loaded || popupRef.current?.requestClose() === false)
       return;
@@ -232,7 +273,18 @@ export function ReadingPage() {
       `${readingBlockSelector(intent.note.block!)} .block-note-button`
     );
     setPendingNoteOpen(null);
-    if (button && intent.note.chapter !== null && intent.note.block !== null) {
+    const exists = notesSession.notes.some(
+      (note) =>
+        note.id === intent.note.id &&
+        note.chapter === intent.note.chapter &&
+        note.block === intent.note.block
+    );
+    if (
+      exists &&
+      button &&
+      intent.note.chapter !== null &&
+      intent.note.block !== null
+    ) {
       openNote(
         { chapter: intent.note.chapter, block: intent.note.block },
         button

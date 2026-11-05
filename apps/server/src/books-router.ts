@@ -75,6 +75,7 @@ const toBookJson = (row: BookRow) => ({
 
 const toShelfJson = (row: ShelfEntry) => ({
   ...toBookJson(row),
+  noteCount: row.note_count,
   progress:
     row.progress_chapter === null || row.progress_block === null
       ? null

@@ -9,6 +9,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { segmentOriginal } from "@lingualeaf/reading-model";
 import type {
   BookToc,
+  BookSummary,
+  ReviewNotesResponse,
   ChapterPayload,
   ChapterTranslationState,
   NoteSummary,
@@ -58,6 +60,8 @@ import {
   updateNote,
   deleteNote,
 } from "../../../apps/web/src/notes";
+import { seedReview } from "./fixtures/review.js";
+import { fetchReviewNotes } from "../../../apps/web/src/reviewNotes";
 import { sendHeartbeat } from "../../../apps/web/src/heartbeat";
 import { drainTasks } from "../src/task-lifecycle.js";
 
@@ -1305,5 +1309,29 @@ describe("chapter translation recovery and concurrency (ticket 04)", () => {
     expect(health.status).toBe("ok");
     expect(typeof health.lastPageSeenAt).toBe("string");
     expect(health.activeTasks).toBe(0);
+  });
+});
+
+describe("note review over the real client/server seam", () => {
+  it("returns the empty envelope through fetchJson and the review client", async () => {
+    await startStack();
+    expect(await fetchJson<ReviewNotesResponse>("/api/review/notes")).toEqual({
+      entries: [],
+    });
+    expect(await fetchReviewNotes()).toEqual([]);
+  });
+
+  it("serves all notes in reading order and shelf counts including zeros", async () => {
+    const { database } = await startStack();
+    const fixture = seedReview(database);
+    expect(await fetchReviewNotes()).toEqual(fixture.entries);
+    const { books } = await fetchJson<{ books: BookSummary[] }>("/api/books");
+    expect(books.map((book) => [book.id, book.noteCount])).toEqual([
+      [fixture.first, 7],
+      [fixture.second, 1],
+      [fixture.empty, 0],
+      [fixture.importing, 0],
+      [fixture.failed, 0],
+    ]);
   });
 });

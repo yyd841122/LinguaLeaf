@@ -6,6 +6,7 @@ import type {
   NoteAnchor,
   NoteContent,
   NoteSummary,
+  ReviewNoteEntry,
   TranslationStatus,
 } from "./wire.js";
 
@@ -64,6 +65,7 @@ export type BookRow = {
 export type ShelfEntry = BookRow & {
   progress_chapter: number | null;
   progress_block: number | null;
+  note_count: number;
 };
 
 // A chapter head as the table-of-contents route serves it. The TOC stays
@@ -474,9 +476,12 @@ export function listShelf(database: Database.Database): ShelfEntry[] {
     .prepare(
       `SELECT ${bookColumnSql("b.")},
               p.chapter_position AS progress_chapter,
-              p.block_position AS progress_block
+              p.block_position AS progress_block,
+              COALESCE(n.note_count, 0) AS note_count
        FROM books b
        LEFT JOIN reading_progress p ON p.book_id = b.id
+       LEFT JOIN (SELECT book_id, COUNT(*) AS note_count FROM notes GROUP BY book_id) n
+         ON n.book_id = b.id
        ORDER BY b.id`
     )
     .all() as ShelfEntry[];
@@ -665,8 +670,19 @@ type NoteSqlRow = {
   created_at: string;
   updated_at: string;
 };
-const NOTE_COLUMNS =
-  "id, chapter_position, block_position, type, text, created_at, updated_at";
+const NOTE_COLUMNS = [
+  "id",
+  "chapter_position",
+  "block_position",
+  "type",
+  "text",
+  "created_at",
+  "updated_at",
+] as const;
+const noteColumnSql = (prefix: string) =>
+  NOTE_COLUMNS.map((column) => `${prefix}${column}`).join(", ");
+const noteTypeOrderSql = (prefix: string) =>
+  `CASE ${prefix}type WHEN 'progress' THEN 0 WHEN 'feeling' THEN 1 WHEN 'idea' THEN 2 ELSE 3 END`;
 const decodeNote = (row: NoteSqlRow): NoteSummary => ({
   id: row.id,
   chapter: row.chapter_position,
@@ -684,12 +700,39 @@ export function listNotes(
   return (
     database
       .prepare(
-        `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ?
+        `SELECT ${noteColumnSql("")} FROM notes WHERE book_id = ?
     ORDER BY chapter_position, block_position,
-      CASE type WHEN 'progress' THEN 0 WHEN 'feeling' THEN 1 WHEN 'idea' THEN 2 ELSE 3 END`
+      ${noteTypeOrderSql("")}`
       )
       .all(bookId) as NoteSqlRow[]
   ).map(decodeNote);
+}
+
+// All notes in reading order, with their book and chapter headings. The
+// LEFT JOIN retains article notes, whose anchors are intentionally null.
+export function listReviewNotes(
+  database: Database.Database
+): ReviewNoteEntry[] {
+  const rows = database
+    .prepare(
+      `
+    SELECT ${noteColumnSql("n.")}, b.id AS bookId, b.title AS bookTitle,
+           COALESCE(n.chapter_position, 0) AS chapterPosition,
+           CASE WHEN n.chapter_position IS NULL THEN '文章笔记' ELSE c.title END AS chapterTitle
+    FROM notes n
+    JOIN books b ON b.id = n.book_id
+    LEFT JOIN chapters c ON c.book_id = n.book_id AND c.position = n.chapter_position
+    ORDER BY b.id, chapterPosition, n.block_position, ${noteTypeOrderSql("n.")}
+  `
+    )
+    .all() as (NoteSqlRow & Omit<ReviewNoteEntry, "note">)[];
+  return rows.map((row) => ({
+    bookId: row.bookId,
+    bookTitle: row.bookTitle,
+    chapterPosition: row.chapterPosition,
+    chapterTitle: row.chapterTitle,
+    note: decodeNote(row),
+  }));
 }
 
 function findNote(
@@ -698,7 +741,9 @@ function findNote(
   id: number
 ): NoteSummary | undefined {
   const row = database
-    .prepare(`SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND id = ?`)
+    .prepare(
+      `SELECT ${noteColumnSql("")} FROM notes WHERE book_id = ? AND id = ?`
+    )
     .get(bookId, id) as NoteSqlRow | undefined;
   return row && decodeNote(row);
 }
@@ -730,12 +775,12 @@ export function addNote(
       anchor.chapter === null
         ? database
             .prepare(
-              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position IS NULL AND type = ?`
+              `SELECT ${noteColumnSql("")} FROM notes WHERE book_id = ? AND chapter_position IS NULL AND type = ?`
             )
             .get(bookId, content.type)
         : database
             .prepare(
-              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position = ? AND block_position = ? AND type = ?`
+              `SELECT ${noteColumnSql("")} FROM notes WHERE book_id = ? AND chapter_position = ? AND block_position = ? AND type = ?`
             )
             .get(bookId, anchor.chapter, anchor.block, content.type)
     ) as NoteSqlRow | undefined;

@@ -33,7 +33,7 @@ export async function attachFrontend(
   await access(indexFile);
   app.use(express.static(publicDirectory));
   // Serve the app shell for browser routes, including direct chapter URLs.
-  app.get(["/", "/book/:id/:chapter"], (_request, response) => {
+  app.get(["/", "/review", "/book/:id/:chapter"], (_request, response) => {
     response.sendFile("index.html", { root: publicDirectory });
   });
   return async () => {};

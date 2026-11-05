@@ -105,9 +105,10 @@ export type BookSummary = {
   // the importing row.
   pageCount: number | null;
   progress: { chapter: number; block: number } | null;
+  noteCount: number;
 };
 
-export type BookToc = Omit<BookSummary, "progress"> & {
+export type BookToc = Omit<BookSummary, "progress" | "noteCount"> & {
   chapters: { position: number; title: string; level: number | null }[];
 };
 
@@ -180,3 +181,13 @@ export type NoteError = {
   error: string;
   note?: NoteSummary;
 };
+
+export type ReviewNoteEntry = {
+  bookId: number;
+  bookTitle: string;
+  // Book-level notes sort before chapters under the article-note group.
+  chapterPosition: number;
+  chapterTitle: string;
+  note: NoteSummary;
+};
+export type ReviewNotesResponse = { entries: ReviewNoteEntry[] };

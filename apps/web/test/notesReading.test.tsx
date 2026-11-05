@@ -1,6 +1,15 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useNavigationType,
+} from "react-router";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { StrictMode } from "react";
+import { ReviewPage } from "../src/ReviewPage";
 import { ReadingPage } from "../src/ReadingPage";
 import type { NoteSummary } from "../../server/src/wire";
 
@@ -108,6 +117,17 @@ beforeEach(() => {
           })),
         });
       }
+      if (url === "/api/review/notes" && method === "GET")
+        return json({
+          entries: rows.map((row) => ({
+            bookId: 7,
+            bookTitle: "Notes book",
+            chapterPosition: row.chapter ?? 0,
+            chapterTitle:
+              row.chapter === null ? "文章笔记" : `Chapter ${row.chapter}`,
+            note: row,
+          })),
+        });
       if (url.endsWith("/notes") && method === "GET")
         return json({ notes: [...rows] });
       if (url.endsWith("/notes") && method === "POST") {
@@ -159,14 +179,32 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
-function mount() {
-  render(
-    <MemoryRouter initialEntries={["/book/7/1"]}>
+function LocationProbe() {
+  const location = useLocation();
+  const navigationType = useNavigationType();
+  const navigate = useNavigate();
+  return (
+    <>
+      <output aria-label="location">
+        {location.pathname}
+        {location.search}
+      </output>
+      <output aria-label="navigation type">{navigationType}</output>
+      <button onClick={() => navigate(-1)}>后退</button>
+    </>
+  );
+}
+function mount(path = "/book/7/1", strict = false) {
+  const tree = (
+    <MemoryRouter initialEntries={["/review", path]} initialIndex={1}>
+      <LocationProbe />
       <Routes>
+        <Route path="/review" element={<ReviewPage />} />
         <Route path="/book/:id/:chapter" element={<ReadingPage />} />
       </Routes>
     </MemoryRouter>
   );
+  render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 it("writes from a block, shows the persistent marker, edits, deletes, and leaves bookmarks independent", async () => {
@@ -427,4 +465,138 @@ it("protects every book draft on Esc and outside clicks before switching to a bl
     )
   ).not.toBeInTheDocument();
   expect(selectText("疑问")).toHaveValue("");
+});
+
+it.each([false, true])(
+  "consumes direct-entry URL targets, replaces to clean, and opens only after landing (StrictMode=%s)",
+  async (strict) => {
+    rows = [note(42, 2, 2, "Review this exact block")];
+    mount("/book/7/2?block=2&note=42&keep=yes", strict);
+    await flush();
+    expect(screen.getByLabelText("location")).toHaveTextContent(
+      "/book/7/2?keep=yes"
+    );
+    expect(screen.getByLabelText("navigation type")).toHaveTextContent(
+      "REPLACE"
+    );
+    expect(landed).toBe("Chapter 2:2");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await frame();
+    expect(selectText()).toHaveValue("Review this exact block");
+    expect(screen.getByRole("dialog").style.left).toBe("100px");
+    fireEvent.keyDown(document, { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "后退" }));
+    await flush();
+    expect(screen.getByLabelText("location")).toHaveTextContent("/review");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  }
+);
+
+it.each([
+  "?block=bad&note=42",
+  "?block=2",
+  "?note=42",
+  "?block=0&note=42",
+  "?block=-1&note=42",
+  "?block=2.5&note=42",
+  "?block=2&note=0",
+  "?block=2&note=9007199254740992",
+  "?block=2&note=",
+  "?block=2&block=1&note=42",
+  "?block=2&note=42&note=43",
+  "?block=2e0&note=42",
+  "?block=&note=42",
+])(
+  "silently removes malformed or partial targets %s without jumping or opening",
+  async (query) => {
+    rows = [note(42, 1, 2, "Existing note")];
+    mount(`/book/7/1${query}`);
+    await flush();
+    await frame();
+    expect(screen.getByLabelText("location").textContent).toBe("/book/7/1");
+    expect(screen.getByLabelText("navigation type")).toHaveTextContent(
+      "REPLACE"
+    );
+    expect(landed).toBeNull();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  }
+);
+
+it("uses the real review link to enter a different chapter, land and open the note", async () => {
+  rows = [note(42, 2, 2, "Cross-book review target")];
+  mount("/review");
+  await flush();
+  expect(landed).toBeNull();
+  fireEvent.click(
+    screen.getByRole("link", { name: /Cross-book review target/ })
+  );
+  await flush();
+  await frame();
+  expect(screen.getByLabelText("location").textContent).toBe("/book/7/2");
+  expect(landed).toBe("Chapter 2:2");
+  expect(selectText()).toHaveValue("Cross-book review target");
+});
+
+it("routes an article note to chapter one without expanding the banner", async () => {
+  rows = [note(42, null, null, "Overall review")];
+  mount("/review");
+  await flush();
+  fireEvent.click(screen.getByRole("link", { name: /Overall review/ }));
+  await flush();
+  await frame();
+  expect(screen.getByLabelText("location").textContent).toBe("/book/7/1");
+  expect(
+    within(screen.getByRole("region", { name: "文章笔记" })).getByRole("button")
+  ).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("waits for a delayed note session after landing before opening", async () => {
+  const fetchMock = globalThis.fetch;
+  let resolveNotes!: (response: Response) => void;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (
+        String(input) === "/api/books/7/notes" &&
+        (init?.method ?? "GET") === "GET"
+      )
+        return new Promise<Response>((resolve) => {
+          resolveNotes = resolve;
+        });
+      return fetchMock(input, init);
+    })
+  );
+  mount("/book/7/1?block=2&note=42");
+  await flush();
+  await frame();
+  expect(landed).toBe("Chapter 1:2");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  await act(async () =>
+    resolveNotes(
+      new Response(JSON.stringify({ notes: [note(42, 1, 2, "Late notes")] }))
+    )
+  );
+  expect(selectText()).toHaveValue("Late notes");
+});
+
+it("ignores a stale note id or mismatched anchor after landing", async () => {
+  rows = [note(42, 1, 1, "Different anchor")];
+  mount("/book/7/1?block=2&note=42");
+  await flush();
+  await frame();
+  expect(landed).toBe("Chapter 1:2");
+  expect(screen.getByLabelText("location").textContent).toBe("/book/7/1");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("leaves an unparameterized reading route alone", async () => {
+  rows = [note(42, 1, 2, "Do not open")];
+  mount();
+  await flush();
+  await frame();
+  expect(screen.getByLabelText("navigation type")).toHaveTextContent("POP");
+  expect(landed).toBeNull();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

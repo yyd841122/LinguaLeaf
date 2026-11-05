@@ -73,7 +73,7 @@ describe("frontend hosting through the HTTP API seam", () => {
       runtimeRoot: projectRoot,
     });
 
-    for (const path of ["/", "/book/example/1"]) {
+    for (const path of ["/", "/review", "/book/example/1"]) {
       const response = await request(server).get(path);
       expect(response.status).toBe(200);
       expect(response.headers["content-type"]).toContain("text/html");
@@ -102,7 +102,7 @@ describe("frontend hosting through the HTTP API seam", () => {
       runtimeRoot: fileURLToPath(new URL("../../../", import.meta.url)),
     });
     try {
-      for (const path of ["/", "/book/example/1"]) {
+      for (const path of ["/", "/review", "/book/example/1"]) {
         const response = await request(server).get(path);
         expect(response.status).toBe(200);
         expect(response.text).toContain("/@vite/client");

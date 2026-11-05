@@ -91,13 +91,18 @@ export function BookshelfPage() {
       // The 202 body is the created book: it joins the shelf immediately,
       // so a failed refresh cannot masquerade as a failed import (audit
       // 2026-10-23). Its importing row also starts the poll.
-      const created = await fetchJson<BookSummary>("/api/books", {
+      const created = await fetchJson<
+        Omit<BookSummary, "progress" | "noteCount">
+      >("/api/books", {
         method: "POST",
         body,
       });
       // An in-flight tick predating the upload is stale and discarded.
       invalidate();
-      setBooks((current) => [created, ...(current ?? [])]);
+      setBooks((current) => [
+        { ...created, progress: null, noteCount: 0 },
+        ...(current ?? []),
+      ]);
       try {
         const { books: refreshed } = await fetchJson<{
           books: BookSummary[];
@@ -209,7 +214,10 @@ export function BookshelfPage() {
         </p>
       )}
 
-      <h2>书架</h2>
+      <div className="shelf-heading">
+        <h2>书架</h2>
+        <Link to="/review">笔记复习</Link>
+      </div>
       {books === null ? (
         <p>加载中…</p>
       ) : books.length === 0 ? (
@@ -228,6 +236,11 @@ export function BookshelfPage() {
                   <Link to={readingTarget(book)}>{book.title}</Link>
                 ) : (
                   <span>{book.title}</span>
+                )}
+                {book.status === "ready" && book.noteCount > 0 && (
+                  <span className="shelf-note-count">
+                    {book.noteCount} 条笔记
+                  </span>
                 )}
                 <span className="meta">
                   {book.status === "importing"

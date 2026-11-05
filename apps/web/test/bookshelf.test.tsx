@@ -19,6 +19,7 @@ type ShelfBook = {
   importPercent: number | null;
   importError: string | null;
   pageCount: number | null;
+  noteCount: number;
   progress: { chapter: number; block: number } | null;
 };
 
@@ -32,6 +33,7 @@ const readyBook: ShelfBook = {
   importPercent: null,
   importError: null,
   pageCount: null,
+  noteCount: 0,
   progress: null,
 };
 
@@ -47,6 +49,7 @@ const importingBook: ShelfBook = {
   importPercent: null,
   importError: null,
   pageCount: null,
+  noteCount: 0,
   progress: null,
 };
 
@@ -60,6 +63,7 @@ const failedBook: ShelfBook = {
   importPercent: null,
   importError: "服务重启，导入中断",
   pageCount: null,
+  noteCount: 0,
   progress: null,
 };
 
@@ -152,6 +156,36 @@ describe("BookshelfPage import states (ticket 08)", () => {
       }
     );
   }
+
+  it("always offers note review, including an empty shelf, and shows counts only on ready books", async () => {
+    renderShelf();
+    await actAdvance(0);
+    expect(screen.getByRole("link", { name: "笔记复习" })).toHaveAttribute(
+      "href",
+      "/review"
+    );
+    cleanup();
+    shelfState.books = [
+      { ...readyBook, noteCount: 3 },
+      { ...readyBook, id: 4, title: "Zero notes" },
+      { ...importingBook, noteCount: 8 },
+      { ...failedBook, noteCount: 9 },
+    ];
+    const view = renderShelf();
+    await actAdvance(0);
+    expect(view.container.querySelectorAll(".shelf-note-count")).toHaveLength(
+      1
+    );
+    const badge = view.container.querySelector(".shelf-note-count")!;
+    expect(badge).toHaveTextContent("3 条笔记");
+    expect(badge.closest(".book-info")).toContainElement(
+      screen.getByRole("link", { name: readyBook.title })
+    );
+    expect(screen.getByRole("link", { name: "笔记复习" })).toHaveAttribute(
+      "href",
+      "/review"
+    );
+  });
 
   it("shows a book importing with its stage, then readable when ready", async () => {
     renderShelf();
