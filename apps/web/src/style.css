@@ -437,12 +437,8 @@ html {
 .bookmark-first:hover {
   background: #ecefe6;
 }
-.note-enabled {
-  border-left: 2px solid transparent;
-}
-.note-enabled.has-note {
-  border-left-color: #5f8a62;
-}
+/* 维护者抽验修订 2026-11-05: 笔记块的段前左竖线撤除——文中标记只剩
+   段尾那枚常显绿底 ✎(.block-note-button.has-note)。 */
 /* The note button trails the block's last text line (维护者抽验修订
    2026-11-05: 段首钉边改段尾随文), so it lives inside the content
    element and flows inline — the old left-edge gutter is gone. */
