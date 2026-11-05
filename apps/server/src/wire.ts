@@ -146,6 +146,13 @@ export type NoteType = "progress" | "feeling" | "idea" | "question";
 export type NoteAnchor =
   { chapter: null; block: null } | { chapter: number; block: number };
 export type NoteContent = { type: NoteType; text: string };
+export type UpdateNoteRequest = { text: string };
+export const NOTE_TYPES = [
+  "progress",
+  "feeling",
+  "idea",
+  "question",
+] as const satisfies readonly NoteType[];
 export type NoteSummary = NoteContent & {
   id: number;
   chapter: number | null;
@@ -154,7 +161,7 @@ export type NoteSummary = NoteContent & {
   updatedAt: string;
 };
 export type CreateNoteRequest = {
-  type?: NoteType;
+  type: NoteType;
   text: string;
 } & Partial<NoteAnchor>;
 export type NotesResponse = { notes: NoteSummary[] };

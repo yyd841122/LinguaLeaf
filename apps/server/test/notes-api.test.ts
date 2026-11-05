@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
+import type { NoteSummary } from "../src/wire.js";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
 import { createFixtureDictionary } from "./fixtures/dictionary.js";
@@ -43,10 +44,10 @@ describe("notes HTTP matrix", () => {
   });
   const path = (book: number) => `/api/books/${book}/notes`;
 
-  it("creates defaults, conflicts with existing data, replaces content, and deletes idempotently", async () => {
+  it("creates typed notes, conflicts with existing data, replaces content, and deletes idempotently", async () => {
     const created = await request(app)
       .post(path(id))
-      .send({ text: "Book note" })
+      .send({ type: "idea", text: "Book note" })
       .expect(201);
     expect(created.body.note).toEqual({
       id: expect.any(Number),
@@ -59,7 +60,7 @@ describe("notes HTTP matrix", () => {
     });
     const duplicate = await request(app)
       .post(path(id))
-      .send({ text: "New draft" })
+      .send({ type: "idea", text: "New draft" })
       .expect(409);
     expect(duplicate.body).toMatchObject({
       code: "note-exists",
@@ -73,19 +74,19 @@ describe("notes HTTP matrix", () => {
       (
         await request(app)
           .post(path(id))
-          .send({ chapter: 1, block: 2, text: "Another" })
+          .send({ chapter: 1, block: 2, type: "feeling", text: "Another" })
           .expect(409)
       ).body
     ).toMatchObject({ code: "note-exists", note: block.body.note });
     const edited = await request(app)
       .put(`${path(id)}/${created.body.note.id}`)
-      .send({ type: "question", text: "Why?" })
+      .send({ text: "Why?" })
       .expect(200);
     expect(edited.body.note).toMatchObject({
       id: created.body.note.id,
       chapter: null,
       block: null,
-      type: "question",
+      type: "idea",
       text: "Why?",
     });
     expect((await request(app).get(path(id)).expect(200)).body.notes).toEqual([
@@ -96,7 +97,7 @@ describe("notes HTTP matrix", () => {
     settleImport(db, other, "ready", null);
     await request(app)
       .put(`${path(other)}/${created.body.note.id}`)
-      .send({ type: "idea", text: "Wrong owner" })
+      .send({ text: "Wrong owner" })
       .expect(404);
     await request(app)
       .delete(`${path(other)}/${created.body.note.id}`)
@@ -108,6 +109,52 @@ describe("notes HTTP matrix", () => {
     await request(app)
       .delete(`${path(id)}/${created.body.note.id}`)
       .expect(204);
+  });
+
+  it("allows different types at the same block/book, conflicts only within type, and returns fixed order", async () => {
+    const rows: NoteSummary[] = [];
+    for (const anchor of [{}, { chapter: 1, block: 1 }]) {
+      const byType = [];
+      for (const type of ["question", "idea", "feeling", "progress"]) {
+        const created = await request(app)
+          .post(path(id))
+          .send({ ...anchor, type, text: type })
+          .expect(201);
+        byType.unshift(created.body.note);
+        const conflict = await request(app)
+          .post(path(id))
+          .send({ ...anchor, type, text: "New draft" })
+          .expect(409);
+        expect(conflict.body).toMatchObject({
+          code: "note-exists",
+          note: created.body.note,
+        });
+      }
+      rows.push(...byType);
+    }
+    expect((await request(app).get(path(id)).expect(200)).body.notes).toEqual(
+      rows
+    );
+    await request(app)
+      .put(`${path(id)}/${rows[0]!.id}`)
+      .send({ type: "question", text: "Retype" })
+      .expect(400);
+    await request(app)
+      .put(`${path(id)}/${rows[0]!.id}`)
+      .send({ text: "Edited" })
+      .expect(200);
+    await request(app)
+      .delete(`${path(id)}/${rows[1]!.id}`)
+      .expect(204);
+    expect((await request(app).get(path(id))).body.notes).toEqual(
+      rows
+        .filter((row) => row.id !== rows[1]!.id)
+        .map((row) =>
+          row.id === rows[0]!.id
+            ? { ...row, text: "Edited", updatedAt: expect.any(String) }
+            : row
+        )
+    );
   });
 
   it.each([
@@ -123,22 +170,30 @@ describe("notes HTTP matrix", () => {
     { text: "x".repeat(MAX_NOTE_TEXT_LENGTH + 1) },
     { text: "bad type", type: "constructor" },
     { text: 42 },
+    { type: undefined, text: "Missing type" },
+    { type: null, text: "Null type" },
     {},
   ])("rejects invalid create body %#", async (body) => {
-    const result = await request(app).post(path(id)).send(body).expect(400);
+    const result = await request(app)
+      .post(path(id))
+      .send({ type: "idea", ...body })
+      .expect(400);
     expect(result.body.code).toMatch(/^invalid-/);
     expect((await request(app).get(path(id))).body.notes).toEqual([]);
   });
 
   it("requires complete PUT content and forbids anchor changes", async () => {
-    const created = await request(app).post(path(id)).send({ text: "Keep" });
+    const created = await request(app)
+      .post(path(id))
+      .send({ type: "idea", text: "Keep" });
     for (const body of [
-      { text: "No type" },
+      {},
+      { type: "idea", text: "Cannot change type" },
       { type: "idea" },
       { type: "bad", text: "No" },
-      { type: "idea", text: " " },
-      { type: "idea", text: "x".repeat(MAX_NOTE_TEXT_LENGTH + 1) },
-      { type: "idea", text: "Move", chapter: 1, block: 1 },
+      { text: " " },
+      { text: "x".repeat(MAX_NOTE_TEXT_LENGTH + 1) },
+      { text: "Move", chapter: 1, block: 1 },
     ]) {
       await request(app)
         .put(`${path(id)}/${created.body.note.id}`)
@@ -155,7 +210,7 @@ describe("notes HTTP matrix", () => {
       (
         await request(app)
           .post(path(id))
-          .send({ chapter: 99, block: 1, text: "Missing" })
+          .send({ chapter: 99, block: 1, type: "idea", text: "Missing" })
           .expect(404)
       ).body.code
     ).toBe("note-target-not-found");
@@ -164,7 +219,11 @@ describe("notes HTTP matrix", () => {
         method === "put" || method === "delete" ? `${path(999)}/1` : path(999);
       const client = request(app);
       const result = await client[method](url)
-        .send({ type: "idea", text: "Missing" })
+        .send(
+          method === "post"
+            ? { type: "idea", text: "Missing" }
+            : { text: "Missing" }
+        )
         .expect(404);
       expect(result.body.code).toBe("book-not-found");
     }
@@ -175,7 +234,11 @@ describe("notes HTTP matrix", () => {
       expect(
         (
           await client[method](url)
-            .send({ type: "idea", text: "Wait" })
+            .send(
+              method === "post"
+                ? { type: "idea", text: "Wait" }
+                : { text: "Wait" }
+            )
             .expect(409)
         ).body.code
       ).toBe("book-not-ready");
@@ -195,18 +258,23 @@ describe("notes HTTP matrix", () => {
       (
         await request(app)
           .post(path(id))
-          .send({ chapter: 1, block: MAX_NOTES_PER_BOOK, text: "Full" })
+          .send({
+            chapter: 1,
+            block: MAX_NOTES_PER_BOOK,
+            type: "idea",
+            text: "Full",
+          })
           .expect(409)
       ).body.code
     ).toBe("note-limit-reached");
     const existing = await request(app)
       .post(path(id))
-      .send({ text: "Duplicate at cap" })
+      .send({ type: "idea", text: "Duplicate at cap" })
       .expect(409);
     expect(existing.body.code).toBe("note-exists");
     await request(app)
       .put(`${path(id)}/${existing.body.note.id}`)
-      .send({ type: "progress", text: "Edit at cap" })
+      .send({ text: "Edit at cap" })
       .expect(200);
   });
 });

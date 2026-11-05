@@ -685,7 +685,8 @@ export function listNotes(
     database
       .prepare(
         `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ?
-    ORDER BY chapter_position, block_position`
+    ORDER BY chapter_position, block_position,
+      CASE type WHEN 'progress' THEN 0 WHEN 'feeling' THEN 1 WHEN 'idea' THEN 2 ELSE 3 END`
       )
       .all(bookId) as NoteSqlRow[]
   ).map(decodeNote);
@@ -729,14 +730,14 @@ export function addNote(
       anchor.chapter === null
         ? database
             .prepare(
-              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position IS NULL`
+              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position IS NULL AND type = ?`
             )
-            .get(bookId)
+            .get(bookId, content.type)
         : database
             .prepare(
-              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position = ? AND block_position = ?`
+              `SELECT ${NOTE_COLUMNS} FROM notes WHERE book_id = ? AND chapter_position = ? AND block_position = ? AND type = ?`
             )
-            .get(bookId, anchor.chapter, anchor.block)
+            .get(bookId, anchor.chapter, anchor.block, content.type)
     ) as NoteSqlRow | undefined;
     if (existing) return { outcome: "existing", note: decodeNote(existing) };
     const count = database
@@ -769,7 +770,7 @@ export function updateNote(
   database: Database.Database,
   bookId: number,
   id: number,
-  content: NoteContent
+  content: Pick<NoteContent, "text">
 ): NoteSummary | undefined {
   return database.transaction(() => {
     const old = findNote(database, bookId, id);
@@ -781,9 +782,9 @@ export function updateNote(
     ).toISOString();
     database
       .prepare(
-        "UPDATE notes SET type = ?, text = ?, updated_at = ? WHERE book_id = ? AND id = ?"
+        "UPDATE notes SET text = ?, updated_at = ? WHERE book_id = ? AND id = ?"
       )
-      .run(content.type, content.text, now, bookId, id);
+      .run(content.text, now, bookId, id);
     return findNote(database, bookId, id);
   })();
 }

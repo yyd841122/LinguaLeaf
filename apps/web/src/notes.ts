@@ -5,6 +5,7 @@ import type {
   NoteResponse,
   NotesResponse,
   NoteSummary,
+  UpdateNoteRequest,
 } from "../../server/src/wire";
 
 export function fetchNotes(bookId: number): Promise<NoteSummary[]> {
@@ -26,7 +27,7 @@ export function createNote(
 export function updateNote(
   bookId: number,
   id: number,
-  content: NoteContent
+  content: UpdateNoteRequest
 ): Promise<NoteSummary> {
   return fetchJson<NoteResponse>(`/api/books/${bookId}/notes/${id}`, {
     method: "PUT",

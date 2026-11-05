@@ -29,13 +29,18 @@ import { captureBookmarkTarget } from "./readingProgress";
 import { ReadingView, type WordClick } from "./ReadingView";
 import { WordLookupPopup } from "./WordLookupPopup";
 import { useNotesSession } from "./notesSession";
-import { NotePopup, NOTE_TYPE_LABELS, type NotePopupHandle } from "./NotePopup";
+import { NotePopup, type NotePopupHandle } from "./NotePopup";
+import {
+  NotePanels,
+  NOTE_TYPE_LABELS,
+  type NotePanelsHandle,
+} from "./NotePanels";
 import { readingBlockSelector } from "./readingBlocks";
 
 type NoteEditor = {
   bookId: number;
   anchor: NoteAnchor;
-  note: NoteSummary | null;
+  notes: NoteSummary[];
   point: ClickPoint;
   op: number;
 };
@@ -96,6 +101,8 @@ export function ReadingPage() {
   const notesSession = useNotesSession({ bookId });
   const [noteEditor, setNoteEditor] = useState<NoteEditor | null>(null);
   const popupRef = useRef<NotePopupHandle>(null);
+  const bookPanelsRef = useRef<NotePanelsHandle>(null);
+  const bookBannerRef = useRef<HTMLElement>(null);
   const editorOp = useRef(0);
   const [pendingNoteOpen, setPendingNoteOpen] = useState<NoteOpenIntent | null>(
     null
@@ -108,6 +115,39 @@ export function ReadingPage() {
     setNoteEditor(null);
     setPendingNoteOpen(null);
   }
+
+  useEffect(() => {
+    if (!bookNoteExpanded) return;
+    const close = () => {
+      if (bookPanelsRef.current?.requestClose() === false) return false;
+      setBookNoteExpanded(false);
+      return true;
+    };
+    const onClick = (event: MouseEvent) => {
+      if (
+        event.target instanceof Node &&
+        !bookBannerRef.current?.contains(event.target)
+      ) {
+        if (!close()) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+      }
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      }
+    };
+    document.addEventListener("click", onClick, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [bookNoteExpanded]);
 
   useEffect(() => {
     setLookup(null);
@@ -153,19 +193,18 @@ export function ReadingPage() {
     chapterNumber,
     ready,
   });
-  const openNote = (
-    anchor: NoteAnchor,
-    note: NoteSummary | null,
-    button: HTMLElement
-  ) => {
+  const openNote = (anchor: NoteAnchor, button: HTMLElement) => {
     if (!notesSession.loaded || popupRef.current?.requestClose() === false)
       return;
     const box = button.getBoundingClientRect();
     setLookup(null);
+    setBookNoteExpanded(false);
     setNoteEditor({
       bookId,
       anchor,
-      note,
+      notes: notesSession.notes.filter(
+        (note) => note.chapter === anchor.chapter && note.block === anchor.block
+      ),
       point: { x: box.left, y: box.bottom },
       op: ++editorOp.current,
     });
@@ -196,7 +235,6 @@ export function ReadingPage() {
     if (button && intent.note.chapter !== null && intent.note.block !== null) {
       openNote(
         { chapter: intent.note.chapter, block: intent.note.block },
-        intent.note,
         button
       );
     }
@@ -287,8 +325,12 @@ export function ReadingPage() {
   }
 
   const chapterCount = toc.chapters.length;
-  const bookNote =
-    notesSession.notes.find((note) => note.chapter === null) ?? null;
+  const bookNotes = notesSession.notes.filter((note) => note.chapter === null);
+  const bookNote = bookNotes[0];
+  const bookUpdatedAt = bookNotes.reduce(
+    (latest, note) => (note.updatedAt > latest ? note.updatedAt : latest),
+    ""
+  );
   // The chapter-level fact the two gates below key on (ticket 03): at
   // least one sentence block carries a non-empty translation. A wholly
   // untranslated chapter has no line to render and no toggle to offer;
@@ -490,7 +532,7 @@ export function ReadingPage() {
             <section className="notes-area" aria-label="笔记">
               <h2>笔记</h2>
               {notesSession.notes.length === 0 ? (
-                <p>还没有笔记，移到句子块行首写一笔。</p>
+                <p>还没有笔记，移到句子块行尾写一笔。</p>
               ) : (
                 <ul className="notes-list">
                   {notesSession.notes.map((note) => (
@@ -500,7 +542,7 @@ export function ReadingPage() {
                         disabled={!notesSession.loaded}
                         onClick={() => jumpToNote(note)}
                       >
-                        <span className="note-badge">
+                        <span className="note-badge" data-note-type={note.type}>
                           {NOTE_TYPE_LABELS[note.type]}
                         </span>{" "}
                         {note.chapter === null
@@ -537,57 +579,51 @@ export function ReadingPage() {
           </div>
         )}
       </div>
-      <section className="book-note-banner" aria-label="文章笔记">
-        {bookNote ? (
-          <>
-            <button
-              type="button"
-              aria-expanded={bookNoteExpanded}
-              onClick={() => setBookNoteExpanded((open) => !open)}
-            >
-              <span className="note-badge">
+      <section
+        ref={bookBannerRef}
+        className="book-note-banner"
+        aria-label="文章笔记"
+      >
+        <button
+          type="button"
+          disabled={!notesSession.loaded}
+          aria-expanded={bookNoteExpanded}
+          onClick={() => {
+            if (popupRef.current?.requestClose() === false) return;
+            if (
+              bookNoteExpanded &&
+              bookPanelsRef.current?.requestClose() === false
+            )
+              return;
+            setBookNoteExpanded((open) => !open);
+            setLookup(null);
+          }}
+        >
+          {bookNote ? (
+            <>
+              <span className="note-badge" data-note-type={bookNote.type}>
                 {NOTE_TYPE_LABELS[bookNote.type]}
               </span>{" "}
               {bookNote.text.slice(0, 60)}
               {bookNote.text.length > 60 ? "…" : ""}
               {" · "}
-              <time dateTime={bookNote.updatedAt}>
-                {new Date(bookNote.updatedAt).toLocaleString()}
+              <time dateTime={bookUpdatedAt}>
+                {new Date(bookUpdatedAt).toLocaleString()}
               </time>
-            </button>
-            {bookNoteExpanded && (
-              <div>
-                <p className="note-full-text">{bookNote.text}</p>
-                <button
-                  type="button"
-                  disabled={!notesSession.loaded}
-                  onClick={(event) =>
-                    openNote(
-                      { chapter: null, block: null },
-                      bookNote,
-                      event.currentTarget
-                    )
-                  }
-                >
-                  编辑文章笔记
-                </button>
-              </div>
-            )}
-          </>
-        ) : (
-          <button
-            type="button"
-            disabled={!notesSession.loaded}
-            onClick={(event) =>
-              openNote(
-                { chapter: null, block: null },
-                null,
-                event.currentTarget
-              )
+            </>
+          ) : (
+            "写文章笔记"
+          )}
+        </button>
+        {bookNoteExpanded && (
+          <NotePanels
+            ref={bookPanelsRef}
+            notes={bookNotes}
+            onSave={(id, value) =>
+              notesSession.save({ chapter: null, block: null }, id, value)
             }
-          >
-            写文章笔记
-          </button>
+            onDelete={notesSession.remove}
+          />
         )}
       </section>
       {content.translationAvailable ? null : (
@@ -610,6 +646,7 @@ export function ReadingPage() {
         onWordClick={(click) => {
           if (popupRef.current?.requestClose() === false) return;
           setNoteEditor(null);
+          setBookNoteExpanded(false);
           setLookup(click);
         }}
         noteControl={(position) => {
@@ -619,15 +656,9 @@ export function ReadingPage() {
             ) ?? null;
           return {
             exists: note !== null,
-            disabled:
-              !notesSession.loaded ||
-              notesSession.pending.has(`${chapterNumber}:${position}`),
+            disabled: !notesSession.loaded,
             onClick: (button) =>
-              openNote(
-                { chapter: chapterNumber, block: position },
-                note,
-                button
-              ),
+              openNote({ chapter: chapterNumber, block: position }, button),
           };
         }}
       />
@@ -635,7 +666,7 @@ export function ReadingPage() {
         <NotePopup
           key={noteEditor.op}
           ref={popupRef}
-          note={noteEditor.note}
+          notes={noteEditor.notes}
           point={noteEditor.point}
           onClose={() => setNoteEditor(null)}
           onSave={(id, value) =>

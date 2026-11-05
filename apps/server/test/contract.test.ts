@@ -11,6 +11,7 @@ import type {
   BookToc,
   ChapterPayload,
   ChapterTranslationState,
+  NoteSummary,
 } from "../src/wire.js";
 import { createApp } from "../src/app.js";
 import { openDatabase } from "../src/database.js";
@@ -552,7 +553,7 @@ describe("notes over the real server (notes.ts)", () => {
       updatedAt: expect.any(String),
     });
     await expect(
-      createNote(id, anchor, { type: "idea", text: "A fresh draft" })
+      createNote(id, anchor, { type: "question", text: "A fresh draft" })
     ).rejects.toMatchObject({
       status: 409,
       body: { code: "note-exists", note },
@@ -564,12 +565,10 @@ describe("notes over the real server (notes.ts)", () => {
     );
     await expect(fetchNotes(id)).resolves.toEqual([bookNote, note]);
     const edited = await updateNote(id, note.id, {
-      type: "progress",
       text: "Stopped to think",
     });
     expect(edited).toMatchObject({
       ...note,
-      type: "progress",
       text: "Stopped to think",
       updatedAt: expect.any(String),
     });
@@ -580,6 +579,46 @@ describe("notes over the real server (notes.ts)", () => {
     const reimported = await uploadReadyBook(sampleBookPath);
     await expect(fetchNotes(reimported)).resolves.toEqual([]);
     await expect(fetchNotes(id)).resolves.toEqual([bookNote]);
+  });
+  it("keeps all four types independent over the real client and rejects missing POST type and PUT retyping", async () => {
+    await startStack();
+    const id = await uploadReadyBook(sampleBookPath);
+    const expected: NoteSummary[] = [];
+    for (const anchor of [
+      { chapter: null, block: null },
+      { chapter: 2, block: 4 },
+    ] as const) {
+      const rows = [];
+      for (const type of ["question", "idea", "feeling", "progress"] as const) {
+        rows.unshift(await createNote(id, anchor, { type, text: type }));
+      }
+      expected.push(...rows);
+    }
+    await expect(fetchNotes(id)).resolves.toEqual(expected);
+    await expect(
+      fetchJson(`/api/books/${id}/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "Missing type" }),
+      })
+    ).rejects.toMatchObject({ status: 400, body: { code: "invalid-note" } });
+    await expect(
+      fetchJson(`/api/books/${id}/notes/${expected[0]!.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "idea", text: "Retype" }),
+      })
+    ).rejects.toMatchObject({ status: 400, body: { code: "invalid-note" } });
+    const updated = await updateNote(id, expected[0]!.id, {
+      text: "Updated progress",
+    });
+    expect(updated.type).toBe("progress");
+    await deleteNote(id, expected[1]!.id);
+    await expect(fetchNotes(id)).resolves.toEqual(
+      expected
+        .filter((row) => row.id !== expected[1]!.id)
+        .map((row) => (row.id === updated.id ? updated : row))
+    );
   });
   it("preserves coded failure families through all real clients", async () => {
     const { database } = await startStack();
@@ -592,7 +631,7 @@ describe("notes over the real server (notes.ts)", () => {
           { chapter: null, block: null },
           { type: "idea", text: "Missing" }
         ),
-      () => updateNote(999, 1, { type: "idea", text: "Missing" }),
+      () => updateNote(999, 1, { text: "Missing" }),
       () => deleteNote(999, 1),
     ]) {
       await expect(call()).rejects.toMatchObject({
@@ -617,9 +656,10 @@ describe("notes over the real server (notes.ts)", () => {
         { type: "idea", text: " " }
       )
     ).rejects.toMatchObject({ status: 400, body: { code: "invalid-note" } });
-    await expect(
-      updateNote(id, 999, { type: "idea", text: "Gone" })
-    ).rejects.toMatchObject({ status: 404, body: { code: "note-not-found" } });
+    await expect(updateNote(id, 999, { text: "Gone" })).rejects.toMatchObject({
+      status: 404,
+      body: { code: "note-not-found" },
+    });
     const importing = createImportingBook(
       database,
       "Waiting",

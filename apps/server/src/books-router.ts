@@ -44,7 +44,6 @@ import type {
   ChapterPayload,
   ImportRejection,
   NoteAnchor,
-  NoteContent,
   NoteError,
 } from "./wire.js";
 
@@ -390,16 +389,10 @@ export function createBooksRouter(
   };
   const noteContent = (
     body: Record<string, unknown> | undefined,
-    response: Response,
-    creating: boolean
-  ): NoteContent | undefined => {
-    const type = creating && body?.type === undefined ? "idea" : body?.type;
+    response: Response
+  ): { text: string } | undefined => {
     const text = body?.text;
     if (
-      (type !== "progress" &&
-        type !== "feeling" &&
-        type !== "idea" &&
-        type !== "question") ||
       typeof text !== "string" ||
       !text.trim() ||
       text.length > MAX_NOTE_TEXT_LENGTH
@@ -408,11 +401,11 @@ export function createBooksRouter(
         response,
         400,
         "invalid-note",
-        `type must be valid and text must contain 1–${MAX_NOTE_TEXT_LENGTH} characters`
+        `text must contain 1–${MAX_NOTE_TEXT_LENGTH} characters`
       );
       return undefined;
     }
-    return { type, text };
+    return { text };
   };
   router.get("/:id/notes", (request, response) => {
     const book = respondIfNotReadable(request, response);
@@ -439,11 +432,26 @@ export function createBooksRouter(
       );
       return;
     }
-    const content = noteContent(body, response, true);
+    const type = body?.type;
+    if (
+      type !== "progress" &&
+      type !== "feeling" &&
+      type !== "idea" &&
+      type !== "question"
+    ) {
+      rejectNote(
+        response,
+        400,
+        "invalid-note",
+        "type is required and must be progress, feeling, idea or question"
+      );
+      return;
+    }
+    const content = noteContent(body, response);
     if (!content) return;
     const book = respondIfNotReadable(request, response);
     if (!book) return;
-    const result = addNote(database, book.id, anchor, content);
+    const result = addNote(database, book.id, anchor, { ...content, type });
     if (result.outcome === "target-not-found") {
       rejectNote(
         response,
@@ -461,7 +469,7 @@ export function createBooksRouter(
     } else if (result.outcome === "existing") {
       response.status(409).json({
         code: "note-exists",
-        error: "this position already has a note",
+        error: "this position already has a note of this type",
         note: result.note,
       } satisfies NoteError);
     } else {
@@ -482,7 +490,16 @@ export function createBooksRouter(
       );
       return;
     }
-    const content = noteContent(body, response, false);
+    if (body && Object.hasOwn(body, "type")) {
+      rejectNote(
+        response,
+        400,
+        "invalid-note",
+        "a note's type cannot be changed"
+      );
+      return;
+    }
+    const content = noteContent(body, response);
     if (!content) return;
     const book = respondIfNotReadable(request, response);
     if (!book) return;

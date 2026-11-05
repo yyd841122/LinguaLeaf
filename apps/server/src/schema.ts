@@ -102,8 +102,8 @@ const wordStatesTable = `
 
 // Notes are book data (ADR-0007). NULL anchors name the book itself;
 // SQLite's ordinary UNIQUE treats NULLs as distinct, hence the partial index.
-const notesTable = `
-    CREATE TABLE IF NOT EXISTS notes (
+const notesTable = (name: string) => `
+    CREATE TABLE IF NOT EXISTS ${name} (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       book_id INTEGER NOT NULL REFERENCES books(id) ON DELETE CASCADE,
       chapter_position INTEGER,
@@ -114,10 +114,8 @@ const notesTable = `
       updated_at TEXT NOT NULL,
       CHECK ((chapter_position IS NULL AND block_position IS NULL)
           OR (chapter_position IS NOT NULL AND block_position IS NOT NULL)),
-      UNIQUE (book_id, chapter_position, block_position)
+      UNIQUE (book_id, chapter_position, block_position, type)
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS notes_book_anchor
-      ON notes(book_id) WHERE chapter_position IS NULL;
 `;
 
 export function migrateSchema(database: Database.Database): void {
@@ -134,8 +132,60 @@ export function migrateSchema(database: Database.Database): void {
     }
   };
   database.exec(
-    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}${bookmarksTable}${notesTable}`
+    `${booksTable}${chaptersTable}${blocksTable("blocks")}${readingProgressTable}${wordStatesTable}${bookmarksTable}${notesTable("notes")}`
   );
+  // v1 embedded the block UNIQUE in the table, so it cannot be dropped
+  // independently. Inspect both unique keys rather than versioning the DB.
+  const uniqueIndexes = (
+    database.prepare("PRAGMA index_list(notes)").all() as {
+      name: string;
+      unique: number;
+      partial: number;
+    }[]
+  ).filter((index) => index.unique);
+  const keys = uniqueIndexes.map((index) => ({
+    partial: index.partial,
+    columns: (
+      database
+        .prepare(`PRAGMA index_info("${index.name.replaceAll('"', '""')}")`)
+        .all() as { name: string }[]
+    )
+      .map((column) => column.name)
+      .join(","),
+  }));
+  const hasBlockKey = keys.some(
+    (key) =>
+      !key.partial &&
+      key.columns === "book_id,chapter_position,block_position,type"
+  );
+  const hasLegacyKey = keys.some(
+    (key) => !key.columns.split(",").includes("type")
+  );
+  if (!hasBlockKey || hasLegacyKey) {
+    database.transaction(() => {
+      const sequence = database
+        .prepare("SELECT seq FROM sqlite_sequence WHERE name = 'notes'")
+        .get() as { seq: number } | undefined;
+      database.exec(notesTable("notes_new"));
+      database.exec(`INSERT INTO notes_new
+        (id, book_id, chapter_position, block_position, type, text, created_at, updated_at)
+        SELECT id, book_id, chapter_position, block_position, type, text, created_at, updated_at FROM notes`);
+      database.exec("DROP TABLE notes");
+      database.exec("ALTER TABLE notes_new RENAME TO notes");
+      // Preserve AUTOINCREMENT's high-water mark even if the highest id was deleted.
+      if (sequence)
+        database
+          .prepare(
+            "UPDATE sqlite_sequence SET seq = MAX(seq, ?) WHERE name = 'notes'"
+          )
+          .run(sequence.seq);
+      database.exec(`CREATE UNIQUE INDEX notes_book_anchor
+        ON notes(book_id, type) WHERE chapter_position IS NULL`);
+    })();
+  } else {
+    database.exec(`CREATE UNIQUE INDEX IF NOT EXISTS notes_book_anchor
+      ON notes(book_id, type) WHERE chapter_position IS NULL`);
+  }
   // Databases created before ticket 03's word-pairing work lack the slots
   // column; add it in place so an existing .data file keeps working. Runs
   // before the kind rebuild below so the rebuild's copy can read the column.

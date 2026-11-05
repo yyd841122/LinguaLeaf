@@ -5,18 +5,21 @@ import type {
   NoteContent,
   NoteSummary,
 } from "../../server/src/wire";
+import { NOTE_TYPES } from "../../server/src/wire";
 import { ApiError } from "./api";
 import { createNote, deleteNote, fetchNotes, updateNote } from "./notes";
 
 export type NoteOperation =
-  | { outcome: "saved" }
+  | { outcome: "saved"; note?: NoteSummary }
   | { outcome: "conflict"; note: NoteSummary }
   | { outcome: "failed" | "stale" | "busy" };
 
 const sortNotes = (notes: NoteSummary[]) =>
   notes.sort(
     (a, b) =>
-      (a.chapter ?? 0) - (b.chapter ?? 0) || (a.block ?? 0) - (b.block ?? 0)
+      (a.chapter ?? 0) - (b.chapter ?? 0) ||
+      (a.block ?? 0) - (b.block ?? 0) ||
+      NOTE_TYPES.indexOf(a.type) - NOTE_TYPES.indexOf(b.type)
   );
 
 export function useNotesSession({ bookId }: { bookId: number }) {
@@ -79,10 +82,10 @@ export function useNotesSession({ bookId }: { bookId: number }) {
     return () => owner.invalidate();
   }, [owner, refresh, clear]);
 
-  const keyFor = (anchor: Pick<NoteSummary, "chapter" | "block">) =>
-    `${anchor.chapter}:${anchor.block}`;
+  const keyFor = (anchor: Pick<NoteSummary, "chapter" | "block" | "type">) =>
+    `${anchor.chapter}:${anchor.block}:${anchor.type}`;
   const operate = async <T extends NoteOperation>(
-    anchor: Pick<NoteSummary, "chapter" | "block">,
+    anchor: Pick<NoteSummary, "chapter" | "block" | "type">,
     action: () => Promise<T>,
     onFresh: (result: T) => void
   ): Promise<NoteOperation> => {
@@ -96,9 +99,7 @@ export function useNotesSession({ bookId }: { bookId: number }) {
       const result = await run(action(), { ticket, onFresh });
       if (!result.fresh) return { outcome: "stale" };
       if (!result.ok) return { outcome: "failed" };
-      return result.value.outcome === "saved"
-        ? { outcome: "saved" }
-        : result.value;
+      return result.value;
     } finally {
       current.pending.delete(key);
       if (!ticket.stale()) setPending(new Set(current.pending));
@@ -111,12 +112,12 @@ export function useNotesSession({ bookId }: { bookId: number }) {
     content: NoteContent
   ) => {
     return operate(
-      anchor,
+      { ...anchor, type: content.type },
       async () => {
         try {
           const note = await (noteId === null
             ? createNote(bookId, anchor, content)
-            : updateNote(bookId, noteId, content));
+            : updateNote(bookId, noteId, { text: content.text }));
           return { outcome: "saved" as const, note };
         } catch (error) {
           if (

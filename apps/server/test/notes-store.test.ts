@@ -68,22 +68,20 @@ describe("notes store", () => {
         db,
         book,
         { chapter: null, block: null },
-        { type: "feeling", text: "Do not overwrite" }
+        { type: "progress", text: "Do not overwrite" }
       )
     ).toEqual({ outcome: "existing", note: first });
     const updated = updateNote(db, book, first.id, {
-      type: "question",
       text: "Why?",
     })!;
     expect(updated).toMatchObject({
       ...first,
-      type: "question",
       text: "Why?",
       updatedAt: expect.any(String),
     });
     expect(updated.updatedAt > first.updatedAt).toBe(true);
     expect(
-      updateNote(db, book + 1, first.id, { type: "idea", text: "Wrong book" })
+      updateNote(db, book + 1, first.id, { text: "Wrong book" })
     ).toBeUndefined();
     deleteNote(db, book + 1, first.id);
     expect(listNotes(db, book)).toHaveLength(5);
@@ -92,6 +90,38 @@ describe("notes store", () => {
     expect(listNotes(db, book)).toHaveLength(4);
     deleteBook(db, book);
     expect(listNotes(db, book)).toEqual([]);
+  });
+
+  it("stores four independent types at each anchor and sorts by the fixed type order", () => {
+    for (const anchor of [
+      { chapter: 1, block: 1 },
+      { chapter: null, block: null },
+    ] as const) {
+      for (const type of ["question", "idea", "feeling", "progress"] as const) {
+        const result = addNote(db, book, anchor, { type, text: type });
+        expect(result.outcome).toBe("created");
+        expect(
+          addNote(db, book, anchor, { type, text: "Must not replace" })
+        ).toEqual({
+          outcome: "existing",
+          note: "note" in result ? result.note : undefined,
+        });
+      }
+    }
+    const rows = listNotes(db, book);
+    expect(rows.map((note) => [note.chapter, note.type])).toEqual(
+      [null, 1].flatMap((chapter) =>
+        ["progress", "feeling", "idea", "question"].map((type) => [
+          chapter,
+          type,
+        ])
+      )
+    );
+    deleteNote(db, book, rows[0]!.id);
+    expect(listNotes(db, book)).toEqual(rows.slice(1));
+    expect(updateNote(db, book, rows[5]!.id, { text: "Changed" })?.type).toBe(
+      "feeling"
+    );
   });
 
   it("counts the book note toward capacity, rejects nonexistent anchors, and edits at capacity", () => {
@@ -103,13 +133,10 @@ describe("notes store", () => {
         { type: "idea", text: "Missing" }
       ).outcome
     ).toBe("target-not-found");
-    addNote(
-      db,
-      book,
-      { chapter: null, block: null },
-      { type: "idea", text: "Book" }
-    );
-    for (let block = 1; block < MAX_NOTES_PER_BOOK; block++) {
+    for (const type of ["progress", "feeling", "idea", "question"] as const) {
+      addNote(db, book, { chapter: null, block: null }, { type, text: "Book" });
+    }
+    for (let block = 1; block <= MAX_NOTES_PER_BOOK - 4; block++) {
       addNote(db, book, { chapter: 1, block }, { type: "idea", text: "Block" });
     }
     expect(
@@ -126,19 +153,19 @@ describe("notes store", () => {
         db,
         book,
         { chapter: null, block: null },
-        { type: "idea", text: "Duplicate at cap" }
+        { type: "progress", text: "Duplicate at cap" }
       ).outcome
     ).toBe("existing");
-    expect(
-      updateNote(db, book, first.id, { type: "feeling", text: "Allowed" })?.text
-    ).toBe("Allowed");
+    expect(updateNote(db, book, first.id, { text: "Allowed" })?.text).toBe(
+      "Allowed"
+    );
     deleteNote(db, book, first.id);
     expect(
       addNote(
         db,
         book,
         { chapter: null, block: null },
-        { type: "idea", text: "Room again" }
+        { type: "progress", text: "Room again" }
       ).outcome
     ).toBe("created");
   });

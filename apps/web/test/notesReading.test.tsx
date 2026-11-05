@@ -24,6 +24,9 @@ let nextFrame: number;
 let landed: string | null;
 let failChapter: number | null;
 const flush = () => act(async () => {});
+const textbox = (type = "思路") =>
+  screen.getByRole("textbox", { name: `${type}笔记内容` });
+const panel = (type = "思路") => within(textbox(type).closest("form")!);
 async function frame() {
   await act(async () => {
     const batch = [...frames.values()];
@@ -163,14 +166,14 @@ it("writes from a block, shows the persistent marker, edits, deletes, and leaves
   mount();
   await flush();
   fireEvent.click(screen.getAllByRole("button", { name: "写笔记" })[0]!);
-  fireEvent.change(screen.getByRole("textbox"), {
+  fireEvent.change(textbox("疑问"), {
     target: { value: "A thought" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "疑问" }));
   await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "保存" }))
+    fireEvent.click(panel("疑问").getByRole("button", { name: "保存" }))
   );
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  fireEvent.keyDown(document, { key: "Escape" });
   const marker = screen.getByRole("button", { name: "编辑笔记" });
   expect(marker).toHaveClass("has-note");
   // The button trails the last text line inside the content element, so
@@ -183,9 +186,9 @@ it("writes from a block, shows the persistent marker, edits, deletes, and leaves
   );
   expect(screen.getByRole("button", { name: "打书签" })).toBeEnabled();
   fireEvent.click(marker);
-  expect(screen.getByRole("textbox")).toHaveValue("A thought");
+  expect(textbox("疑问")).toHaveValue("A thought");
   await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "删除" }))
+    fireEvent.click(panel("疑问").getByRole("button", { name: "删除" }))
   );
   expect(
     screen.queryByRole("button", { name: "编辑笔记" })
@@ -210,7 +213,7 @@ it("opens same- and cross-chapter notes only after landing; rapid intents keep t
   expect(landed).toBe("Chapter 1:2");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await frame();
-  expect(screen.getByRole("textbox")).toHaveValue("Same chapter");
+  expect(textbox()).toHaveValue("Same chapter");
   expect(screen.getByRole("dialog").style.left).toBe("100px");
   fireEvent.keyDown(document, { key: "Escape" });
   fireEvent.click(screen.getByRole("button", { name: "目录" }));
@@ -233,7 +236,7 @@ it("opens same- and cross-chapter notes only after landing; rapid intents keep t
   );
   await frame();
   expect(landed).toBe("Chapter 2:2");
-  expect(screen.getByRole("textbox")).toHaveValue("Last click");
+  expect(textbox()).toHaveValue("Last click");
 });
 
 it("discards a failed navigation's intent", async () => {
@@ -270,13 +273,13 @@ it("keeps the book banner in every chapter and expands it from the notes list", 
   );
   await frame();
   expect(window.scrollTo).toHaveBeenLastCalledWith(0, 0);
-  fireEvent.click(screen.getByRole("button", { name: "编辑文章笔记" }));
-  expect(screen.getByRole("textbox")).toHaveValue("Overall thoughts");
-  fireEvent.change(screen.getByRole("textbox"), {
+  expect(within(banner).getAllByRole("textbox")).toHaveLength(4);
+  expect(textbox()).toHaveValue("Overall thoughts");
+  fireEvent.change(textbox(), {
     target: { value: "Updated book note" },
   });
   await act(async () =>
-    fireEvent.click(screen.getByRole("button", { name: "保存" }))
+    fireEvent.click(panel().getByRole("button", { name: "保存" }))
   );
   fireEvent.click(screen.getByRole("link", { name: "下一章 →" }));
   await flush();
@@ -284,9 +287,9 @@ it("keeps the book banner in every chapter and expands it from the notes list", 
     screen.getByRole("heading", { name: "Chapter 2" })
   ).toBeInTheDocument();
   expect(
-    within(screen.getByRole("region", { name: "文章笔记" })).getByText(
-      "Updated book note",
-      { selector: "p" }
+    within(screen.getByRole("region", { name: "文章笔记" })).getByRole(
+      "button",
+      { name: /Updated book note/ }
     )
   ).toBeInTheDocument();
 });
@@ -302,12 +305,12 @@ it("keeps one popup and honors dirty-close cancellation when switching to word d
     screen.queryByRole("dialog", { name: /词详情/ })
   ).not.toBeInTheDocument();
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
-  fireEvent.change(screen.getByRole("textbox"), {
+  fireEvent.change(textbox(), {
     target: { value: "Keep my draft" },
   });
   const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
   fireEvent.click(screen.getAllByRole("button", { name: "Chapter" })[0]!);
-  expect(screen.getByRole("textbox")).toHaveValue("Keep my draft");
+  expect(textbox()).toHaveValue("Keep my draft");
   expect(
     screen.queryByRole("dialog", { name: /词详情/ })
   ).not.toBeInTheDocument();
@@ -318,4 +321,98 @@ it("keeps one popup and honors dirty-close cancellation when switching to word d
     screen.queryByRole("dialog", { name: "笔记" })
   ).not.toBeInTheDocument();
   expect(screen.getAllByRole("dialog")).toHaveLength(1);
+});
+
+it("shows every type in fixed order in the list, keeps one marker, and opens all sibling types", async () => {
+  rows = (["question", "idea", "feeling", "progress"] as const).map(
+    (type, i) => ({
+      ...note(i + 1, 1, 1, `${type} content`),
+      type,
+    })
+  );
+  mount();
+  await flush();
+  expect(screen.getAllByRole("button", { name: "编辑笔记" })).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "目录" }));
+  const list = screen.getByRole("region", { name: "笔记" });
+  const entries = within(list).getAllByRole("button");
+  expect(
+    entries.map((entry) =>
+      entry.querySelector(".note-badge")?.getAttribute("data-note-type")
+    )
+  ).toEqual(["progress", "feeling", "idea", "question"]);
+  fireEvent.click(entries[2]!);
+  await frame();
+  for (const [label, type] of [
+    ["进度", "progress"],
+    ["感受", "feeling"],
+    ["思路", "idea"],
+    ["疑问", "question"],
+  ])
+    expect(textbox(label)).toHaveValue(`${type} content`);
+  await act(async () =>
+    fireEvent.click(panel("思路").getByRole("button", { name: "删除" }))
+  );
+  expect(screen.getByRole("button", { name: "编辑笔记" })).toHaveClass(
+    "has-note"
+  );
+  expect(textbox("疑问")).toHaveValue("question content");
+});
+
+it("creates, edits and deletes book types independently in the shared four-part banner", async () => {
+  rows = [
+    { ...note(1, null, null, "Stopped here"), type: "progress" },
+    note(2, null, null, "Existing idea"),
+  ];
+  mount();
+  await flush();
+  const banner = screen.getByRole("region", { name: "文章笔记" });
+  fireEvent.click(within(banner).getByRole("button"));
+  expect(within(banner).getAllByRole("textbox")).toHaveLength(4);
+  expect(textbox("进度")).toHaveValue("Stopped here");
+  fireEvent.change(textbox("感受"), { target: { value: "A feeling" } });
+  fireEvent.change(textbox("疑问"), { target: { value: "Unsaved question" } });
+  await act(async () =>
+    fireEvent.click(panel("感受").getByRole("button", { name: "保存" }))
+  );
+  expect(rows.find((row) => row.type === "feeling")).toMatchObject({
+    chapter: null,
+    block: null,
+    text: "A feeling",
+  });
+  await act(async () =>
+    fireEvent.click(panel("思路").getByRole("button", { name: "删除" }))
+  );
+  expect(rows.some((row) => row.type === "idea")).toBe(false);
+  expect(textbox("进度")).toHaveValue("Stopped here");
+  expect(textbox("疑问")).toHaveValue("Unsaved question");
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  fireEvent.click(within(banner).getByRole("button", { expanded: true }));
+  expect(confirm).toHaveBeenCalledWith("放弃修改？");
+  expect(textbox("疑问")).toHaveValue("Unsaved question");
+  confirm.mockReturnValue(true);
+  fireEvent.click(within(banner).getByRole("button", { expanded: true }));
+  expect(within(banner).queryByRole("textbox")).not.toBeInTheDocument();
+});
+
+it("protects every book draft on Esc and outside clicks before switching to a block popup", async () => {
+  mount();
+  await flush();
+  fireEvent.click(screen.getByRole("button", { name: "写文章笔记" }));
+  fireEvent.change(textbox("疑问"), { target: { value: "Book draft" } });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(screen.getAllByRole("button", { name: "写笔记" })[0]!);
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(textbox("疑问")).toHaveValue("Book draft");
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getAllByRole("button", { name: "写笔记" })[0]!);
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(
+    within(screen.getByRole("region", { name: "文章笔记" })).queryByRole(
+      "textbox"
+    )
+  ).not.toBeInTheDocument();
+  expect(textbox("疑问")).toHaveValue("");
 });

@@ -480,30 +480,25 @@ html {
   background: #fffef9;
   color: #243627;
 }
-.note-popup fieldset {
+.note-panels fieldset {
   border: 0;
   margin: 0;
   padding: 0;
   min-width: 0;
 }
-.note-popup legend {
+.note-panels legend {
   font-size: 0.75rem;
 }
-.note-types,
 .note-actions {
   display: flex;
   gap: 0.3rem;
   margin: 0.3rem 0;
 }
-.note-types button[aria-pressed="true"] {
-  background: #dcebd7;
-  border-color: #5f8a62;
-}
-.note-popup label {
+.note-panels label {
   display: block;
   font-size: 0.75rem;
 }
-.note-popup textarea {
+.note-panels textarea {
   display: block;
   box-sizing: border-box;
   width: 100%;
@@ -512,7 +507,7 @@ html {
   font-size: 0.9rem;
   margin-top: 0.25rem;
 }
-.note-popup [role="alert"] {
+.note-panels [role="alert"] {
   font-size: 0.8rem;
   color: #9c3434;
   overflow-wrap: anywhere;
@@ -541,10 +536,6 @@ html {
   padding: 0.05rem 0.3rem;
   border-radius: 3px;
 }
-.note-full-text {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
 .notes-area {
   border-top: 1px solid #ddd;
   margin-top: 0.7rem;
@@ -560,4 +551,35 @@ html {
   background: transparent;
   padding: 0.4rem;
   overflow-wrap: anywhere;
+}
+
+/* Text colors retain at least WCAG AA contrast against the paper background. */
+[data-note-type="progress"] {
+  --note-type-color: #245f98;
+}
+[data-note-type="feeling"] {
+  --note-type-color: #993e61;
+}
+[data-note-type="idea"] {
+  --note-type-color: #4f6c29;
+}
+[data-note-type="question"] {
+  --note-type-color: #7951a0;
+}
+.note-type-title,
+.note-badge {
+  color: var(--note-type-color);
+}
+.note-panel {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #d8d4c9;
+}
+.note-panel.has-note {
+  border-left: 3px solid var(--note-type-color);
+  padding-left: 0.5rem;
+}
+.book-note-banner .note-panels {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
 }

@@ -112,7 +112,7 @@ it("serializes double save and save/delete races per anchor", async () => {
   await act(async () =>
     put.resolve(row("Changed", "2026-11-04T00:00:01.000Z"))
   );
-  await expect(first).resolves.toEqual({ outcome: "saved" });
+  await expect(first).resolves.toMatchObject({ outcome: "saved" });
   expect(result.current.pending.size).toBe(0);
 });
 
@@ -203,7 +203,7 @@ it("blocks a save during deletion and keeps another anchor pending when one oper
   expect(result.current.pending.size).toBe(2);
   await act(async () => deletion.resolve());
   await remove;
-  expect(result.current.pending).toEqual(new Set(["1:2"]));
+  expect(result.current.pending).toEqual(new Set(["1:2:idea"]));
   await act(async () =>
     saving.resolve({
       ...other,
@@ -214,4 +214,39 @@ it("blocks a save during deletion and keeps another anchor pending when one oper
   await save;
   expect(result.current.pending.size).toBe(0);
   expect(result.current.notes.map((note) => note.id)).toEqual([2]);
+});
+
+it("runs types at the same anchor independently and sorts merged writes in type order", async () => {
+  vi.mocked(fetchNotes).mockResolvedValue([row()]);
+  const idea = deferred<NoteSummary>();
+  const progress = deferred<NoteSummary>();
+  vi.mocked(updateNote).mockReturnValue(idea.promise);
+  vi.mocked(createNote).mockReturnValue(progress.promise);
+  const { result } = renderHook(() => useNotesSession({ bookId: 7 }));
+  await flush();
+  let saveIdea!: ReturnType<typeof result.current.save>;
+  let saveProgress!: ReturnType<typeof result.current.save>;
+  act(() => {
+    saveIdea = result.current.save(anchor, 1, content);
+    saveProgress = result.current.save(anchor, null, {
+      type: "progress",
+      text: "Stopped",
+    });
+  });
+  expect(result.current.pending).toEqual(new Set(["1:1:idea", "1:1:progress"]));
+  await act(async () =>
+    progress.resolve({ ...row("Stopped"), id: 2, type: "progress" })
+  );
+  await saveProgress;
+  expect(result.current.pending).toEqual(new Set(["1:1:idea"]));
+  expect(result.current.notes.map((note) => note.type)).toEqual([
+    "progress",
+    "idea",
+  ]);
+  await act(async () =>
+    idea.resolve(row("Changed", "2026-11-04T00:00:01.000Z"))
+  );
+  await saveIdea;
+  expect(updateNote).toHaveBeenCalledWith(7, 1, { text: "Changed" });
+  expect(result.current.pending.size).toBe(0);
 });
