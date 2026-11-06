@@ -1,6 +1,6 @@
 # note-review-outline:笔记复习页——跨书标记大纲,点击回跳段落
 
-Status: ready-for-agent
+Status: done
 
 来源:维护者需求(2026-11-05,reading-notes 收官后第三轮):「所有做过
 标记的书,给我显示一个标记的具体大纲展示,我可以点击不同的标记,到相
@@ -124,3 +124,22 @@ reading-notes 票挂账清单,本票不加新项)
 - Status 直取 ready-for-agent 理由:全部组件为已验证件复用(跳转协议、
   意图机制、书架卡片、notes 数据),风险集中在参数消费与聚合查询,
   由实现后双轴评审兜底;不另走 review-plan 前置轮。
+
+### 2026-11-06 收官(真机抽验归档,Status 翻 done)
+
+- 维护者真机抽验**全绿**(2026-11-06,统一清单八项):段前竖线撤除
+  (reading-notes 后续微调 `e4ff605` 的欠项补验)、架头「笔记复习」
+  入口 + 卡片笔记数角标、复习页书→章两级分组全文与类型色徽标、
+  **跨书条目点击回跳**(落对书、落对段、浮层开在同一块、地址栏参数
+  消费即净)、书级「文章笔记」条目跳第一章、阅读器不带参直开零回归、
+  带参直开/刷新同样跳转、目录面板笔记跳转零回归。
+- 账目:票面立票与实现同 commit `1b4114a`(Lane B,Codex 沙箱 job
+  `implement-mw36awzt-8w0lzr`,threadId
+  `01a1aa6c-f9cf-7ff2-a1c8-b55dfe87b72c`,6 新 + 14 改)。全链 verify
+  EXIT=0(57 files 708 passed|2 skipped (710),基线 678→+30)。
+- 双轴评审(vs e4ff605):Standards 零硬违规(附赠 noteColumnSql/
+  noteTypeOrderSql 单源收敛与书架 POST 类型正名),2 条 judgement-call
+  记档不修(「文章笔记」字面量四处/chapterPosition=0 哨兵);Spec 轴
+  10 决策逐条核全落地零缺失,良性加座 3 条、潜在观察 2 条记档(入口
+  落架头系挂点建议非决策,维护者抽验默许)。承重引文编排侧逐条现场
+  抽验属实,零当场修。
