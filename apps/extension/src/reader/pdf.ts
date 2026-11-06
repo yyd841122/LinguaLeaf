@@ -6,9 +6,8 @@
 import * as pdfjsLib from "pdfjs-dist";
 import { Util } from "pdfjs-dist";
 import type { PDFDocumentProxy } from "pdfjs-dist";
-import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import type { IpaLookup } from "@lingualeaf/import-core";
-import { WORD_PATTERN } from "@lingualeaf/reading-model";
+import { eligiblePdfLines } from "./pdf-lines";
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
@@ -47,16 +46,21 @@ export async function openPdf(
   filename: string
 ): Promise<PdfSession> {
   const doc = await pdfjsLib.getDocument({ data: bytes }).promise;
-  const meta = await doc.getMetadata();
-  const infoTitle =
-    meta.info && "Title" in meta.info
-      ? String((meta.info as { Title?: unknown }).Title ?? "").trim()
-      : "";
-  return {
-    doc,
-    title: infoTitle || filename.replace(/\.pdf$/i, ""),
-    pageCount: doc.numPages,
-  };
+  try {
+    const meta = await doc.getMetadata();
+    const infoTitle =
+      meta.info && "Title" in meta.info
+        ? String((meta.info as { Title?: unknown }).Title ?? "").trim()
+        : "";
+    return {
+      doc,
+      title: infoTitle || filename.replace(/\.pdf$/i, ""),
+      pageCount: doc.numPages,
+    };
+  } catch (error) {
+    await doc.destroy();
+    throw error;
+  }
 }
 
 // The first pages' text lengths, for the scanned check (empty pages count
@@ -133,8 +137,18 @@ export function renderPdfPage(
   lookup: IpaLookup,
   showIpa: boolean
 ): Promise<PdfRender> {
+  const ticket = invalidatePdfRender(overlay);
   const run = renderQueue.then(() =>
-    renderPdfPageStep(canvas, overlay, doc, pageNumber, scale, lookup, showIpa)
+    renderPdfPageStep(
+      canvas,
+      overlay,
+      doc,
+      pageNumber,
+      scale,
+      lookup,
+      showIpa,
+      ticket
+    )
   );
   renderQueue = run.then(
     () => undefined,
@@ -150,96 +164,121 @@ async function renderPdfPageStep(
   pageNumber: number,
   scale: number,
   lookup: IpaLookup,
-  showIpa: boolean
+  showIpa: boolean,
+  ticket: object
 ): Promise<PdfRender> {
-  const token = ++pdfRenderToken;
-  const page = await doc.getPage(pageNumber);
-  // HiDPI: the backing store renders at device pixels while the canvas's
-  // CSS size stays at the viewport's — otherwise a 125%/150% Windows
-  // display scales the 1x bitmap up and the text goes soft (the blur the
-  // real-Edge acceptance caught once the DOM words went transparent).
-  const viewport = page.getViewport({ scale });
-  const outputScale = Math.max(1, window.devicePixelRatio || 1);
-  canvas.width = viewport.width * outputScale;
-  canvas.height = viewport.height * outputScale;
-  canvas.style.width = `${viewport.width}px`;
-  canvas.style.height = `${viewport.height}px`;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("canvas 2d context unavailable");
-  await page.render({
-    canvasContext: context,
-    viewport,
-    transform:
-      outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
-  }).promise;
-  const content = await page.getTextContent();
-  if (token !== pdfRenderToken) {
-    page.cleanup();
+  if (renderTickets.get(overlay) !== ticket)
     return { wordCount: 0, ipaCount: 0 };
-  }
-  for (const layer of overlay.querySelectorAll("[data-pdf-word]")) {
-    layer.remove();
-  }
-  let wordCount = 0;
-  let ipaCount = 0;
-  for (const item of content.items) {
-    if (!("str" in item)) continue;
-    const text = item as TextItem;
-    if (text.str.trim() === "") continue;
-    const tx = Util.transform(viewport.transform, text.transform);
-    const fontPx = Math.hypot(tx[2], tx[3]);
-    // Words are the reading model's matches (WORD_PATTERN), not
-    // whitespace runs: punctuation-joined fragments ("hello—world") stay
-    // two lookup targets exactly as the EPUB pipeline tokenizes them.
-    const matches = [...text.str.matchAll(WORD_PATTERN)];
-    if (matches.length === 0) continue;
-    // Proportional placement: uniform per-character splitting drifts badly
-    // on proportional fonts (the hover box lands off the word). Measure
-    // every segment (words AND the gaps between them) with an offscreen
-    // canvas and rescale so the line's total stays exactly item.width —
-    // the one exact fact pdf.js gives us. Residual error is only the
-    // metric difference between the measuring font and the embedded one.
-    const segments = segmentLine(text.str, matches, fontPx);
-    const totalShare = segments.reduce((sum, seg) => sum + seg.share, 0);
-    const k = (text.width * scale) / totalShare;
-    let offset = 0;
-    for (const segment of segments) {
-      const width = segment.share * k;
-      if (segment.word) {
-        const piece = segment.word;
-        const left = tx[4] + offset;
-        const word = document.createElement("span");
-        word.className = "pdf-word";
-        word.style.left = `${left}px`;
-        word.style.top = `${tx[5] - fontPx}px`;
-        word.style.fontSize = `${fontPx}px`;
-        word.dataset.pdfWord = piece;
-        word.setAttribute("data-word", piece);
-        word.setAttribute("role", "button");
-        word.setAttribute("tabindex", "0");
-        word.textContent = piece;
-        if (showIpa) {
-          const ipa = lookup(piece);
-          const ipaEl = document.createElement("span");
-          ipaEl.className = "pdf-ipa";
-          ipaEl.dataset.ipa = ipa ?? "";
-          ipaEl.style.left = `${width / 2}px`;
-          ipaEl.style.top = `${fontPx + 2}px`;
-          ipaEl.textContent = ipa ?? "";
-          if (ipa) ipaCount += 1;
-          word.appendChild(ipaEl);
-        }
-        overlay.appendChild(word);
-        wordCount += 1;
-      }
-      offset += width;
+  const page = await doc.getPage(pageNumber);
+  try {
+    if (renderTickets.get(overlay) !== ticket)
+      return { wordCount: 0, ipaCount: 0 };
+    // HiDPI: the backing store renders at device pixels while the canvas's
+    // CSS size stays at the viewport's — otherwise a 125%/150% Windows
+    // display scales the 1x bitmap up and the text goes soft (the blur the
+    // real-Edge acceptance caught once the DOM words went transparent).
+    const viewport = page.getViewport({ scale });
+    const outputScale = Math.max(1, window.devicePixelRatio || 1);
+    canvas.width = viewport.width * outputScale;
+    canvas.height = viewport.height * outputScale;
+    canvas.style.width = `${viewport.width}px`;
+    canvas.style.height = `${viewport.height}px`;
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("canvas 2d context unavailable");
+    await page.render({
+      canvasContext: context,
+      viewport,
+      transform:
+        outputScale === 1 ? undefined : [outputScale, 0, 0, outputScale, 0, 0],
+    }).promise;
+    const content = await page.getTextContent();
+    if (renderTickets.get(overlay) !== ticket) {
+      return { wordCount: 0, ipaCount: 0 };
     }
+    clearPdfOverlay(overlay);
+    let wordCount = 0;
+    let ipaCount = 0;
+    for (const { item: text, lineIndex, lineText, matches } of eligiblePdfLines(
+      content.items
+    )) {
+      const tx = Util.transform(viewport.transform, text.transform);
+      const fontPx = Math.hypot(tx[2], tx[3]);
+      // Proportional placement: uniform per-character splitting drifts badly
+      // on proportional fonts (the hover box lands off the word). Measure
+      // every segment (words AND the gaps between them) with an offscreen
+      // canvas and rescale so the line's total stays exactly item.width —
+      // the one exact fact pdf.js gives us. Residual error is only the
+      // metric difference between the measuring font and the embedded one.
+      const segments = segmentLine(lineText, matches, fontPx);
+      const totalShare = segments.reduce((sum, seg) => sum + seg.share, 0);
+      const k = (text.width * scale) / totalShare;
+      let offset = 0;
+      for (const segment of segments) {
+        const width = segment.share * k;
+        if (segment.word) {
+          const piece = segment.word;
+          const left = tx[4] + offset;
+          const word = document.createElement("span");
+          word.className = "pdf-word";
+          word.style.left = `${left}px`;
+          word.style.top = `${tx[5] - fontPx}px`;
+          word.style.fontSize = `${fontPx}px`;
+          word.dataset.pdfWord = piece;
+          word.dataset.pdfLineIndex = String(lineIndex);
+          word.setAttribute("data-word", piece);
+          word.setAttribute("role", "button");
+          word.setAttribute("tabindex", "0");
+          word.textContent = piece;
+          if (showIpa) {
+            const ipa = lookup(piece);
+            const ipaEl = document.createElement("span");
+            ipaEl.className = "pdf-ipa";
+            ipaEl.dataset.ipa = ipa ?? "";
+            ipaEl.style.left = `${width / 2}px`;
+            ipaEl.style.top = `${fontPx + 2}px`;
+            ipaEl.textContent = ipa ?? "";
+            if (ipa) ipaCount += 1;
+            word.appendChild(ipaEl);
+          }
+          overlay.appendChild(word);
+          wordCount += 1;
+        }
+        offset += width;
+      }
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "pdf-note-button block-note-button";
+      button.dataset.pdfNote = String(lineIndex);
+      button.dataset.lineText = lineText;
+      button.style.left = `${tx[4] + text.width * scale + 6}px`;
+      button.style.top = `${tx[5] - fontPx}px`;
+      button.style.fontSize = `${fontPx}px`;
+      button.setAttribute("aria-label", "写笔记");
+      button.disabled = true; // The host enables only after its notes read settles.
+      button.textContent = "✎";
+      overlay.appendChild(button);
+    }
+    return { wordCount, ipaCount };
+  } finally {
+    page.cleanup();
   }
-  page.cleanup();
-  return { wordCount, ipaCount };
 }
 
-let pdfRenderToken = 0;
+const renderTickets = new WeakMap<HTMLElement, object>();
+
+// Called on navigation intent and teardown, including while a render is queued.
+export function invalidatePdfRender(overlay: HTMLElement): object {
+  const ticket = {};
+  renderTickets.set(overlay, ticket);
+  return ticket;
+}
+
+export function clearPdfOverlay(overlay: HTMLElement): void {
+  for (const layer of overlay.querySelectorAll(
+    "[data-pdf-word], [data-pdf-note]"
+  ))
+    layer.remove();
+}
 
 export async function destroyPdf(session: PdfSession): Promise<void> {
   // pdf.js holds the worker and page caches until destroyed — skipping

@@ -11,6 +11,8 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { createMemoryPdfNotesStore } from "../src/store/pdf-notes-store";
+import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { buildEpub } from "@lingualeaf/import-core/testing";
@@ -644,6 +646,8 @@ function renderWithSeams({
     <ReaderPage
       notes={createMemoryNotesStore()}
       store={vocab}
+      pdfNotes={createMemoryPdfNotesStore()}
+      pdfPositions={createMemoryPdfPositionStore()}
       library={library ?? createMemoryLibraryStore()}
     />
   );

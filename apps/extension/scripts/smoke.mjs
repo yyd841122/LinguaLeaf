@@ -256,6 +256,55 @@ const runScenarios = async (page, port) => {
       };
     });
 
+  const waitPdfNotes = () =>
+    page.waitForSelector("[data-pdf-note]:enabled", { timeout: 15000 });
+  const checkPdfNotesGeometry = async (label) => {
+    await waitPdfNotes();
+    const result = await page.evaluate(() => {
+      const canvas = document.querySelector("canvas").getBoundingClientRect();
+      const words = [...document.querySelectorAll("[data-pdf-word]")];
+      const buttons = [...document.querySelectorAll("[data-pdf-note]")];
+      const indexes = new Set(words.map((w) => w.dataset.pdfLineIndex));
+      return {
+        lines: indexes.size,
+        buttons: buttons.length,
+        unique: new Set(buttons.map((b) => b.dataset.pdfNote)).size,
+        anchored: buttons.every((button) => {
+          const line = words.filter(
+            (w) => w.dataset.pdfLineIndex === button.dataset.pdfNote
+          );
+          if (!line.length) return false;
+          const rect = button.getBoundingClientRect();
+          const right = Math.max(
+            ...line.map((w) => w.getBoundingClientRect().right)
+          );
+          const top = line[0].getBoundingClientRect().top;
+          // Actual painted control against the word geometry, never just existence.
+          // Helvetica vs browser word metrics can differ by a few CSS pixels;
+          // terminal punctuation also occupies space after the final word.
+          return (
+            getComputedStyle(button).position === "absolute" &&
+            rect.width > 0 &&
+            rect.height > 0 &&
+            Math.abs(rect.top - top) < 2 &&
+            rect.left >= right - 3 &&
+            rect.left < right + 30 &&
+            rect.left >= canvas.left &&
+            rect.right <= canvas.right + 2
+          );
+        }),
+      };
+    });
+    check(
+      `PDF notes: ${label} line-end geometry and no duplicate controls`,
+      result.lines > 0 &&
+        result.lines === result.buttons &&
+        result.buttons === result.unique &&
+        result.anchored,
+      JSON.stringify(result)
+    );
+  };
+
   const pdfScenario = async () => {
     // PDF line: in-place overlay geometry, nav, toggle.
     await importBook({
@@ -281,6 +330,55 @@ const runScenarios = async (page, port) => {
         geometry.noSelect === geometry.words,
       JSON.stringify(geometry)
     );
+    await checkPdfNotesGeometry("initial");
+    const initialLines = await page.locator("[data-pdf-note]").count();
+    await page.locator("[data-pdf-note]").first().focus();
+    await page.keyboard.press("Enter");
+    await page.waitForSelector('[role="dialog"][aria-label="行笔记"]');
+    check(
+      "PDF notes: keyboard opens line editor with focused text",
+      await page
+        .getByRole("textbox", { name: "笔记正文" })
+        .evaluate((node) => node === document.activeElement)
+    );
+    await page
+      .getByRole("textbox", { name: "笔记正文" })
+      .fill("PDF smoke note");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "已存" }).waitFor();
+    await page.keyboard.press("Escape");
+    check(
+      "PDF notes: Escape restores button focus and saved highlight",
+      await page
+        .locator("[data-pdf-note]")
+        .first()
+        .evaluate(
+          (node) =>
+            node === document.activeElement &&
+            node.classList.contains("has-note")
+        )
+    );
+    await page.getByRole("button", { name: "150%", exact: true }).click();
+    await checkPdfNotesGeometry("150% zoom");
+    check(
+      "PDF notes: zoom keeps saved highlight",
+      (await page.locator("[data-pdf-note].has-note").count()) === 1
+    );
+    await page.getByRole("button", { name: "100%", exact: true }).click();
+    await checkPdfNotesGeometry("100% zoom");
+    // Point-word keyboard lookup still belongs to the existing popup seam.
+    for (const key of ["Enter", "Space"]) {
+      await page.locator("[data-pdf-word]").first().focus();
+      await page.keyboard.press(key);
+      await page.waitForSelector(".lookup-vocab");
+      check(
+        `PDF: ${key} word keyboard lookup survives note controls`,
+        (await page
+          .locator('[role="dialog"][aria-label^="词详情"]')
+          .count()) === 1
+      );
+      await page.keyboard.press("Escape");
+    }
     await page.click(".reader-pager button:last-child");
     await page.waitForFunction(
       () =>
@@ -290,6 +388,12 @@ const runScenarios = async (page, port) => {
       undefined,
       { timeout: 10000 }
     );
+    await checkPdfNotesGeometry("page two");
+    check(
+      "PDF notes: page switch removes old line controls and highlight",
+      (await page.locator("[data-pdf-note].has-note").count()) === 0 &&
+        (await page.locator("[data-pdf-note]").count()) !== initialLines
+    );
     await page.click(".reader-pager button:first-child");
     await page.waitForFunction(
       () =>
@@ -298,6 +402,11 @@ const runScenarios = async (page, port) => {
           ?.textContent?.startsWith("1 /"),
       undefined,
       { timeout: 10000 }
+    );
+    await checkPdfNotesGeometry("page one restored");
+    check(
+      "PDF notes: return restores one saved highlight",
+      (await page.locator("[data-pdf-note].has-note").count()) === 1
     );
     check("PDF: page navigation", true);
     await page.click(".reader-toggle");
@@ -313,6 +422,54 @@ const runScenarios = async (page, port) => {
       { timeout: 15000 }
     );
     check("PDF: IPA toggle", true);
+    await checkPdfNotesGeometry("IPA rebuilt");
+    check(
+      "PDF notes: IPA rebuild keeps highlight",
+      (await page.locator("[data-pdf-note].has-note").count()) === 1
+    );
+    await page.locator("[data-pdf-note].has-note").click();
+    check(
+      "PDF notes: reattached text survives rebuild",
+      (await page.getByRole("textbox", { name: "笔记正文" }).inputValue()) ===
+        "PDF smoke note"
+    );
+    await page.keyboard.press("Escape");
+    await page.click(".reader-reopen");
+    await page.waitForSelector('input[type="file"]');
+    check(
+      "PDF notes: leaving removes all PDF overlays",
+      (await page.locator("[data-pdf-word], [data-pdf-note]").count()) === 0
+    );
+    check(
+      "PDF notes: hint coexists with EPUB recents",
+      (await page.locator('[aria-label="最近 PDF 会话"]').count()) === 1 &&
+        (await page
+          .getByRole("button", { name: "Smoke EPUB", exact: true })
+          .count()) === 1
+    );
+    await page.reload();
+    await page.waitForSelector('[aria-label="最近 PDF 会话"]');
+    check(
+      "PDF notes: reopening reader preserves nonclickable hint and EPUB recents",
+      (await page
+        .locator(
+          '[aria-label="最近 PDF 会话"] button, [aria-label="最近 PDF 会话"] a'
+        )
+        .count()) === 0 &&
+        (await page
+          .getByRole("button", { name: "Smoke EPUB", exact: true })
+          .count()) === 1
+    );
+    await page.setInputFiles('input[type="file"]', {
+      name: "renamed.pdf",
+      mimeType: "application/pdf",
+      buffer: samplePdf,
+    });
+    await waitPdfNotes();
+    check(
+      "PDF notes: same bytes reattach silently after reselect",
+      (await page.locator("[data-pdf-note].has-note").count()) === 1
+    );
   };
 
   const scannedScenario = async () => {
@@ -354,14 +511,17 @@ try {
     // is absent. KNOWN LIMIT — this masks manifest-permission gaps;
     // scripts/check-manifest-permissions.mjs is that class's gate, and
     // the load-unpacked pass is the human acceptance.
-    const bag = {};
+    if (location.protocol !== "http:") return;
+    const storageKey = "lingualeaf-smoke-storage";
+    const bag = JSON.parse(sessionStorage.getItem(storageKey) ?? "{}");
     window.chrome = {
       storage: {
         local: {
           get: async (key) =>
-            bag[key] !== undefined ? { [key]: bag[key] } : {},
+            bag[key] !== undefined ? { [key]: structuredClone(bag[key]) } : {},
           set: async (obj) => {
-            Object.assign(bag, obj);
+            Object.assign(bag, structuredClone(obj));
+            sessionStorage.setItem(storageKey, JSON.stringify(bag));
           },
         },
       },

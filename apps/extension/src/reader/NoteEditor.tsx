@@ -11,19 +11,15 @@ import {
   useState,
   type Ref,
 } from "react";
-import {
-  NOTE_TEXT_LIMIT,
-  type NoteAnchor,
-  type NotesStore,
-  type ReaderNote,
-} from "../store/notes-store";
+import { NOTE_TEXT_LIMIT } from "../store/notes-store";
 
 export type NoteEditorHandle = { requestClose(): boolean };
 
 // Extension-owned single-text editor. The kernel supplies only the button;
 // no web wire types, note categories or server session enter this host.
-export function NoteEditor({
-  anchor,
+export function NoteEditor<T extends { text: string }>({
+  ownerKey,
+  ariaLabel,
   initial,
   button,
   store,
@@ -31,11 +27,12 @@ export function NoteEditor({
   onClose,
   ref,
 }: {
-  anchor: NoteAnchor;
-  initial: ReaderNote | undefined;
+  ownerKey: string;
+  ariaLabel: string;
+  initial: T | undefined;
   button: HTMLButtonElement;
-  store: NotesStore;
-  onCommitted: (note: ReaderNote | null) => void;
+  store: { save(text: string): Promise<T>; delete(): Promise<void> };
+  onCommitted: (note: T | null) => void;
   onClose: () => void;
   ref: Ref<NoteEditorHandle>;
 }) {
@@ -48,7 +45,7 @@ export function NoteEditor({
   const closed = useRef(false);
   const box = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
-  const owner = useOwner(anchor.docId, anchor.chapterIndex, anchor.blockIndex);
+  const owner = useOwner(ownerKey);
   const operation = useSettle(owner);
   const dirty = text !== saved;
   const requestClose = () => {
@@ -119,12 +116,10 @@ export function NoteEditor({
     setDidSave(false);
     const submitted = text;
     const result = await operation.run(
-      remove
-        ? store.delete(anchor).then(() => null)
-        : store.save(anchor, submitted),
+      remove ? store.delete().then(() => null) : store.save(submitted),
       {
         // A write belongs to storage even if the editor has closed. Only
-        // the chapter's own owner may update its markers; drafts stay local.
+        // the host's own owner may update its markers; drafts stay local.
         onLanded: onCommitted,
         onFresh: (note) => {
           setExists(note !== null);
@@ -147,7 +142,7 @@ export function NoteEditor({
     <div
       className="note-popup"
       role="dialog"
-      aria-label="句子块笔记"
+      aria-label={ariaLabel}
       ref={box}
       style={{
         ...position,

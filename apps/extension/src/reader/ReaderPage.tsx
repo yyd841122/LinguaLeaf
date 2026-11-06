@@ -1,9 +1,4 @@
-import {
-  createWordHandlers,
-  useOwner,
-  useSettle,
-  type WordClick,
-} from "@lingualeaf/reading-model/react";
+import { useOwner, useSettle } from "@lingualeaf/reading-model/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import { segmentOriginal, type StatusApplied } from "@lingualeaf/reading-model";
@@ -18,7 +13,6 @@ import {
   destroyPdf,
   detectScanned,
   openPdf,
-  renderPdfPage,
   sampleTextLengths,
   type PdfSession,
 } from "./pdf";
@@ -45,6 +39,17 @@ import { createChromeNotesStore, type NotesStore } from "../store/notes-store";
 import { DocumentReplacementRequired } from "../store/book-fingerprint";
 import { EpubChapter } from "./EpubChapter";
 import type { NoteEditorHandle } from "./NoteEditor";
+import { PdfReader } from "./PdfReader";
+import { pdfFingerprint } from "../store/pdf-fingerprint";
+import {
+  createChromePdfNotesStore,
+  type PdfNotesStore,
+} from "../store/pdf-notes-store";
+import {
+  createPdfPositionStore,
+  type PdfPositionStore,
+  type PdfRecent,
+} from "../store/pdf-position-store";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -67,6 +72,7 @@ type ReaderState =
   // a thousand-page book costs one page at a time — 渐进加载 by shape.
   | {
       phase: "pdf";
+      docId: string;
       title: string;
       session: PdfSession;
       page: number;
@@ -91,16 +97,54 @@ export function ReaderPage({
   store: injectedStore,
   library: injectedLibrary,
   notes: injectedNotes,
+  pdfNotes: injectedPdfNotes,
+  pdfPositions: injectedPdfPositions,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
   notes?: NotesStore;
+  pdfNotes?: PdfNotesStore;
+  pdfPositions?: PdfPositionStore;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
   const notes = useMemo(
     () => injectedNotes ?? createChromeNotesStore(),
     [injectedNotes]
+  );
+  const pdfNotes = useMemo(
+    () => injectedPdfNotes ?? createChromePdfNotesStore(),
+    [injectedPdfNotes]
+  );
+  const pdfPositions = useMemo(
+    () => injectedPdfPositions ?? createPdfPositionStore(),
+    [injectedPdfPositions]
+  );
+  const [pdfRecent, setPdfRecent] = useState<PdfRecent | null>(null);
+  const openOwner = useOwner();
+  const { run: runOpen } = useSettle(openOwner);
+  // Accepted sessions are held immediately, including the interval before
+  // React commits state and installs the session effect. Teardown can land
+  // in that interval; the ref lets it release the transferred candidate.
+  const acceptedSession = useRef<PdfSession | null>(null);
+  useEffect(
+    () => () => {
+      openOwner.invalidate();
+      const session = acceptedSession.current;
+      acceptedSession.current = null;
+      if (session) void destroyPdf(session);
+    },
+    [openOwner]
+  );
+  const activeSession = state.phase === "pdf" ? state.session : null;
+  useEffect(
+    () => () => {
+      if (activeSession && acceptedSession.current === activeSession) {
+        acceptedSession.current = null;
+        void destroyPdf(activeSession);
+      }
+    },
+    [activeSession]
   );
   const noteEditor = useRef<NoteEditorHandle>(null);
   const closeNote = () => noteEditor.current?.requestClose() !== false;
@@ -156,6 +200,9 @@ export function ReaderPage({
     if (!file || state.phase === "importing") return;
     if (!closeNote()) return;
     reopenOwner.invalidate();
+    openOwner.invalidate();
+    const openTicket = openOwner.mark();
+    setLookup(null);
     setState({ phase: "importing" });
     try {
       const offline: OfflineDictionary = await dictionary;
@@ -163,6 +210,8 @@ export function ReaderPage({
         // The shared read shape (import-book's readAsArrayBuffer): the one
         // FileReader form both jsdom and Edge implement.
         const bytes = await readAsArrayBuffer(file);
+        const docId = await pdfFingerprint(bytes);
+        if (openTicket.stale()) return;
         let session: PdfSession;
         try {
           session = await openPdf(bytes, file.name);
@@ -173,22 +222,38 @@ export function ReaderPage({
           if (!reason) throw error;
           throw new UploadRejected(reason, String(error));
         }
-        const lengths = await sampleTextLengths(session.doc);
-        if (detectScanned(lengths)) {
-          await destroyPdf(session);
-          throw new UploadRejected(
-            "scanned-pdf",
-            "image-only PDF has no text layer"
-          );
+        let transferred = false;
+        try {
+          if (openTicket.stale()) return;
+          const lengths = await sampleTextLengths(session.doc);
+          if (detectScanned(lengths))
+            throw new UploadRejected(
+              "scanned-pdf",
+              "image-only PDF has no text layer"
+            );
+          const position = await pdfPositions.getPosition(docId);
+          await runOpen(Promise.resolve(session), {
+            ticket: openTicket,
+            onFresh: () => {
+              transferred = true;
+              acceptedSession.current = session;
+              setState({
+                phase: "pdf",
+                docId,
+                title: session.title,
+                session,
+                page: Math.min(
+                  session.pageCount,
+                  Math.max(1, position?.page ?? 1)
+                ),
+                scale: position?.scale ?? 1,
+                lookup: offline.ipaLookup(),
+              });
+            },
+          });
+        } finally {
+          if (!transferred) await destroyPdf(session);
         }
-        setState({
-          phase: "pdf",
-          title: session.title,
-          session,
-          page: 1,
-          scale: 1,
-          lookup: offline.ipaLookup(),
-        });
         return;
       }
       const book = await importBookFromFile(file, offline.ipaLookup());
@@ -228,13 +293,18 @@ export function ReaderPage({
       restoreRef.current = null;
       setState({ phase: "reading", docId, book, chapterIndex: 0 });
     } catch (error) {
-      setState({ phase: "error", copy: copyFor(error) });
+      await runOpen(Promise.resolve(copyFor(error)), {
+        ticket: openTicket,
+        onFresh: (copy) => setState({ phase: "error", copy }),
+      });
     }
   };
 
   // The landing's recents: loaded whenever the picker shows.
   useEffect(() => {
     if (state.phase !== "empty") return;
+    const ticket = openOwner.mark();
+    void runOpen(pdfPositions.getRecent(), { ticket, onFresh: setPdfRecent });
     let cancelled = false;
     library
       .listDocuments()
@@ -248,7 +318,7 @@ export function ReaderPage({
     return () => {
       cancelled = true;
     };
-  }, [state.phase, library]);
+  }, [state.phase, library, pdfPositions, openOwner, runOpen]);
 
   // 重开扩展回到原处: a recents click opens the stored book at its saved
   // position (GLOSSARY: 扩展阅读页 remembers, the storage seam persists).
@@ -265,6 +335,7 @@ export function ReaderPage({
   const reopenDocument = (entry: LibraryEntry) => {
     if (state.phase === "importing" || !closeNote()) return;
     reopenOwner.invalidate();
+    openOwner.invalidate();
     void reopenSettle.run(library.openDocument(entry.id), {
       onFresh: (book) => {
         if (!book) return;
@@ -417,7 +488,12 @@ export function ReaderPage({
           />
         ) : null}
         <PdfReader
-          key={state.title}
+          key={state.docId}
+          docId={state.docId}
+          notes={pdfNotes}
+          positions={pdfPositions}
+          editorRef={noteEditor}
+          onOpenNote={() => setLookup(null)}
           title={state.title}
           session={state.session}
           page={state.page}
@@ -429,7 +505,9 @@ export function ReaderPage({
           onToggleIpa={() => setShowIpa((shown) => !shown)}
           onWordClick={setLookup}
           onReopen={() => {
-            void destroyPdf(state.session);
+            if (!closeNote()) return;
+            openOwner.invalidate();
+            setLookup(null);
             setState({ phase: "empty" });
           }}
         />
@@ -588,6 +666,11 @@ export function ReaderPage({
           </ol>
         </nav>
       ) : null}
+      {pdfRecent ? (
+        <p className="reader-hint" aria-label="最近 PDF 会话">
+          《{pdfRecent.title}》第 {pdfRecent.page} 页——选同一个文件继续
+        </p>
+      ) : null}
       <label className="reader-picker">
         <span>选择一个 EPUB 或 PDF 文件，或把它拖进本页。</span>
         <input
@@ -601,120 +684,6 @@ export function ReaderPage({
         标注在浏览器本地完成：无网络、无服务进程。加密、损坏的档案与扫描版
         PDF（无文本层）无法导入。
       </p>
-    </main>
-  );
-}
-
-// The PDF reading view (ticket 06): one page on canvas at a time — a big
-// book is progressive by shape — with the proven word/IPA overlay. Word
-// units carry data-word, so the popup seam is the EPUB one verbatim.
-function PdfReader({
-  title,
-  session,
-  page,
-  scale,
-  lookup,
-  showIpa,
-  onPage,
-  onScale,
-  onToggleIpa,
-  onWordClick,
-  onReopen,
-}: {
-  title: string;
-  session: PdfSession;
-  page: number;
-  scale: number;
-  lookup: IpaLookup;
-  showIpa: boolean;
-  onPage: (page: number) => void;
-  onScale: (scale: number) => void;
-  onToggleIpa: () => void;
-  onWordClick: (click: WordClick) => void;
-  onReopen: () => void;
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const overlayRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const overlay = overlayRef.current;
-    if (!canvas || !overlay) return;
-    let cancelled = false;
-    renderPdfPage(
-      canvas,
-      overlay,
-      session.doc,
-      page,
-      scale,
-      lookup,
-      showIpa
-    ).catch((error: unknown) => {
-      if (!cancelled) console.warn("pdf page render failed", error);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [session, page, scale, lookup, showIpa]);
-
-  const wordHandlers = createWordHandlers(onWordClick);
-
-  return (
-    <main className="reader" aria-label="扩展阅读页">
-      <header className="reader-head">
-        <h1 className="reader-title">{title}</h1>
-        <div className="reader-tools">
-          <button
-            type="button"
-            className="reader-toggle"
-            aria-pressed={showIpa}
-            onClick={onToggleIpa}
-          >
-            音标
-          </button>
-          {[0.75, 1, 1.5].map((zoom) => (
-            <button
-              key={zoom}
-              type="button"
-              className="reader-toggle"
-              aria-pressed={scale === zoom}
-              onClick={() => onScale(zoom)}
-            >
-              {zoom * 100}%
-            </button>
-          ))}
-          <button type="button" className="reader-reopen" onClick={onReopen}>
-            打开其他文件
-          </button>
-        </div>
-      </header>
-      <div
-        className="pdf-stage"
-        ref={overlayRef}
-        {...wordHandlers}
-        role="presentation"
-      >
-        <canvas ref={canvasRef} />
-      </div>
-      <footer className="reader-pager">
-        <button
-          type="button"
-          disabled={page <= 1}
-          onClick={() => onPage(page - 1)}
-        >
-          上一页
-        </button>
-        <span className="reader-position">
-          {page} / {session.pageCount}
-        </span>
-        <button
-          type="button"
-          disabled={page >= session.pageCount}
-          onClick={() => onPage(page + 1)}
-        >
-          下一页
-        </button>
-      </footer>
     </main>
   );
 }

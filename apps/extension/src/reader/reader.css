@@ -261,3 +261,12 @@ body {
   color: #b3261e;
   font-size: 0.85rem;
 }
+
+.pdf-note-button {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  padding: 0 3px;
+  min-width: 22px;
+  line-height: 1;
+}

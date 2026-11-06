@@ -118,10 +118,23 @@ export function EpubChapter({
         <NoteEditor
           key={popup.op}
           ref={editorRef}
-          anchor={{ docId, chapterIndex, blockIndex: popup.blockIndex }}
+          ownerKey={`${docId}:${chapterIndex}:${popup.blockIndex}`}
+          ariaLabel="句子块笔记"
           initial={noteFor(popup.blockIndex)}
           button={popup.button}
-          store={notes}
+          store={{
+            save: (text) =>
+              notes.save(
+                { docId, chapterIndex, blockIndex: popup.blockIndex },
+                text
+              ),
+            delete: () =>
+              notes.delete({
+                docId,
+                chapterIndex,
+                blockIndex: popup.blockIndex,
+              }),
+          }}
           onCommitted={(note) => committed(popup.blockIndex, note)}
           onClose={() => setPopup(null)}
         />
