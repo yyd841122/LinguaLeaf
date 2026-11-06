@@ -1,6 +1,6 @@
 # pdf-notes:扩展阅读器 PDF 面笔记(重选回挂,行级,离线本地)
 
-Status: ready-for-human(2026-11-06 Lane B 实现收官:编排侧 verify EXIT=0 + 冒烟 EXIT=0 + 双轴评审记档完毕,待维护者真机检查点后翻 done)
+Status: done(2026-11-07 真机抽验九项全绿,收官归档)
 拍板 3 修订已确认(2026-11-06),同日翻 ready-for-agent。评审 
 ready-for-agent)
 
@@ -230,3 +230,19 @@ recents 并存、重开扩展提示仍在、限额 10,000/100 失败留稿。
   ⑥EPUB 面与已有笔记零回归;
   ⑦笔记读失败可见禁编辑可重试(devtools 删 storage 记录可模拟);
   ⑧超额 10,000/100 失败留稿。
+
+### 2026-11-07 真机抽验归档(收官)
+
+- 维护者九项全绿(2026-11-07,Windows Chrome 装载构建版;fixture:
+  test-A/test-B 同头异尾、书名同为《Note Test Book》,仅末行
+  APPLE/BANANA 之差;long.txt 11,048 字符;材料存
+  C:\Users\Public\pdf-notes-test\,指引 测试指引.txt 同目录):
+  ①同一文件重选静默回挂笔记与页码恢复;②A→B→A 各归各零互扰且
+  各自恢复位置;③脏确认与放弃修改门;④zoom/音标重建后按钮与亮标
+  贴原行;⑤点词与键盘查词零回归;⑥EPUB 面与已有笔记零回归;
+  ⑦读失败(devtools 改 version=99 模拟)可见禁编辑、改回重试恢复;
+  ⑧超额 11,048 字符触发「最多 10,000 字符」留稿不丢;⑨空态提示
+  《title》第 N 页不可点、EPUB recents 并存。
+- 至此验收骨架 14 项全部落档(单测/冒烟/真机三层)。后继票
+  ext-note-types(四分类)已立票 ready-for-agent,前置门即本票
+  真机验收,现已解锁。
