@@ -1,5 +1,4 @@
 import {
-  AnnotatedBlockView,
   createWordHandlers,
   useOwner,
   useSettle,
@@ -42,6 +41,10 @@ import {
   type LibraryStore,
 } from "../store/library-store";
 import { WordLookupPopup } from "./WordLookupPopup";
+import { createChromeNotesStore, type NotesStore } from "../store/notes-store";
+import { DocumentReplacementRequired } from "../store/book-fingerprint";
+import { EpubChapter } from "./EpubChapter";
+import type { NoteEditorHandle } from "./NoteEditor";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -87,12 +90,20 @@ function copyFor(error: unknown): string {
 export function ReaderPage({
   store: injectedStore,
   library: injectedLibrary,
+  notes: injectedNotes,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
+  notes?: NotesStore;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
+  const notes = useMemo(
+    () => injectedNotes ?? createChromeNotesStore(),
+    [injectedNotes]
+  );
+  const noteEditor = useRef<NoteEditorHandle>(null);
+  const closeNote = () => noteEditor.current?.requestClose() !== false;
   const dropDepth = useRef(0);
   // One dictionary + one store per mount; a file picked mid-load simply
   // awaits them. The store composes the loaded dictionary with the chrome
@@ -143,6 +154,8 @@ export function ReaderPage({
 
   const handleFile = async (file: File | undefined | null) => {
     if (!file || state.phase === "importing") return;
+    if (!closeNote()) return;
+    reopenOwner.invalidate();
     setState({ phase: "importing" });
     try {
       const offline: OfflineDictionary = await dictionary;
@@ -182,7 +195,35 @@ export function ReaderPage({
       // The document id is its title: re-importing a book updates it in
       // place instead of duplicating the shelf entry.
       const docId = `doc:${book.title}`;
-      await library.saveDocument({ id: docId, title: book.title, book });
+      try {
+        await library.saveDocument({ id: docId, title: book.title, book });
+      } catch (error) {
+        if (!(error instanceof DocumentReplacementRequired)) throw error;
+        let count: number;
+        try {
+          count = (await notes.list(docId)).length;
+        } catch {
+          setState({
+            phase: "error",
+            copy: "笔记读取失败，未替换原书，请重试。",
+          });
+          return;
+        }
+        if (
+          !window.confirm(
+            `新书内容与原书不同，替换将使 ${count} 条已有笔记错位，阅读进度也可能错位。继续替换？`
+          )
+        ) {
+          setState({ phase: "empty" });
+          return;
+        }
+        await library.saveDocument({
+          id: docId,
+          title: book.title,
+          book,
+          replaceFingerprint: error.previousFingerprint,
+        });
+      }
       setWordStates(new Map());
       restoreRef.current = null;
       setState({ phase: "reading", docId, book, chapterIndex: 0 });
@@ -222,6 +263,7 @@ export function ReaderPage({
   const reopenOwner = useOwner();
   const reopenSettle = useSettle(reopenOwner);
   const reopenDocument = (entry: LibraryEntry) => {
+    if (state.phase === "importing" || !closeNote()) return;
     reopenOwner.invalidate();
     void reopenSettle.run(library.openDocument(entry.id), {
       onFresh: (book) => {
@@ -344,8 +386,6 @@ export function ReaderPage({
     });
   };
 
-  const chapterWordHandlers = createWordHandlers(setLookup);
-
   // Dragover must be cancelled for drop to fire; dragenter/leave counting
   // keeps the highlight from flickering across child elements.
   const onDragEnter = (event: DragEvent<HTMLElement>) => {
@@ -406,7 +446,13 @@ export function ReaderPage({
         ? (wordStates.get(resolvedStore.stateKey(word)) ?? null)
         : null;
     const goChapter = (index: number) => {
-      if (index >= 0 && index < currentBook.chapters.length) {
+      if (
+        index !== chapterIndex &&
+        index >= 0 &&
+        index < currentBook.chapters.length &&
+        closeNote()
+      ) {
+        setLookup(null);
         setState({ ...state, chapterIndex: index });
         // The chapter switch is itself a position fact — written straight
         // to the seam (scroll writes below cover the within-chapter drift).
@@ -432,7 +478,11 @@ export function ReaderPage({
             <button
               type="button"
               className="reader-reopen"
-              onClick={() => setState({ phase: "empty" })}
+              onClick={() => {
+                if (!closeNote()) return;
+                setLookup(null);
+                setState({ phase: "empty" });
+              }}
             >
               打开其他文件
             </button>
@@ -454,23 +504,18 @@ export function ReaderPage({
           </ol>
         </nav>
         {chapter ? (
-          <section
-            className="reader-chapter"
-            aria-label={chapter.title}
-            {...chapterWordHandlers}
-          >
-            <h2>{chapter.title}</h2>
-            {chapter.blocks.map((block, index) => (
-              <div key={index} data-block-index={index}>
-                <AnnotatedBlockView
-                  block={block}
-                  showIpa={showIpa}
-                  showTranslation={false}
-                  statusOf={(word) => stateOf(word)}
-                />
-              </div>
-            ))}
-          </section>
+          <EpubChapter
+            key={`${docId}:${chapterIndex}`}
+            docId={docId}
+            chapterIndex={chapterIndex}
+            chapter={chapter}
+            notes={notes}
+            showIpa={showIpa}
+            statusOf={(word) => stateOf(word)}
+            onWordClick={setLookup}
+            onOpenNote={() => setLookup(null)}
+            editorRef={noteEditor}
+          />
         ) : null}
         {lookup && resolvedStore ? (
           <WordLookupPopup

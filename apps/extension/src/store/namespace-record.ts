@@ -7,21 +7,33 @@
 // open — a stale read-modify-write would drop the earlier one
 // (extension-reader ticket 07; ext-reuse-convergence made the queue the
 // one write path for every chrome backend).
+export type NamespaceStorage = {
+  get(namespace: string): Promise<Record<string, unknown>>;
+  set(bag: Record<string, unknown>): Promise<void>;
+};
+
 export function createNamespaceRecord<T>(
   namespace: string,
-  empty: () => T
+  empty: () => T,
+  storage?: NamespaceStorage
 ): {
   read(): Promise<T>;
   update<U>(
     step: (record: T, write: (record: T) => Promise<void>) => Promise<U>
   ): Promise<U>;
 } {
+  // Keep browser access lazy: constructing an injected reader must not
+  // require chrome until the backend is actually read or written.
+  const backend = storage ?? {
+    get: (key: string) => chrome.storage.local.get(key),
+    set: (bag: Record<string, unknown>) => chrome.storage.local.set(bag),
+  };
   const read = async (): Promise<T> => {
-    const bag = await chrome.storage.local.get(namespace);
+    const bag = await backend.get(namespace);
     return (bag[namespace] as T | undefined) ?? empty();
   };
   const write = (record: T): Promise<void> =>
-    chrome.storage.local.set({ [namespace]: record });
+    backend.set({ [namespace]: record });
   let writeQueue: Promise<unknown> = Promise.resolve();
   // One serialized read-modify-write step: the step reads fresh inside the
   // chain and persists through write.

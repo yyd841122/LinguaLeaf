@@ -1,5 +1,6 @@
 import type { ExtBook } from "../reader/import-book";
 import { createNamespaceRecord } from "./namespace-record";
+import { bookFingerprint, checkReplacement } from "./book-fingerprint";
 
 // The reading position inside one document: the chapter plus the block the
 // reader's viewport sits on — the same {chapter, block} shape the web
@@ -19,11 +20,14 @@ export type LibraryEntry = {
 // list. Memory-backed for tests; chrome.storage.local for the real thing.
 // Everything here dies with the extension's storage (数据自决: 卸载即清).
 export interface LibraryStore {
-  // Insert or replace by id; an existing document keeps its progress.
+  // Same content replaces silently, preserving progress. Changed content
+  // throws DocumentReplacementRequired before writing. Retry only after
+  // confirmation, with the previousFingerprint carried by that error.
   saveDocument(doc: {
     id: string;
     title: string;
     book: ExtBook;
+    replaceFingerprint?: string;
   }): Promise<void>;
   // The recents list, most recently opened first.
   listDocuments(): Promise<LibraryEntry[]>;
@@ -35,7 +39,7 @@ export interface LibraryStore {
 export type MemoryLibraryStore = LibraryStore & {
   documents: Map<
     string,
-    { title: string; book: ExtBook; lastOpenedAt: number }
+    { title: string; book: ExtBook; lastOpenedAt: number; fingerprint?: string }
   >;
   progress: Map<string, ChapterProgress>;
 };
@@ -45,18 +49,30 @@ export function createMemoryLibraryStore(
 ): MemoryLibraryStore {
   const documents = new Map<
     string,
-    { title: string; book: ExtBook; lastOpenedAt: number }
+    { title: string; book: ExtBook; lastOpenedAt: number; fingerprint?: string }
   >();
   const progress = new Map<string, ChapterProgress>();
+  let saveQueue: Promise<unknown> = Promise.resolve();
   return {
     documents,
     progress,
-    async saveDocument({ id, title, book }) {
-      documents.set(id, {
-        title,
-        book,
-        lastOpenedAt: documents.get(id)?.lastOpenedAt ?? now(),
+    saveDocument({ id, title, book, replaceFingerprint }) {
+      const run = saveQueue.then(async () => {
+        const fingerprint = await bookFingerprint(book);
+        await checkReplacement(
+          documents.get(id),
+          fingerprint,
+          replaceFingerprint
+        );
+        documents.set(id, {
+          title,
+          book,
+          fingerprint,
+          lastOpenedAt: documents.get(id)?.lastOpenedAt ?? now(),
+        });
       });
+      saveQueue = run.catch(() => undefined);
+      return run;
     },
     async listDocuments() {
       return [...documents.entries()]
@@ -91,7 +107,7 @@ const STORAGE_NAMESPACE = "library";
 export type ChromeLibraryRecord = {
   documents: Record<
     string,
-    { title: string; lastOpenedAt: number; book: ExtBook }
+    { title: string; lastOpenedAt: number; book: ExtBook; fingerprint?: string }
   >;
   progress: Record<string, ChapterProgress>;
 };
@@ -102,12 +118,15 @@ export function createChromeLibraryStore(): LibraryStore {
     () => ({ documents: {}, progress: {} })
   );
   return {
-    saveDocument({ id, title, book }) {
+    saveDocument({ id, title, book, replaceFingerprint }) {
       return record.update(async (r, write) => {
         const existing = r.documents[id];
+        const fingerprint = await bookFingerprint(book);
+        await checkReplacement(existing, fingerprint, replaceFingerprint);
         r.documents[id] = {
           title,
           book,
+          fingerprint,
           lastOpenedAt: existing?.lastOpenedAt ?? Date.now(),
         };
         await write(r);

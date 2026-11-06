@@ -11,6 +11,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import { createMemoryNotesStore } from "../src/store/notes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { importBook } from "../src/reader/import-book";
@@ -78,7 +79,12 @@ const ipaValues = (): (string | null)[] =>
 
 describe("ReaderPage — the EPUB skeleton", () => {
   it("imports a fixture EPUB and reads it chapter by chapter", async () => {
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
 
     expect(
@@ -96,7 +102,12 @@ describe("ReaderPage — the EPUB skeleton", () => {
   });
 
   it("reports a broken archive with the invalid-epub copy and keeps the entry usable", async () => {
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     const garbage = await fixtureFile(
       "broken.epub",
       new TextEncoder().encode("this is not a zip file")
@@ -114,7 +125,12 @@ describe("ReaderPage — the EPUB skeleton", () => {
   });
 
   it("declines unrecognized files with the unsupported copy", async () => {
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     const doc = await fixtureFile("paper.docx", new Uint8Array([1, 2, 3]));
     await pickFile(doc);
 
@@ -130,7 +146,12 @@ describe("ReaderPage — the EPUB skeleton", () => {
     // the fake worker (jsdom) and the browser; the phase and the reusable
     // entry are the page's contract here. The copy-level mapping rides the
     // real browser smoke (InvalidPDFException is the browser's shape).
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     const pdf = await fixtureFile("paper.pdf", new Uint8Array([1, 2, 3]));
     await pickFile(pdf);
 
@@ -158,7 +179,12 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         },
       ],
     });
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     await pickFile(await fixtureFile("book.epub", bytes));
 
     // Slots land in word order: form hits and the lemma fallback (runs →
@@ -178,7 +204,12 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         { href: "text/c.xhtml", body: "<h1>C</h1><p>Woke runs today.</p>" },
       ],
     });
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     await pickFile(await fixtureFile("book.epub", bytes));
     await screen.findByText("Woke");
     expect(ipaValues()).toEqual(["woʊk", "rʌn", "təˈdeɪ"]);
@@ -202,7 +233,12 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         { href: "text/c.xhtml", body: "<h1>C</h1><p>Woke runs today.</p>" },
       ],
     });
-    render(<ReaderPage library={createMemoryLibraryStore()} />);
+    render(
+      <ReaderPage
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+      />
+    );
     await pickFile(await fixtureFile("book.epub", bytes));
 
     await screen.findByText("Woke");
@@ -382,6 +418,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
@@ -413,6 +450,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     harness.memory.map.set("woke", "known");
     render(
       <ReaderPage
+        notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
@@ -437,6 +475,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
@@ -466,6 +505,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
@@ -499,6 +539,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
@@ -531,6 +572,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
@@ -599,7 +641,11 @@ function renderWithSeams({
       memoryBackend()
     );
   return render(
-    <ReaderPage store={vocab} library={library ?? createMemoryLibraryStore()} />
+    <ReaderPage
+      notes={createMemoryNotesStore()}
+      store={vocab}
+      library={library ?? createMemoryLibraryStore()}
+    />
   );
 }
 
@@ -1242,7 +1288,7 @@ describe("ReaderPage — annotated blocks characterization", () => {
       expect(word).toHaveAttribute("tabindex", "0");
     }
     expect(roots[0]?.querySelector(".original-line")?.textContent).toBe(
-      "Woke, Woke!"
+      "Woke, Woke!✎"
     );
     expect(section.querySelector(".ipa-word-ipa")).toBeEmptyDOMElement();
     expect(section.querySelector(".ipa-word-ipa")).toHaveAttribute(

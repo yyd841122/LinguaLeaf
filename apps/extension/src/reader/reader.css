@@ -206,3 +206,58 @@ body {
   color: gray;
   font-size: 0.9rem;
 }
+/* Note button and popup styling mirrors apps/web/src/style.css's kernel
+   NoteButton host styles. The extension editor is single-type and local. */
+.block-note-button {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  background: transparent;
+  color: #8b958b;
+  cursor: pointer;
+  font-size: 1rem;
+  vertical-align: baseline;
+}
+.block-note-button.has-note {
+  color: #3e7547;
+  background: #e8f1e5;
+}
+.block-note-button:focus-visible {
+  outline: 2px solid #6a4fa3;
+  outline-offset: 2px;
+}
+.note-popup {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  overflow: auto;
+  padding: 0.7rem;
+  border: 1px solid #c9d6c5;
+  border-radius: 8px;
+  box-shadow: 0 5px 22px #0003;
+  background: #fffef9;
+  color: #243627;
+}
+.note-popup textarea {
+  display: block;
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+  font: inherit;
+  color: #243627;
+  background: #fffef9;
+}
+.note-limit {
+  font-size: 0.75rem;
+  margin: 0.3rem 0;
+}
+.note-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.note-popup [role="alert"] {
+  color: #b3261e;
+  font-size: 0.85rem;
+}

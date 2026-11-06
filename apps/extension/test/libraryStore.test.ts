@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { ExtBook } from "../src/reader/import-book";
 import {
+  bookFingerprint,
+  DocumentReplacementRequired,
+} from "../src/store/book-fingerprint";
+import {
   createChromeLibraryStore,
   createMemoryLibraryStore,
 } from "../src/store/library-store";
@@ -17,6 +21,70 @@ const BOOK = (title: string): ExtBook => ({
 });
 
 describe("LibraryStore — progress + recents (ticket 05)", () => {
+  it("guards changed content before mutation; confirmation is tied to the old content", async () => {
+    const library = createMemoryLibraryStore();
+    const original = BOOK("Book");
+    const changed = BOOK("Book");
+    changed.chapters[0]!.blocks.unshift({ kind: "raw", text: "Inserted" });
+    const doc = { id: "doc:Book", title: "Book", book: original };
+    await library.saveDocument(doc);
+    await library.setProgress(doc.id, { chapterIndex: 0, blockIndex: 1 });
+    await expect(
+      library.saveDocument({ ...doc, book: changed })
+    ).rejects.toBeInstanceOf(DocumentReplacementRequired);
+    expect(await library.openDocument(doc.id)).toEqual(original);
+    await library.saveDocument({
+      ...doc,
+      book: changed,
+      replaceFingerprint: await bookFingerprint(original),
+    });
+    expect(await library.openDocument(doc.id)).toEqual(changed);
+    expect((await library.listDocuments())[0]?.progress.blockIndex).toBe(1);
+    await expect(
+      library.saveDocument({
+        ...doc,
+        replaceFingerprint: await bookFingerprint(original),
+      })
+    ).rejects.toBeInstanceOf(DocumentReplacementRequired);
+  });
+
+  it("fingerprints source content and full indices, ignores IPA and object property order", async () => {
+    const a = BOOK("Book");
+    const b = BOOK("Book");
+    b.chapters[0]!.blocks[0] = {
+      text: "Words.",
+      ipaSlots: ["different"],
+      kind: "sentence",
+    };
+    expect(await bookFingerprint(a)).toBe(await bookFingerprint(b));
+    b.chapters[0]!.blocks.unshift({ kind: "code", text: "Words." });
+    expect(await bookFingerprint(a)).not.toBe(await bookFingerprint(b));
+  });
+
+  it("lazily fingerprints legacy records instead of blindly replacing them", async () => {
+    const library = createMemoryLibraryStore();
+    library.documents.set("doc:old", {
+      title: "Old",
+      book: BOOK("Old"),
+      lastOpenedAt: 1,
+    });
+    const changed = BOOK("Old");
+    changed.chapters[0]!.blocks = [];
+    await expect(
+      library.saveDocument({ id: "doc:old", title: "Old", book: changed })
+    ).rejects.toBeInstanceOf(DocumentReplacementRequired);
+    expect(
+      library.documents.get("doc:old")?.book.chapters[0]?.blocks
+    ).toHaveLength(1);
+    await library.saveDocument({
+      id: "doc:old",
+      title: "Old",
+      book: BOOK("Old"),
+    });
+    expect(library.documents.get("doc:old")?.fingerprint).toMatch(
+      /^sha256-v1:/
+    );
+  });
   it("saves a document, lists it, and reads it back", async () => {
     const library = createMemoryLibraryStore();
     await library.saveDocument({
