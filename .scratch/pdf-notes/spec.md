@@ -1,6 +1,6 @@
 # pdf-notes:扩展阅读器 PDF 面笔记(重选回挂,行级,离线本地)
 
-Status: ready-for-agent(clarify 管线收官:grill 两轮七题 + review-plan 评审合并 +
+Status: ready-for-human(2026-11-06 Lane B 实现收官:编排侧 verify EXIT=0 + 冒烟 EXIT=0 + 双轴评审记档完毕,待维护者真机检查点后翻 done)
 拍板 3 修订已确认(2026-11-06),同日翻 ready-for-agent。评审 
 ready-for-agent)
 
@@ -176,3 +176,57 @@ recents 并存、重开扩展提示仍在、限额 10,000/100 失败留稿。
 - 报备项无异议:拍板 4 精化(每身份位置记录)、拍板 6 机制落地
   (字节摘要)、「零记录」限定笔记 record。
 - 票面 Status 翻 ready-for-agent,随立票 commit 入档。
+
+### 2026-11-06 Lane B 实现与双轴评审(编排侧)
+
+- 实现:job `implement-mw4szom5-xmsf74`,threadId
+  `01a1b04d-151b-7011-8c87-9333b7dee7b8`,gpt-6.1-sol/high
+  workspace-write。新增 10 文件(PdfReader.tsx、pdf-lines.ts、
+  pdf-fingerprint.ts、pdf-notes-store.ts、pdf-position-store.ts +
+  5 测试),修改 8(GLOSSARY、smoke.mjs、EpubChapter、NoteEditor、
+  ReaderPage、pdf.ts、reader.css、readerPage.test)。实现 commit
+  c9130f2。
+- 编排侧 gate:全链 verify EXIT=0(64 files 779 passed|2 skipped
+  (781),基线立票 commit 739|2 (741),+40);冒烟套件 EXIT=0
+  (smoke.mjs 全绿:行尾几何/去重、翻页清理、IPA 重建回贴与亮标、
+  同字节静默回挂、提示与 EPUB recents 并存且重开仍在、点词
+  Enter/Space 键盘零回归)。
+- **Standards 轴:零硬违规**,记档 soft gap 1 + judgement-call 5,
+  承重引文编排侧逐条现场核验 12/12 属实(两处行号漂移已当场改,
+  零虚构):①五处手搓 memory clone-bag(createMemoryPdfNotesStore、
+  createMemoryPdfPositionStore + 三处测试内联袋)可抽共享 helper;
+  ②PdfPage 弹层机器与 EpubChapter 同构三份——popup record
+  (PdfReader.tsx:177-182 vs EpubChapter.tsx:39-43)、commit-filter
+  (:336 vs :57-61)、读失败文案「笔记读取失败,无法确认已有笔记。」
+  双份(:280 vs :74)——共享「锚键笔记列表」形状待生(将来多消费者
+  再抽,同 extension-notes 裁决④先例);③命名三义:PdfReader
+  `saved`(:175)指全书笔记、EPUB `savedNotes`、NoteEditor `saved`
+  指最近保存文本;④createChromePdfNotesStore 纯委托
+  (pdf-notes-store.ts:132-134)仅为命名对称;⑤双层 dirty-guard
+  (PdfReader navigate :66 requestClose + ReaderPage onReopen
+  closeNote)重开点击跑两道,已核良性。soft gap:
+  pdfReaderNotes.test.tsx:55-60 fetch stub 照抄 readerNotes.test.tsx
+  旧例(被测流只发 dictionary GET,记档不修)。
+- **Spec 轴:substantially compliant**——决策 7 条、裁决 a–g、顺序
+  5 步、验收 14 项全部有实现 + 测试/冒烟覆盖;不做清单零违规(无
+  字节持久化/选区级/迁移/列表面,web/server/kernel 零触碰,
+  manifest 零新增权限);承重引文 12/12 现场核验属实,零虚构。
+  记档良性加座 4 条(均 spec-consistent 或有验收背书):①
+  setLookup(null) 词弹层互斥胶水(ReaderPage.tsx:205/:496);
+  ②drift 用户可见 alert「已有笔记与本页行文本不符,已保留原笔记,
+  未回挂不符条目。」+ drift 行按钮 disabled 防覆盖(:294/:251-252
+  ——决策表「不静默删」的落地强化,票面只要求记档);③smoke chrome
+  stub 改 sessionStorage 持久(smoke.mjs:514-524,重开提示断言
+  所需);④openPdf 元数据失败即 destroy(背书=验收「取消打开路径
+  session 零泄漏」)。观察一条:eligiblePdfLines NFC 归一先于
+  WORD_PATTERN(pdf-lines.ts:15),细微改变既有渲染路径词匹配——
+  裁决 f 明文要求,in-spec。
+- **维护者真机检查点(过后翻 done,勿跳)**:
+  ①重开扩展重选同一 PDF——笔记静默回挂、页码缩放恢复;
+  ②A→B→A 两本各归各、各自恢复位置;
+  ③行尾 ✎ 仅文本行、点击开浮层、Esc/脏确认;
+  ④zoom 与音标开关后按钮与亮标仍在;
+  ⑤点词/键盘查词与音标叠加零回归;
+  ⑥EPUB 面与已有笔记零回归;
+  ⑦笔记读失败可见禁编辑可重试(devtools 删 storage 记录可模拟);
+  ⑧超额 10,000/100 失败留稿。
