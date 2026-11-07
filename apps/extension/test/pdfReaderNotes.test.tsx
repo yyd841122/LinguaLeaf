@@ -1,3 +1,4 @@
+import { NOTE_TYPES, type NoteType } from "../../server/src/wire";
 import {
   act,
   fireEvent,
@@ -146,6 +147,92 @@ function reopen() {
 }
 
 describe("PDF line notes, reattachment and position", () => {
+  it("keeps same-line sibling types through deletion, reopen, overlay rebuild and reload", async () => {
+    const ctx = mount();
+    await pick();
+    await enabled();
+    openNote();
+    for (const label of ["进度", "感受", "思路", "疑问"]) {
+      fireEvent.click(screen.getByRole("tab", { name: label }));
+      text(`${label}正文`);
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      expect(await screen.findByRole("status")).toHaveTextContent("已存");
+    }
+    expect(await ctx.notes.list(await id())).toHaveLength(4);
+    fireEvent.click(screen.getByRole("tab", { name: "思路" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("已删除");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    const assertSiblings = () => {
+      expect(screen.getByRole("button", { name: "编辑笔记" })).toHaveClass(
+        "has-note"
+      );
+      openNote();
+      for (const label of ["进度", "感受", "疑问"]) {
+        fireEvent.click(screen.getByRole("tab", { name: label }));
+        expect(screen.getByRole("textbox")).toHaveValue(`${label}正文`);
+      }
+      fireEvent.click(screen.getByRole("tab", { name: "思路" }));
+      expect(screen.getByRole("textbox")).toHaveValue("");
+      expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    };
+    assertSiblings();
+    fireEvent.click(screen.getByRole("button", { name: "150%" }));
+    await enabled();
+    assertSiblings();
+    ctx.view.unmount();
+    render(ctx.tree());
+    await pick();
+    await enabled();
+    assertSiblings();
+    expect((await ctx.notes.list(await id())).map((note) => note.type)).toEqual(
+      ["progress", "feeling", "question"]
+    );
+  });
+
+  it.each([
+    { lines: [], lit: false, disabled: false, drift: false },
+    { lines: ["match"], lit: true, disabled: false, drift: false },
+    { lines: ["drift"], lit: false, disabled: true, drift: true },
+    { lines: ["match", "drift"], lit: true, disabled: true, drift: true },
+    { lines: ["drift", "match"], lit: true, disabled: true, drift: true },
+  ])(
+    "computes PDF highlight, disabled and drift independently: $lines",
+    async ({ lines, lit, disabled, drift }) => {
+      const notes = createMemoryPdfNotesStore();
+      for (const [index, value] of lines.entries()) {
+        const type: NoteType = index === 0 ? "progress" : "question";
+        await notes.save(
+          {
+            docId: await id(),
+            page: 1,
+            lineIndex: 0,
+            lineText: value === "match" ? lineText() : "Old text",
+            type,
+          },
+          value
+        );
+      }
+      const before = await notes.list(await id());
+      mount(notes);
+      await pick();
+      // The untouched second line becomes enabled only after render AND read settle.
+      await waitFor(() =>
+        expect(document.querySelectorAll("[data-pdf-note]")[1]).toBeEnabled()
+      );
+      const first = document.querySelectorAll("[data-pdf-note]")[0]!;
+      expect(first.classList.contains("has-note")).toBe(lit);
+      expect(first.hasAttribute("disabled")).toBe(disabled);
+      if (drift)
+        expect(screen.getByRole("alert")).toHaveTextContent(
+          "已保留原笔记，未回挂不符条目"
+        );
+      else expect(screen.queryByRole("alert")).toBeNull();
+      expect(await notes.list(await id())).toEqual(before);
+    }
+  );
+
   it("hashes before pdf.js can detach the bytes, and leaves an unannotated file without a notes record", async () => {
     const bag: Record<string, unknown> = {};
     const notes = createPdfNotesStore({
@@ -245,7 +332,13 @@ describe("PDF line notes, reattachment and position", () => {
   it("fails visibly, disables editing and retries notes reads without automatic retry", async () => {
     const notes = createMemoryPdfNotesStore();
     await notes.save(
-      { docId: await id(), page: 1, lineIndex: 0, lineText: lineText() },
+      {
+        type: "progress",
+        docId: await id(),
+        page: 1,
+        lineIndex: 0,
+        lineText: lineText(),
+      },
       "Existing"
     );
     const list = notes.list.bind(notes);
@@ -274,11 +367,23 @@ describe("PDF line notes, reattachment and position", () => {
   it("preserves mismatched or missing anchors and reports extraction drift", async () => {
     const notes = createMemoryPdfNotesStore();
     await notes.save(
-      { docId: await id(), page: 1, lineIndex: 0, lineText: "Old extraction" },
+      {
+        type: "progress",
+        docId: await id(),
+        page: 1,
+        lineIndex: 0,
+        lineText: "Old extraction",
+      },
       "Do not delete"
     );
     await notes.save(
-      { docId: await id(), page: 1, lineIndex: 8, lineText: "Missing line" },
+      {
+        type: "progress",
+        docId: await id(),
+        page: 1,
+        lineIndex: 8,
+        lineText: "Missing line",
+      },
       "Also keep"
     );
     mount(notes);
@@ -302,7 +407,9 @@ describe("PDF line notes, reattachment and position", () => {
     await pick();
     await enabled();
     openNote();
+    fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
     text("Draft");
+    fireEvent.click(screen.getByRole("tab", { name: "进度" }));
     const perform = () => {
       if (action === "Escape") fireEvent.keyDown(document, { key: "Escape" });
       else if (action === "另一行")
@@ -313,7 +420,10 @@ describe("PDF line notes, reattachment and position", () => {
     };
     perform();
     expect(window.confirm).toHaveBeenCalledExactlyOnceWith("放弃修改？");
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
     expect(screen.getByRole("textbox")).toHaveValue("Draft");
+    fireEvent.click(screen.getByRole("tab", { name: "进度" }));
     expect(document.querySelector(".reader-position")).toHaveTextContent(
       "1 / 3"
     );
@@ -365,6 +475,7 @@ describe("PDF line notes, reattachment and position", () => {
     for (let index = 0; index < 100; index++)
       await write(
         {
+          type: NOTE_TYPES[index % 4]!,
           docId: await id(),
           page: 2,
           lineIndex: index,
@@ -377,7 +488,12 @@ describe("PDF line notes, reattachment and position", () => {
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("100 条");
     expect(screen.getByRole("textbox")).toHaveValue("At capacity");
-    await notes.delete({ docId: await id(), page: 2, lineIndex: 99 });
+    await notes.delete({
+      type: "question",
+      docId: await id(),
+      page: 2,
+      lineIndex: 99,
+    });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     expect(await screen.findByRole("status")).toHaveTextContent("已存");
   });
@@ -419,7 +535,13 @@ describe("PDF ownership", () => {
     async (reject) => {
       const notes = createMemoryPdfNotesStore();
       await notes.save(
-        { docId: await id(), page: 1, lineIndex: 0, lineText: lineText() },
+        {
+          type: "progress",
+          docId: await id(),
+          page: 1,
+          lineIndex: 0,
+          lineText: lineText(),
+        },
         "Current saved note"
       );
       const list = notes.list.bind(notes);

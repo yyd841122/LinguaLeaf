@@ -1,3 +1,4 @@
+import { NOTE_TYPES, type NoteType } from "../../../server/src/wire";
 import {
   createNamespaceRecord,
   type NamespaceStorage,
@@ -9,17 +10,20 @@ export type NoteAnchor = {
   chapterIndex: number;
   blockIndex: number;
 };
-export type ReaderNote = NoteAnchor & { text: string };
+export type ReaderNote = NoteAnchor & { type: NoteType; text: string };
 export interface NotesStore {
   list(docId: string): Promise<ReaderNote[]>;
-  save(anchor: NoteAnchor, text: string): Promise<ReaderNote>;
-  delete(anchor: NoteAnchor): Promise<void>;
+  save(
+    anchor: NoteAnchor & { type: NoteType },
+    text: string
+  ): Promise<ReaderNote>;
+  delete(anchor: NoteAnchor & { type: NoteType }): Promise<void>;
 }
 
 export const NOTE_TEXT_LIMIT = 10_000;
 export const NOTES_PER_BOOK_LIMIT = 100;
-type NotesRecord = { version: 1; notes: ReaderNote[] };
-const empty = (): NotesRecord => ({ version: 1, notes: [] });
+type NotesRecord = { version: 2; notes: ReaderNote[] };
+const empty = (): NotesRecord => ({ version: 2, notes: [] });
 
 function validAnchor(value: NoteAnchor): boolean {
   return (
@@ -39,14 +43,14 @@ function sameAnchor(a: NoteAnchor, b: NoteAnchor): boolean {
   );
 }
 
-// v1 accepts additive fields. Unknown versions and malformed records fail
-// visibly instead of pretending to be empty (or overwriting future data).
+// Reads migrate v1 in memory only. The next successful queued mutation
+// persists the entire namespace as v2, never a snapshot from list().
 function decode(value: unknown): NotesRecord {
   if (
     typeof value !== "object" ||
     value === null ||
     !("version" in value) ||
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     !("notes" in value) ||
     !Array.isArray(value.notes)
   ) {
@@ -60,36 +64,50 @@ function decode(value: unknown): NotesRecord {
       !validAnchor(note) ||
       typeof note.text !== "string" ||
       !note.text.trim() ||
-      notes.some((other) => sameAnchor(other, note))
+      (value.version === 2 && !NOTE_TYPES.includes(note.type)) ||
+      notes.some(
+        (other) =>
+          sameAnchor(other, note) &&
+          (value.version === 1 || other.type === note.type)
+      )
     ) {
       throw new Error("笔记存储损坏");
     }
     notes.push({
+      type: value.version === 1 ? "progress" : note.type,
       docId: note.docId,
       chapterIndex: note.chapterIndex,
       blockIndex: note.blockIndex,
       text: note.text,
     });
   }
-  return { version: 1, notes };
+  return { version: 2, notes };
 }
 
 export function createNotesStore(storage: NamespaceStorage): NotesStore {
   const record = createNamespaceRecord<unknown>("notes", empty, storage);
+  let pendingWrites: Promise<unknown> = Promise.resolve();
   return {
     async list(docId) {
+      await pendingWrites.catch(() => undefined);
       return decode(await record.read()).notes.filter(
         (note) => note.docId === docId
       );
     },
     save(anchor, text) {
-      return record.update(async (raw, write) => {
+      const run = record.update(async (raw, write) => {
         const data = decode(raw);
-        if (!validAnchor(anchor) || !text.trim())
+        if (
+          !validAnchor(anchor) ||
+          !NOTE_TYPES.includes(anchor.type) ||
+          !text.trim()
+        )
           throw new Error("笔记正文不能为空");
         if (text.length > NOTE_TEXT_LIMIT)
           throw new Error("笔记正文最多 10,000 字符");
-        const index = data.notes.findIndex((note) => sameAnchor(note, anchor));
+        const index = data.notes.findIndex(
+          (note) => sameAnchor(note, anchor) && note.type === anchor.type
+        );
         if (
           index < 0 &&
           data.notes.filter((note) => note.docId === anchor.docId).length >=
@@ -103,14 +121,23 @@ export function createNotesStore(storage: NamespaceStorage): NotesStore {
         await write(data);
         return note;
       });
+      pendingWrites = run;
+      return run;
     },
     delete(anchor) {
-      return record.update(async (raw, write) => {
-        if (!validAnchor(anchor)) throw new Error("笔记落点无效");
+      const run = record.update(async (raw, write) => {
+        if (!validAnchor(anchor) || !NOTE_TYPES.includes(anchor.type))
+          throw new Error("笔记落点无效");
         const data = decode(raw);
-        data.notes = data.notes.filter((note) => !sameAnchor(note, anchor));
+        const remaining = data.notes.filter(
+          (note) => !(sameAnchor(note, anchor) && note.type === anchor.type)
+        );
+        if (remaining.length === data.notes.length) return;
+        data.notes = remaining;
         await write(data);
       });
+      pendingWrites = run;
+      return run;
     },
   };
 }

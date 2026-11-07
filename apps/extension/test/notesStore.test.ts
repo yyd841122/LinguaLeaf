@@ -1,10 +1,16 @@
+import { NOTE_TYPES } from "../../server/src/wire";
 import { describe, expect, it } from "vitest";
 import {
   createMemoryNotesStore,
   createNotesStore,
 } from "../src/store/notes-store";
 
-const anchor = { docId: "doc:One", chapterIndex: 0, blockIndex: 2 };
+const anchor = {
+  type: "progress" as const,
+  docId: "doc:One",
+  chapterIndex: 0,
+  blockIndex: 2,
+};
 
 describe("extension notes storage contract", () => {
   it("enforces the 10,000-character boundary without replacing a saved note on failure", async () => {
@@ -79,7 +85,7 @@ describe("extension notes storage contract", () => {
       store.save(anchor, "Saved"),
       store.save({ ...anchor, blockIndex: 4 }, "Second"),
     ]);
-    expect(bag.notes).toMatchObject({ version: 1 });
+    expect(bag.notes).toMatchObject({ version: 2 });
     expect(await createNotesStore(storage).list(anchor.docId)).toHaveLength(2);
     failWrite = true;
     await expect(store.delete(anchor)).rejects.toThrow("quota");
@@ -90,7 +96,7 @@ describe("extension notes storage contract", () => {
 
   it("rejects unknown or corrupt versions without overwriting them, accepts additive v1 fields", async () => {
     for (const raw of [
-      { version: 2, notes: [] },
+      { version: 3, notes: [] },
       { version: 1, notes: [{}] },
     ]) {
       let writes = 0;
@@ -121,5 +127,182 @@ describe("extension notes storage contract", () => {
     expect(await store.list(anchor.docId)).toEqual([
       { ...anchor, text: "Older" },
     ]);
+  });
+});
+
+describe("v2 note identities and queued migration", () => {
+  it("waits for an already-started queued write before listing", async () => {
+    let bag: Record<string, unknown> = {};
+    let release!: () => void;
+    let started!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const writing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const store = createNotesStore({
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next) {
+        started();
+        await gate;
+        bag = structuredClone(next);
+      },
+    });
+    const saving = store.save(anchor, "pending");
+    const reading = store.list(anchor.docId);
+    await writing;
+    release();
+    await saving;
+    expect(await reading).toEqual([{ ...anchor, text: "pending" }]);
+  });
+
+  it("keeps four types at one anchor across instances and deletes only one type", async () => {
+    let bag: Record<string, unknown> = {};
+    const storage = {
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next: Record<string, unknown>) {
+        bag = structuredClone(next);
+      },
+    };
+    const store = createNotesStore(storage);
+    await Promise.all(
+      NOTE_TYPES.map((type) => store.save({ ...anchor, type }, type))
+    );
+    expect(await store.list(anchor.docId)).toHaveLength(4);
+    await store.save({ ...anchor, type: "feeling" }, "edited");
+    await store.delete({ ...anchor, type: "idea" });
+    for (const current of [store, createNotesStore(storage)]) {
+      expect(
+        (await current.list(anchor.docId)).map((note) => [note.type, note.text])
+      ).toEqual([
+        ["progress", "progress"],
+        ["feeling", "edited"],
+        ["question", "question"],
+      ]);
+    }
+  });
+
+  it("migrates all books only on successful queued mutation; failed writes retry without dropping a sibling book", async () => {
+    const legacyAnchor = {
+      docId: anchor.docId,
+      chapterIndex: anchor.chapterIndex,
+      blockIndex: anchor.blockIndex,
+    };
+    const legacy = {
+      version: 1,
+      notes: [
+        { ...legacyAnchor, text: "legacy" },
+        { ...legacyAnchor, docId: "doc:Other", text: "other legacy" },
+      ],
+    };
+    let bag: Record<string, unknown> = { notes: structuredClone(legacy) };
+    let fail = true;
+    let writes = 0;
+    const storage = {
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next: Record<string, unknown>) {
+        writes++;
+        if (fail) throw new Error("quota");
+        bag = structuredClone(next);
+      },
+    };
+    const store = createNotesStore(storage);
+    expect(await store.list(anchor.docId)).toEqual([
+      { ...anchor, text: "legacy" },
+    ]);
+    expect(await store.list(anchor.docId)).toHaveLength(1);
+    expect(writes).toBe(0);
+    await expect(
+      store.save({ ...anchor, type: "idea" }, "draft")
+    ).rejects.toThrow("quota");
+    expect(bag["notes"]).toEqual(legacy);
+    fail = false;
+    await Promise.all([
+      store.save({ ...anchor, type: "idea" }, "idea"),
+      store.save({ ...anchor, docId: "doc:Other", type: "feeling" }, "feeling"),
+    ]);
+    expect(bag["notes"]).toMatchObject({ version: 2 });
+    const reopened = createNotesStore(storage);
+    expect(await reopened.list(anchor.docId)).toEqual([
+      { ...anchor, text: "legacy" },
+      { ...anchor, type: "idea", text: "idea" },
+    ]);
+    expect(await reopened.list("doc:Other")).toEqual([
+      { ...anchor, docId: "doc:Other", text: "other legacy" },
+      { ...anchor, docId: "doc:Other", type: "feeling", text: "feeling" },
+    ]);
+    const migrated = structuredClone(bag);
+    await reopened.list(anchor.docId);
+    expect(bag).toEqual(migrated);
+    expect(writes).toBe(3);
+  });
+
+  it("rejects v2 missing/illegal types and duplicate identities on reads and mutations without changing storage", async () => {
+    const untyped = {
+      docId: anchor.docId,
+      chapterIndex: anchor.chapterIndex,
+      blockIndex: anchor.blockIndex,
+    };
+    for (const notes of [
+      [{ ...untyped, text: "missing" }],
+      [{ ...anchor, type: "constructor", text: "illegal" }],
+      [{ ...anchor, type: null, text: "illegal" }],
+      [
+        { ...anchor, text: "one" },
+        { ...anchor, text: "duplicate" },
+      ],
+    ]) {
+      const original = { version: 2, notes };
+      const storage = {
+        async get() {
+          return { notes: structuredClone(original) };
+        },
+        async set() {
+          throw new Error("must not write");
+        },
+      };
+      const store = createNotesStore(storage);
+      await expect(store.list(anchor.docId)).rejects.toThrow("损坏");
+      await expect(store.save(anchor, "overwrite")).rejects.toThrow("损坏");
+      await expect(store.delete(anchor)).rejects.toThrow("损坏");
+      expect(await storage.get()).toEqual({ notes: original });
+    }
+  });
+
+  it("counts the 100-note quota across types and leaves other namespaces untouched", async () => {
+    let bag: Record<string, unknown> = { unrelated: { keep: true } };
+    let writes = 0;
+    const storage = {
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next: Record<string, unknown>) {
+        writes++;
+        bag = { ...bag, ...structuredClone(next) };
+      },
+    };
+    const store = createNotesStore(storage);
+    await store.list(anchor.docId);
+    await store.delete(anchor);
+    expect(writes).toBe(0);
+    for (let i = 0; i < 100; i++) {
+      await store.save(
+        { ...anchor, blockIndex: Math.floor(i / 4), type: NOTE_TYPES[i % 4]! },
+        "saved"
+      );
+    }
+    await expect(
+      store.save({ ...anchor, blockIndex: 25, type: "question" }, "draft")
+    ).rejects.toThrow("100");
+    await store.save({ ...anchor, type: "feeling" }, "edit at capacity");
+    expect(await store.list(anchor.docId)).toHaveLength(100);
+    expect(bag.unrelated).toEqual({ keep: true });
   });
 });

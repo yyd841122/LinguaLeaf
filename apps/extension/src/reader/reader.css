@@ -240,6 +240,24 @@ body {
   background: #fffef9;
   color: #243627;
 }
+.note-popup .note-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+.note-popup [role="tab"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem;
+}
+.note-popup [role="tab"][aria-selected="true"] {
+  background: #e7f2df;
+  font-weight: bold;
+}
+.note-popup [role="tab"]:focus-visible {
+  outline: 2px solid #56833b;
+  outline-offset: 1px;
+}
 .note-popup textarea {
   display: block;
   width: 100%;
@@ -256,6 +274,7 @@ body {
 .note-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 .note-popup [role="alert"] {
   color: #b3261e;

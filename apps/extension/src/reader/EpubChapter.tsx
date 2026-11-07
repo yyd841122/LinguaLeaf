@@ -1,3 +1,4 @@
+import type { NoteType } from "../../../server/src/wire";
 import {
   AnnotatedBlockView,
   createWordHandlers,
@@ -49,7 +50,11 @@ export function EpubChapter({
     return () => owner.invalidate();
   }, [notes, docId, attempt, owner, run]);
   const chapterTicket = owner.mark();
-  const committed = (anchorIndex: number, note: ReaderNote | null) => {
+  const committed = (
+    anchorIndex: number,
+    type: NoteType,
+    note: ReaderNote | null
+  ) => {
     void run(Promise.resolve(note), {
       ticket: chapterTicket,
       onFresh: (value) =>
@@ -57,14 +62,15 @@ export function EpubChapter({
           const rest = (current ?? []).filter(
             (entry) =>
               entry.chapterIndex !== chapterIndex ||
-              entry.blockIndex !== anchorIndex
+              entry.blockIndex !== anchorIndex ||
+              entry.type !== type
           );
           return value ? [...rest, value] : rest;
         }),
     });
   };
   const noteFor = (index: number) =>
-    savedNotes?.find(
+    (savedNotes ?? []).filter(
       (note) => note.chapterIndex === chapterIndex && note.blockIndex === index
     );
   return (
@@ -96,7 +102,7 @@ export function EpubChapter({
               note={
                 block.kind === "sentence"
                   ? {
-                      exists: !!noteFor(index),
+                      exists: noteFor(index).length > 0,
                       disabled: savedNotes === null || failed,
                       onClick: (button) => {
                         if (editorRef.current?.requestClose() === false) return;
@@ -123,19 +129,20 @@ export function EpubChapter({
           initial={noteFor(popup.blockIndex)}
           button={popup.button}
           store={{
-            save: (text) =>
+            save: (type, text) =>
               notes.save(
-                { docId, chapterIndex, blockIndex: popup.blockIndex },
+                { docId, chapterIndex, blockIndex: popup.blockIndex, type },
                 text
               ),
-            delete: () =>
+            delete: (type) =>
               notes.delete({
+                type,
                 docId,
                 chapterIndex,
                 blockIndex: popup.blockIndex,
               }),
           }}
-          onCommitted={(note) => committed(popup.blockIndex, note)}
+          onCommitted={(type, note) => committed(popup.blockIndex, type, note)}
           onClose={() => setPopup(null)}
         />
       ) : null}

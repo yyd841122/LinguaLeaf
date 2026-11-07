@@ -1,3 +1,4 @@
+import { NOTE_TYPES, type NoteType } from "../../../server/src/wire";
 import {
   anchorPopup,
   POPUP_MAX_HEIGHT_PX,
@@ -6,6 +7,7 @@ import {
 import { useOwner, useSettle } from "@lingualeaf/reading-model/react";
 import {
   useEffect,
+  useId,
   useImperativeHandle,
   useRef,
   useState,
@@ -15,9 +17,23 @@ import { NOTE_TEXT_LIMIT } from "../store/notes-store";
 
 export type NoteEditorHandle = { requestClose(): boolean };
 
-// Extension-owned single-text editor. The kernel supplies only the button;
-// no web wire types, note categories or server session enter this host.
-export function NoteEditor<T extends { text: string }>({
+const NOTE_TYPE_LABELS: Record<NoteType, string> = {
+  progress: "进度",
+  feeling: "感受",
+  idea: "思路",
+  question: "疑问",
+};
+type Panel = {
+  text: string;
+  saved: string;
+  exists: boolean;
+  busy: boolean;
+  didSave: boolean;
+};
+
+// Remounted for every opening. Each type owns its draft and settle channel;
+// the shared owner revokes all editor feedback when this opening closes.
+export function NoteEditor<T extends { type: NoteType; text: string }>({
   ownerKey,
   ariaLabel,
   initial,
@@ -29,25 +45,61 @@ export function NoteEditor<T extends { text: string }>({
 }: {
   ownerKey: string;
   ariaLabel: string;
-  initial: T | undefined;
+  initial: T[];
   button: HTMLButtonElement;
-  store: { save(text: string): Promise<T>; delete(): Promise<void> };
-  onCommitted: (note: T | null) => void;
+  store: {
+    save(type: NoteType, text: string): Promise<T>;
+    delete(type: NoteType): Promise<void>;
+  };
+  onCommitted: (type: NoteType, note: T | null) => void;
   onClose: () => void;
   ref: Ref<NoteEditorHandle>;
 }) {
-  const [text, setText] = useState(initial?.text ?? "");
-  const [saved, setSaved] = useState(initial?.text ?? "");
-  const [exists, setExists] = useState(!!initial);
-  const [busy, setBusy] = useState(false);
-  const [didSave, setDidSave] = useState(false);
-  const busyRef = useRef(false);
+  const id = useId();
+  const [selectedType, setSelectedType] = useState<NoteType>(
+    () =>
+      NOTE_TYPES.find((type) => initial.some((note) => note.type === type)) ??
+      "progress"
+  );
+  const [panels, setPanels] = useState(() => {
+    const panel = (type: NoteType): Panel => {
+      const note = initial.find((entry) => entry.type === type);
+      return {
+        text: note?.text ?? "",
+        saved: note?.text ?? "",
+        exists: !!note,
+        busy: false,
+        didSave: false,
+      };
+    };
+    return {
+      progress: panel("progress"),
+      feeling: panel("feeling"),
+      idea: panel("idea"),
+      question: panel("question"),
+    };
+  });
+  const patch = (type: NoteType, value: Partial<Panel>) =>
+    setPanels((current) => ({
+      ...current,
+      [type]: { ...current[type], ...value },
+    }));
+  const { text, saved, exists, busy, didSave } = panels[selectedType];
+  const busyRef = useRef(new Set<NoteType>());
   const closed = useRef(false);
   const box = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const owner = useOwner(ownerKey);
-  const operation = useSettle(owner);
-  const dirty = text !== saved;
+  const operations = {
+    progress: useSettle(owner),
+    feeling: useSettle(owner),
+    idea: useSettle(owner),
+    question: useSettle(owner),
+  };
+  const operation = operations[selectedType];
+  const dirty = NOTE_TYPES.some(
+    (type) => panels[type].text !== panels[type].saved
+  );
   const requestClose = () => {
     if (closed.current) return true;
     if (dirty && !window.confirm("放弃修改？")) return false;
@@ -110,28 +162,32 @@ export function NoteEditor<T extends { text: string }>({
   });
 
   const write = async (remove: boolean) => {
-    if (busyRef.current) return;
-    busyRef.current = true;
-    setBusy(true);
-    setDidSave(false);
+    const type = selectedType;
+    if (busyRef.current.has(type)) return;
+    busyRef.current.add(type);
+    patch(type, { busy: true, didSave: false });
     const submitted = text;
     const result = await operation.run(
-      remove ? store.delete().then(() => null) : store.save(submitted),
+      remove
+        ? store.delete(type).then(() => null)
+        : store.save(type, submitted),
       {
         // A write belongs to storage even if the editor has closed. Only
         // the host's own owner may update its markers; drafts stay local.
-        onLanded: onCommitted,
+        onLanded: (note) => onCommitted(type, note),
         onFresh: (note) => {
-          setExists(note !== null);
-          setSaved(note?.text ?? "");
-          setText(note?.text ?? "");
-          setDidSave(true);
+          patch(type, {
+            exists: note !== null,
+            saved: note?.text ?? "",
+            text: note?.text ?? "",
+            didSave: true,
+          });
         },
       }
     );
     if (result.fresh) {
-      busyRef.current = false;
-      setBusy(false);
+      busyRef.current.delete(type);
+      patch(type, { busy: false });
     }
   };
   const position = anchorPopup(point, {
@@ -147,58 +203,106 @@ export function NoteEditor<T extends { text: string }>({
       style={{
         ...position,
         width: POPUP_WIDTH_PX,
-        maxHeight: POPUP_MAX_HEIGHT_PX,
+        maxHeight: Math.min(POPUP_MAX_HEIGHT_PX, window.innerHeight - 16),
       }}
     >
-      <label>
-        笔记正文
-        <textarea
-          ref={textarea}
-          value={text}
-          disabled={busy}
-          onChange={(event) => {
-            setText(event.target.value);
-            setDidSave(false);
-          }}
-        />
-      </label>
-      <p className="note-limit">
-        {text.length.toLocaleString()} / {NOTE_TEXT_LIMIT.toLocaleString()}{" "}
-        字符；每书最多 100 条
-      </p>
-      {text.length > NOTE_TEXT_LIMIT ? (
-        <p role="alert">笔记正文最多 10,000 字符，请缩短后重试。</p>
-      ) : null}
-      {/* Over-limit text fails on its own limit; the generic quota/100-notes
-          alert would misattribute that failure. */}
-      {operation.failed && text.length <= NOTE_TEXT_LIMIT ? (
-        <p role="alert">
-          笔记写入失败：可能已达每书 100 条或本地存储配额，请重试。草稿已保留。
+      <div className="note-tabs" role="tablist" aria-label="笔记类型">
+        {NOTE_TYPES.map((type, index) => (
+          <button
+            key={type}
+            type="button"
+            role="tab"
+            id={`${id}-tab-${type}`}
+            aria-controls={`${id}-panel-${type}`}
+            aria-selected={selectedType === type}
+            tabIndex={selectedType === type ? 0 : -1}
+            onClick={() => setSelectedType(type)}
+            onKeyDown={(event) => {
+              let next: number;
+              switch (event.key) {
+                case "ArrowRight":
+                  next = (index + 1) % NOTE_TYPES.length;
+                  break;
+                case "ArrowLeft":
+                  next = (index + NOTE_TYPES.length - 1) % NOTE_TYPES.length;
+                  break;
+                case "Home":
+                  next = 0;
+                  break;
+                case "End":
+                  next = NOTE_TYPES.length - 1;
+                  break;
+                default:
+                  return;
+              }
+              event.preventDefault();
+              setSelectedType(NOTE_TYPES[next]!);
+              const tabs =
+                event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                  '[role="tab"]'
+                );
+              tabs?.[next]?.focus();
+            }}
+          >
+            {NOTE_TYPE_LABELS[type]}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        id={`${id}-panel-${selectedType}`}
+        aria-labelledby={`${id}-tab-${selectedType}`}
+      >
+        <label>
+          笔记正文
+          <textarea
+            ref={textarea}
+            value={text}
+            disabled={busy}
+            onChange={(event) => {
+              patch(selectedType, { text: event.target.value, didSave: false });
+            }}
+          />
+        </label>
+        <p className="note-limit">
+          {text.length.toLocaleString()} / {NOTE_TEXT_LIMIT.toLocaleString()}{" "}
+          字符；每书最多 100 条
         </p>
-      ) : null}
-      {didSave && !dirty ? (
-        <p role="status">{exists ? "已存" : "已删除"}</p>
-      ) : null}
-      <div className="note-actions">
-        <button
-          type="button"
-          disabled={busy || !text.trim()}
-          onClick={() => void write(false)}
-        >
-          {busy ? "处理中…" : "保存"}
-        </button>
-        {exists ? (
+        {text.length > NOTE_TEXT_LIMIT ? (
+          <p role="alert">笔记正文最多 10,000 字符，请缩短后重试。</p>
+        ) : null}
+        {/* Over-limit text fails on its own limit; the generic quota/100-notes
+          alert would misattribute that failure. */}
+        {operation.failed && text.length <= NOTE_TEXT_LIMIT ? (
+          <p role="alert">
+            笔记写入失败：可能已达每书 100
+            条或本地存储配额，请重试。草稿已保留。
+          </p>
+        ) : null}
+        {didSave && text === saved ? (
+          <p role="status">{exists ? "已存" : "已删除"}</p>
+        ) : null}
+        <div className="note-actions">
           <button
             type="button"
-            disabled={busy}
-            onClick={() => void write(true)}
+            disabled={busy || !text.trim()}
+            onClick={() => void write(false)}
           >
-            删除
+            {busy ? "处理中…" : "保存"}
           </button>
-        ) : null}
-        <button type="button" onClick={requestClose}>
-          关闭
-        </button>
+          {exists ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void write(true)}
+            >
+              删除
+            </button>
+          ) : null}
+          <button type="button" onClick={requestClose}>
+            关闭
+          </button>
+        </div>
       </div>
     </div>
   );

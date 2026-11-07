@@ -1,3 +1,4 @@
+import { NOTE_TYPES } from "../../server/src/wire";
 import {
   act,
   fireEvent,
@@ -49,7 +50,12 @@ const BOOK: ExtBook = {
     },
   ],
 };
-const ANCHOR = { docId: "doc:Mixed Book", chapterIndex: 0, blockIndex: 3 };
+const ANCHOR = {
+  type: "progress" as const,
+  docId: "doc:Mixed Book",
+  chapterIndex: 0,
+  blockIndex: 3,
+};
 
 beforeEach(() => {
   vi.stubGlobal(
@@ -96,6 +102,45 @@ function changeText(text: string) {
 }
 
 describe("EPUB sentence-block notes", () => {
+  it("keeps four types at the same sentence block and preserves siblings before and after reload", async () => {
+    const ctx = await openReader();
+    openFirstNote();
+    for (const label of ["进度", "感受", "思路", "疑问"]) {
+      fireEvent.click(screen.getByRole("tab", { name: label }));
+      changeText(`${label}正文`);
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      expect(await screen.findByRole("status")).toHaveTextContent("已存");
+    }
+    expect(await ctx.notes.list(ANCHOR.docId)).toHaveLength(4);
+    fireEvent.click(screen.getByRole("tab", { name: "思路" }));
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("已删除");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    const assertSiblings = () => {
+      expect(screen.getByRole("button", { name: "编辑笔记" })).toHaveClass(
+        "has-note"
+      );
+      openFirstNote();
+      for (const label of ["进度", "感受", "疑问"]) {
+        fireEvent.click(screen.getByRole("tab", { name: label }));
+        expect(screen.getByRole("textbox")).toHaveValue(`${label}正文`);
+      }
+      fireEvent.click(screen.getByRole("tab", { name: "思路" }));
+      expect(screen.getByRole("textbox")).toHaveValue("");
+      expect(screen.queryByRole("button", { name: "删除" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    };
+    assertSiblings();
+    ctx.view.unmount();
+    render(ctx.tree());
+    fireEvent.click(await screen.findByRole("button", { name: BOOK.title }));
+    await screen.findByRole("button", { name: "编辑笔记" });
+    assertSiblings();
+    expect(
+      (await ctx.notes.list(ANCHOR.docId)).map((note) => note.type)
+    ).toEqual(["progress", "feeling", "question"]);
+  });
+
   it("saves at the full block index, reopens persisted notes, explicitly deletes and keeps other blocks button-free", async () => {
     const { notes, view, tree } = await openReader();
     expect(screen.getAllByRole("button", { name: "写笔记" })).toHaveLength(2);
@@ -147,7 +192,9 @@ describe("EPUB sentence-block notes", () => {
       await openReader();
       const first = screen.getAllByRole("button", { name: "写笔记" })[0]!;
       openFirstNote();
+      fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
       changeText("Unsaved draft");
+      fireEvent.click(screen.getByRole("tab", { name: "进度" }));
       const perform = () => {
         if (action === "Escape") fireEvent.keyDown(document, { key: "Escape" });
         else if (action === "同一句子块") fireEvent.click(first);
@@ -164,7 +211,10 @@ describe("EPUB sentence-block notes", () => {
       };
       perform();
       expect(window.confirm).toHaveBeenCalledExactlyOnceWith("放弃修改？");
+      expect(screen.getByRole("textbox")).toHaveValue("");
+      fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
       expect(screen.getByRole("textbox")).toHaveValue("Unsaved draft");
+      fireEvent.click(screen.getByRole("tab", { name: "进度" }));
       expect(
         screen.getByRole("heading", { name: BOOK.title })
       ).toBeInTheDocument();
@@ -310,7 +360,11 @@ describe("EPUB sentence-block notes", () => {
     await notes.save(ANCHOR, "Existing");
     for (let index = 0; index < 99; index++)
       await notes.save(
-        { ...ANCHOR, blockIndex: index + 100 },
+        {
+          ...ANCHOR,
+          blockIndex: index + 100,
+          type: NOTE_TYPES[index % 4]!,
+        },
         "Other saved note"
       );
     await openReader(notes);

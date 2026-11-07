@@ -247,11 +247,17 @@ function PdfPage({
     for (const button of buttons) {
       const lineIndex = Number(button.dataset.pdfNote);
       const lineText = button.dataset.lineText!;
-      const note = pageNotes.find((entry) => entry.lineIndex === lineIndex);
-      button.disabled =
-        saved === null || failed || (!!note && note.lineText !== lineText);
-      button.classList.toggle("has-note", !!note && note.lineText === lineText);
-      button.setAttribute("aria-label", note ? "编辑笔记" : "写笔记");
+      const lineNotes = pageNotes.filter(
+        (entry) => entry.lineIndex === lineIndex
+      );
+      const matches = lineNotes.some((note) => note.lineText === lineText);
+      const mismatches = lineNotes.some((note) => note.lineText !== lineText);
+      button.disabled = saved === null || failed || mismatches;
+      button.classList.toggle("has-note", matches);
+      button.setAttribute(
+        "aria-label",
+        lineNotes.length ? "编辑笔记" : "写笔记"
+      );
       button.onclick = () => {
         if (
           ticket.stale() ||
@@ -308,14 +314,15 @@ function PdfPage({
           ref={editorRef}
           ownerKey={`${docId}:${page}:${popup.lineIndex}`}
           ariaLabel="行笔记"
-          initial={saved?.find(
+          initial={(saved ?? []).filter(
             (note) => note.page === page && note.lineIndex === popup.lineIndex
           )}
           button={popup.button}
           store={{
-            save: (text) =>
+            save: (type, text) =>
               notes.save(
                 {
+                  type,
                   docId,
                   page,
                   lineIndex: popup.lineIndex,
@@ -323,17 +330,19 @@ function PdfPage({
                 },
                 text
               ),
-            delete: () =>
-              notes.delete({ docId, page, lineIndex: popup.lineIndex }),
+            delete: (type) =>
+              notes.delete({ docId, page, lineIndex: popup.lineIndex, type }),
           }}
-          onCommitted={(note) => {
+          onCommitted={(type, note) => {
             void patch(Promise.resolve(note), {
               ticket: markerTicket,
               onFresh: (value) =>
                 setSaved((current) => {
                   const rest = (current ?? []).filter(
                     (entry) =>
-                      entry.page !== page || entry.lineIndex !== popup.lineIndex
+                      entry.page !== page ||
+                      entry.lineIndex !== popup.lineIndex ||
+                      entry.type !== type
                   );
                   return value ? [...rest, value] : rest;
                 }),

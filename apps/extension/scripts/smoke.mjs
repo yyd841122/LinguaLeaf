@@ -174,6 +174,159 @@ const runScenarios = async (page, port) => {
     await page.setInputFiles('input[type="file"]', file);
   };
 
+  const typeLabels = ["进度", "感受", "思路", "疑问"];
+  const typeKeys = ["progress", "feeling", "idea", "question"];
+  const noteText = (label, type, progressText) =>
+    type === "进度" ? progressText : `${label} ${type} smoke note`;
+  const checkNarrowNotePopup = async (label) => {
+    const viewport = await page.evaluate(() => ({
+      width: innerWidth,
+      height: innerHeight,
+    }));
+    await page.setViewportSize({ width: 240, height: 220 });
+    const dialog = page.locator(".note-popup");
+    // This is the textarea's supported resize action, forced large enough
+    // that the popup itself must scroll rather than just the text field.
+    await page.getByRole("textbox", { name: "笔记正文" }).evaluate((node) => {
+      node.style.height = "300px";
+    });
+    const geometry = await dialog.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      node.scrollTop = node.scrollHeight;
+      return {
+        left: rect.left,
+        right: rect.right,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: innerWidth,
+        height: innerHeight,
+        overflow: getComputedStyle(node).overflowY,
+        scrolls: node.scrollHeight > node.clientHeight && node.scrollTop > 0,
+      };
+    });
+    check(
+      `${label} notes: narrow popup stays in viewport and scrolls`,
+      geometry.left >= 8 &&
+        geometry.right <= geometry.width - 8 &&
+        geometry.top >= 8 &&
+        geometry.bottom <= geometry.height - 8 &&
+        geometry.overflow === "auto" &&
+        geometry.scrolls,
+      JSON.stringify(geometry)
+    );
+    await page.getByRole("button", { name: "保存", exact: true }).focus();
+    check(
+      `${label} notes: focusing actions scrolls them into view`,
+      await dialog.evaluate((node) => {
+        const action = document.activeElement;
+        if (!action || !node.contains(action)) return false;
+        const rect = action.getBoundingClientRect();
+        const popup = node.getBoundingClientRect();
+        return (
+          rect.top >= popup.top &&
+          rect.bottom <= popup.bottom &&
+          rect.left >= popup.left &&
+          rect.right <= popup.right
+        );
+      })
+    );
+    await page.getByRole("tab", { name: "疑问", exact: true }).focus();
+    await page.keyboard.press("Home");
+    check(
+      `${label} notes: keyboard moves tab focus in narrow popup`,
+      await page
+        .getByRole("tab", { name: "进度", exact: true })
+        .evaluate(
+          (node) =>
+            node === document.activeElement &&
+            node.getAttribute("aria-selected") === "true"
+        )
+    );
+    await page.getByRole("textbox", { name: "笔记正文" }).evaluate((node) => {
+      node.style.height = "";
+    });
+    await page.setViewportSize(viewport);
+  };
+  const assertSiblingTypes = async (label, button, progressText) => {
+    check(
+      `${label} notes: sibling types keep the anchor highlighted`,
+      await button.evaluate((node) => node.classList.contains("has-note"))
+    );
+    await button.click();
+    for (const type of typeLabels) {
+      await page.getByRole("tab", { name: type, exact: true }).click();
+      check(
+        `${label} notes: ${type} survives sibling deletion`,
+        (await page.getByRole("textbox", { name: "笔记正文" }).inputValue()) ===
+          (type === "思路" ? "" : noteText(label, type, progressText))
+      );
+      if (type === "思路")
+        check(
+          `${label} notes: deleted type has no delete action`,
+          (await page
+            .getByRole("button", { name: "删除", exact: true })
+            .count()) === 0
+        );
+    }
+    await page.keyboard.press("Escape");
+  };
+  const checkSameAnchorTypes = async (
+    label,
+    button,
+    progressText,
+    namespace
+  ) => {
+    await button.click();
+    check(
+      `${label} notes: four ordered tabs and one visible field`,
+      JSON.stringify(await page.getByRole("tab").allTextContents()) ===
+        JSON.stringify(typeLabels) &&
+        (await page.getByRole("textbox", { name: "笔记正文" }).count()) === 1
+    );
+    for (const type of typeLabels) {
+      await page.getByRole("tab", { name: type, exact: true }).click();
+      await page
+        .getByRole("textbox", { name: "笔记正文" })
+        .fill(noteText(label, type, progressText));
+      await page.getByRole("button", { name: "保存", exact: true }).click();
+      await page.getByRole("status").filter({ hasText: "已存" }).waitFor();
+    }
+    const record = await page.evaluate(
+      async (key) => (await window.chrome.storage.local.get(key))[key],
+      namespace
+    );
+    const sameAnchor = record.notes.filter(
+      (note) =>
+        note.text === progressText ||
+        typeLabels
+          .slice(1)
+          .some((type) => note.text === `${label} ${type} smoke note`)
+    );
+    check(
+      `${label} notes: v2 stores all four types at one anchor`,
+      record.version === 2 &&
+        sameAnchor.length === 4 &&
+        typeKeys.every((type) =>
+          sameAnchor.some((note) => note.type === type)
+        ) &&
+        sameAnchor.every((note) =>
+          namespace === "notes"
+            ? note.docId === sameAnchor[0].docId &&
+              note.chapterIndex === sameAnchor[0].chapterIndex &&
+              note.blockIndex === sameAnchor[0].blockIndex
+            : note.docId === sameAnchor[0].docId &&
+              note.page === sameAnchor[0].page &&
+              note.lineIndex === sameAnchor[0].lineIndex
+        )
+    );
+    await checkNarrowNotePopup(label);
+    await page.getByRole("tab", { name: "思路", exact: true }).click();
+    await page.getByRole("button", { name: "删除", exact: true }).click();
+    await page.getByRole("status").filter({ hasText: "已删除" }).waitFor();
+    await page.keyboard.press("Escape");
+    await assertSiblingTypes(label, button, progressText);
+  };
+
   const epubScenario = async () => {
     // EPUB line: import, IPA pairing, popup, 查词即状态.
     await page.goto(`http://127.0.0.1:${port}/`);
@@ -212,6 +365,13 @@ const runScenarios = async (page, port) => {
         "学习中"
     );
     await page.keyboard.press("Escape");
+    const noteButton = page.locator(".block-note-button").first();
+    await noteButton.waitFor();
+    await checkSameAnchorTypes("EPUB", noteButton, "EPUB smoke note", "notes");
+    await page.reload();
+    await page.getByRole("button", { name: "Smoke EPUB", exact: true }).click();
+    await page.waitForSelector(".block-note-button.has-note:enabled");
+    await assertSiblingTypes("EPUB", noteButton, "EPUB smoke note");
   };
 
   const measurePdfGeometry = () =>
@@ -358,6 +518,12 @@ const runScenarios = async (page, port) => {
             node.classList.contains("has-note")
         )
     );
+    await checkSameAnchorTypes(
+      "PDF",
+      page.locator("[data-pdf-note]").first(),
+      "PDF smoke note",
+      "pdf-notes"
+    );
     await page.getByRole("button", { name: "150%", exact: true }).click();
     await checkPdfNotesGeometry("150% zoom");
     check(
@@ -469,6 +635,11 @@ const runScenarios = async (page, port) => {
     check(
       "PDF notes: same bytes reattach silently after reselect",
       (await page.locator("[data-pdf-note].has-note").count()) === 1
+    );
+    await assertSiblingTypes(
+      "PDF",
+      page.locator("[data-pdf-note]").first(),
+      "PDF smoke note"
     );
   };
 
