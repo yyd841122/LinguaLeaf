@@ -13,6 +13,9 @@ diff」的批清单家:评审按标准条向本票攒位点,本票一次语义�
    `useState<{ word: string; point: { x: number; y: number } } | null>`;
    `WordClick` 自 74df19a 起已在该文件导入,可换
    `useState<WordClick | null>`。
+   readerpage-split(9f730f9)后漂至 ~171-174,且 EpubReader.tsx:5
+   已 import `WordClick`——清扫时同文件两处现场取数(2026-11-07
+   readerpage-split 双轴评审记档)。
 2. apps/web/src/ReadingView.tsx ~70-72 — 逐块匿名 `statusOf` adapter
    (`(_word, index) => … wordStatuses[index] ?? null`);上票
    annotated-blocks-kernel 评审记档「toAnnotatedBlock 可提具名」所指,

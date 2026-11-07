@@ -1,5 +1,5 @@
 # readerpage-split:ReaderPage 整固 — 站归模块,页留接线
-
+Status: ready-for-human(2026-11-07 Lane B 收官:实现 9f730f9 + 编排侧 verify EXIT=0 + 双轴评审零硬违规零缺需求;验收门全自动无真机项,维护者签收翻 done)
 Status: ready-for-agent(2026-11-07 维护者拍板五题全照推荐,Lane B;实现侧可直接领票)
 
 来源:CODING_STANDARDS.md「ReaderPage hosts wiring; new reading-face
@@ -111,3 +111,64 @@ vitest 可验;近期 extension 三票均此道)。
   ;ReaderPage 不添新站。
 - 基线:评审对照「本票首个实现 commit 之前的 HEAD」(关系表述,不
   预写 SHA)。
+
+## Comments
+
+### 2026-11-07 Lane B 实现与双轴评审(编排侧,收官)
+
+- 实现:job `implement-mw61dge4-pomndg`,threadId
+  `01a1b4be-8f69-7512-b6ff-0e422d06d418`,gpt-6.1-sol / high /
+  workspace-write / 30min。新增 EpubReader.tsx(259)/
+  ReaderLanding.tsx(184)/ usePdfOpen.ts(140,acceptPdf 链
+  hook 形态,票面留给实现侧的选择权);修改 ReaderPage.tsx
+  (818→385,86+/519−,只余接线)。实现 commit 9f730f9,
+  基线 = 0c8c795(本票首个实现 commit 之前的 HEAD)。
+- **决策 4 偏差记档**:沙箱 `.git` 只读(index.lock EPERM),
+  实现侧切片提交不可达;编排侧单票单 commit 代提交。切片意图
+  (2fff857 先例)未达成,但纯结构迁移单票单 commit 的 bisect
+  价值无损,评审照看全 diff。
+- 编排侧 gate:全链 `npm run verify` EXIT=0(67 files 827
+  passed|2 skipped (829),与 pdf-shelf 收官基线零位移)。沙箱内
+  typecheck/lint 绿 + 定向 vitest
+  (readerPage/readerNotes/pdfReaderNotes)116 通过|1 跳过与基线
+  一致;Spec 子代理独立复跑 readerPage.test.tsx 48 passed|1
+  skipped EXIT=0。readerPage.test.tsx 不在 diff(既有断言零改写
+  零删除,验收门 2 实证)。
+- **Standards 轴:零硬违规**,motivating rule(「ReaderPage
+  hosts wiring; new reading-face features land in dedicated
+  modules」)满足:站体零残留,页只余 props 下传/状态机/缝。
+  judgement-call 4 条记档,引文现场核验 4/4 属实:①closeNote
+  同形两处(ReaderPage.tsx:143 / EpubReader.tsx:48,共享 ref
+  下传,提取须跨模块耦合,两行 lambda 不值);②onToggleIpa 内联
+  两处(ReaderPage.tsx:355/:379);③ReaderLanding 五 props 原样
+  转发 PdfShelf(entries/bytes/positions/refresh/failed,Middle
+  Man,分拆固有成本,landing 组合 picker+shelf 期间接受);
+  ④pdfBytes+pdfPositions Data Clump 伴行(usePdfOpen 与
+  ReaderLanding→PdfShelf 两路)。另 naming 走查一条:
+  `shelf: ReturnType<typeof usePdfShelf>["snapshot"]`
+  (ReaderLanding.tsx:30)可换具名导出。批次记档:WordClick
+  内联孪生本票后漂至 ReaderPage.tsx ~171-174
+  (EpubReader.tsx:5 已 import 该类型),已补 types-alignment
+  位点 1 漂移注记。无 SQL/契约套件/测试/文案规则触发。
+- **Spec 轴:substantially compliant**——六不变量引文逐一现场
+  核属实:①字节所有权注释原样(ReaderPage.tsx:198);②收票
+  唯一点(usePdfOpen.ts:116,save 队列 + refreshPdfShelf 在);
+  ③restoreRef 一次性通道(EpubReader.tsx:124,ref 对象下传、
+  effect 一次性消费,非反应式);④tint merge-wins
+  (EpubReader.tsx:56-64);⑤A→A 不复活(ReaderPage.tsx:249-253
+  握手注释原样,reopenDocument/reopenPdf 未触碰);⑥六注入 props
+  签名未动(测试零改写全绿即证)。目标形状全落地(镜像
+  PdfReader/PdfShelf 先例,props down / callbacks up,弹窗各面
+  自持)。记档 3 条(均行为保持的保真机制,票面未点名):
+  ①ReaderLanding 常驻自隐(:10 注释 + :85 `if (phase === null)
+  return null`,recents effect 门 `phase !== "empty"` :45——旧
+  emergent 页面寿命改显式结构决策);②scrollSaveAt 节流钟上提
+  host(ReaderPage.tsx:185/:377 下传,EPUB 面重挂载间保钟);
+  ③PDF 面弹窗 `onStatusApplied={() => undefined}`
+  (ReaderPage.tsx:331-332,PDF 相位无 tint 渲染面,旧
+  handleStatusApplied 补丁写入本即死码 + EPUB 入场清零——接线
+  恒同化,与决策 2「跨站共享面为零」一致)。
+- **验收门全自动,无真机检查点项**(既有 1536 行测试即安全网,
+  票面验收门四条全绿);维护者签收翻 done。可选抽验(非门):
+  浏览器开 EPUB 阅读面 + 落地面 + 开 PDF 各一圈,与拆分前观感
+  恒同。
