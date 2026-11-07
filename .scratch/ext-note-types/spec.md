@@ -1,6 +1,6 @@
 # ext-note-types:扩展笔记四类型(EPUB+PDF 面一起,照抄 web 分类集)
 
-Status: ready-for-agent(2026-11-06 clarify 管线收官:grill 三题 +
+Status: ready-for-human(2026-11-07 Lane B 实现收官:编排侧 verify EXIT=0 + 冒烟 EXIT=0 + 双轴评审记档完毕,待维护者真机检查点后翻 done)
 review-plan 评审合并 + 拍板单两题(布局页签 / 迁移归进度)全照推荐
 拍定。前置:pdf-notes 真机抽验通过后才开工)
 
@@ -172,3 +172,52 @@ echo done
   a)、Q2 直引 wire(裁决 b)、Q3 归 progress(决策 4)。
 - 前置门:pdf-notes 真机抽验通过后开工,避免真机基线漂移。
 - Status 翻 ready-for-agent,随立票 commit 入档。
+
+### 2026-11-07 Lane B 实现与双轴评审(编排侧)
+
+- 实现:job `implement-mw5mrtte-jhv7v8`,threadId
+  `01a1b348-5d43-7060-b168-272021188a88`,gpt-6.1-sol/high
+  workspace-write。新增 noteEditor.test.tsx;修改 12 文件(两 store、
+  NoteEditor/EpubChapter/PdfReader/reader.css、4 测试、GLOSSARY、
+  smoke.mjs)。实现 commit 4f2d000。Codex 报引文漂移一处属实:web
+  NotePanels 现为值导入 NOTE_TYPES,wire「全 type-only」头注已过时
+  (票面引注以评审时点为准,不影响本票裁决 b)。
+- 编排侧 gate:全链 verify EXIT=0(65 files 804 passed|2 skipped
+  (806),基线 pdf-notes 收官 779|2 (781),+25);冒烟 EXIT=0(64 检查:
+  四有序页签+单可见字段、v2 同锚四条、窄窗键盘页签焦点、兄弟类型
+  保亮标、已删类型无删除动作,EPUB/PDF 双面)。
+- **Standards 轴:零硬违规**,记档 judgement-call 8 条,承重引文
+  现场核验 8/8 属实:①v2 decode 迁移两 store 逐行镜像(含
+  `type: value.version === 1 ? "progress" : note.type`),双生加深
+  ~40 行/侧,锚泛型共享内核待抽;②~190 行 v2 describe 双生
+  (notesStore:133 / pdfNotesStore:123),可表驱动合一;③四类型
+  字面量多处旅行(smoke typeLabels/typeKeys、测试内联标签 ×8、
+  NOTE_TYPE_LABELS 重述 web 文案——跨包复制系宿主边界有意,扩展
+  内可合一);④`noteFor` 返回数组名仍单数(EpubChapter:72);
+  ⑤smoke `noteText(label, type, …)` 的 type 参收中文标签非 NoteType
+  (:179/:261);⑥smoke :313 按裸 namespace 串分支锚字段断言;
+  ⑦save() 把非法 type/坏锚与空正文共用「笔记正文不能为空」
+  (notes-store:104-106,pdf 同构)——UI 页签发不出非法 type,防御
+  路径够不着用户,记档不修;⑧panels 初始化/operations 四键硬编码
+  (useSettle 固定钩数约束使后者合理)。
+- **Spec 轴:substantially compliant**——决策 4、裁决 a–i、顺序
+  5 步、验收 17/17 全部有实现+测试/冒烟落点;`git diff --stat --
+  apps/server apps/web packages` 为空,manifest 零触碰。承重引文
+  现场核验全属实(v2 解码守卫、迁移 `expect(writes).toBe(0)`+成功
+  mutation 后整体落盘、busyRef.has(type) 防重入 :166、dirty
+  NOTE_TYPES.some :100、宿主过滤含 type 兄弟保留、PDF 决策表
+  matches/mismatches 谓词序无关 + it.each 双序含 ["drift","match"])。
+  记档两条:①「web /review 与扩展存储互不见」无新增断言,由既有
+  web 测试+架构承担(软缺口);②delete() 无操作早返回零写
+  (notes-store:135)超出票面字面、合裁决 c 精神,测试钉死,良性。
+- **维护者真机检查点(过后翻 done,勿跳)**:
+  ①重开扩展(chrome://extensions 刷新后)——你上一轮写的旧笔记
+  全部还在、归「进度」页签(迁移零丢失);
+  ②同一行/块四个页签各写一条,互不覆盖;
+  ③删除一类,其他三类保留,重开页面仍在;
+  ④一类型超额失败留稿,他类型已存状态不被动;
+  ⑤PDF:同文件重选四类型全部回挂;A→B→A 各归各;
+  ⑥窄窗:页签键盘可达、浮层滚动可用;
+  ⑦任一类型有笔记行尾铅笔即亮;
+  ⑧点词键盘与音标叠加零回归;
+  ⑨web /review 页面照旧(扩展笔记不出现在里面)。
