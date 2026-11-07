@@ -100,6 +100,12 @@ The extension has a committed harness — `npm run smoke
   pin the claimed property"): overlay words must land inside the canvas
   rect, chips below their word's font band, computed `color`/`userSelect`
   exact.
+- **Scenarios set their own stage.** Helpers must not assume the previous
+  scenario's end state — scenarios get inserted and reordered, and this
+  gate already failed once (pdf-shelf, 2026-11-07: a shelf scenario ended
+  on the landing picker, the next scenario's `.reader-reopen` click timed
+  out). A helper like `importBook` lands on either state and tolerates
+  both; a scenario that needs in-reader state navigates there itself.
 - **Known limits**: the script's chrome.storage stub masks
   manifest-permission gaps — `apps/extension/scripts/
 check-manifest-permissions.mjs` (wired into `verify`) is that class's

@@ -562,3 +562,28 @@ At review: when a diff makes a named type available at a file with an
 inline twin, name the site for the batch sweep and go on; flag it as a
 per-diff finding only when the ticket asked for the adoption and the diff
 skipped it.
+
+## ReaderPage hosts wiring; new reading-face features land in dedicated
+
+## modules
+
+`apps/extension/src/reader/ReaderPage.tsx` is at its split point: it
+carries the reader state machine, EPUB host wiring, PDF host wiring, the
+word-lookup seam, and the shelf seam, and three consecutive Standards
+reviews independently flagged the accretion (pdf-notes, ext-note-types,
+pdf-shelf — 2026-11-06/07; the last added ~185 lines across four
+stations). A new reading-face feature therefore lands in its own module
+with a narrow seam, the way `PdfReader.tsx` and `PdfShelf.tsx` do, and
+ReaderPage gains only the wiring — props down, callbacks up. Adding
+another station inline (a new phase, a new host body, a new data seam)
+is a split ticket's job, not a line item.
+
+Why: the accretion is the slow kind — each ticket's addition looks
+local, and only the reviews' shared verdict across three tickets makes
+the trend visible. The rule converts the recorded observation into a
+default so the split happens by ticket, not by crisis.
+
+At review: for a diff that grows ReaderPage, name which station absorbs
+the lines. Wiring (props/callbacks/rendering an existing module) passes;
+a new station or a growing host body is a finding — either move the body
+into a dedicated module in this diff or record the split ticket.

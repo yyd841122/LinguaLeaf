@@ -31,6 +31,8 @@ Codex 在 workspace-write 沙箱按票面自主实现,双轴评审兜底。
   Bash run_in_background,终态一行 TERMINAL 唤醒编排会话)。禁手搓 until-loop:内联带
   引号 JS 曾 SyntaxError 空转数小时(settle-channel 02);脚本头注释带干跑口诀(先
   `timeout 3` 验退出码 124,注入 fixture 可验终态路径)。
+- 超时:`implement`/`review-plan` 用 `--timeout-ms 1800000`(五步大票两轮实测够用,
+  2026-11-06/07)。job 记录不长期保留,勿考古旧 job 找超时——直接取这个值。
 
 ## 共同纪律
 
