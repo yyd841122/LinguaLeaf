@@ -1,6 +1,6 @@
 # pdf-shelf:PDF 原书字节本地持久化(免重选书架,IndexedDB,离线本地)
 
-Status: ready-for-human(2026-11-07 Lane B 实现收官:编排侧 verify EXIT=0 + 冒烟 EXIT=0(含窄浏览器证明运行)+ 双轴评审记档,待维护者真机检查点后翻 done)
+Status: done(2026-11-07 真机检查点九项全绿,收官归档)
 拍板单待维护者终审确认。确认前零改动)
 
 来源:pdf-notes 决策 1 点名的后继票(「免重选(IndexedDB/OPFS)
@@ -242,3 +242,18 @@ echo done && wc -l /home/youyd/projects/claudeProjects/LinguaLeaf/.scratch/pdf-s
   ⑦**重启整个浏览器**:书架仍在(persist 生效);
   ⑧替换/读/删失败可重试,选择入口常在(README 项);
   ⑨四类型笔记与 EPUB 面零回归。
+
+### 2026-11-07 真机检查点归档(收官)
+
+- 维护者九项全绿(2026-11-07,Windows Chrome 刷新构建版;材料沿用
+  C:\Users\Public\pdf-notes-test\ 的 test-A/test-B):①书架出现
+  且列出《Note Test Book》;②免选回书——关页重开点书架直接回书,
+  四类型笔记与页码全恢复(本票灵魂场景);③缓存重开书内点词键盘
+  与音标零回归(Spec 缺口②真机闭合);④书架/EPUB recents/无字节
+  小纸条三者并存互不扰;⑤同文件重选书架仍一条不重复;⑥× 删除后
+  重选同文件笔记回挂且书架重现;⑦存中关扩展页无半截条目(Spec
+  缺口⑥真机闭合——事务契约原生证据);⑧重启整个浏览器书架仍在
+  (persist 生效);⑨四类型笔记与 EPUB 面零回归。
+- 至此验收骨架 19 项四层落档(单测/冒烟真 IDB/真机/事务契约原生
+  证据)。pdf-notes 三件遗留仅剩两件:选区级笔记、同书异版迁移
+  (均维持另票待立)。
