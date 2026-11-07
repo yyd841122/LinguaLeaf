@@ -1,6 +1,6 @@
 # pdf-shelf:PDF 原书字节本地持久化(免重选书架,IndexedDB,离线本地)
 
-Status: ready-for-agent(2026-11-07 clarify 管线收官:grill 三题 + review-plan 14 发现合并 + 维护者确认开工。同日即发 Lane B)
+Status: ready-for-human(2026-11-07 Lane B 实现收官:编排侧 verify EXIT=0 + 冒烟 EXIT=0(含窄浏览器证明运行)+ 双轴评审记档,待维护者真机检查点后翻 done)
 拍板单待维护者终审确认。确认前零改动)
 
 来源:pdf-notes 决策 1 点名的后继票(「免重选(IndexedDB/OPFS)
@@ -183,3 +183,62 @@ echo done && wc -l /home/youyd/projects/claudeProjects/LinguaLeaf/.scratch/pdf-s
 - Open 四题全部落定进裁决 i/c(替换刷新 storedAt、书架项 title+
   页码、删除无 confirm、存储失败轻量行内提示)。
 - Status 翻 ready-for-agent,随立票 commit 入档。
+
+### 2026-11-07 Lane B 实现与双轴评审(编排侧)
+
+- 实现:job `implement-mw5oesm1-i64v31`,threadId
+  `01a1b372-563d-7013-94a3-1a6338a2eac4`,gpt-6.1-sol/high
+  workspace-write。新增 idb-bytes-store.ts / storage-persistence.ts /
+  PdfShelf.tsx / usePdfShelf.ts + 2 测试;修改 ReaderPage/reader.css/
+  pdf-position-store(clearRecentIf+getSnapshot)/smoke.mjs/4 测试/
+  GLOSSARY/README。实现 commit 71e1196。
+- 编排侧 gate:冒烟 EXIT=0(90 检查,+26;含第 2 步窄浏览器证明的
+  运行:原生 IDB import→commit→摘要比对→reload→免选重开、迟事务
+  abort 回滚 insert 与替换、迟失败后删除不被复活、真 picker 字节
+  在 PDF.js transfer 后完整落库、scanned 拒收不提交候选)→ 全链
+  verify EXIT=0(67 files 827 passed|2 skipped (829),基线
+  ext-note-types 收官 804|2 (806),+23)。编排侧修笔一处记档:
+  smoke importBook 对落地页免疫(书架场景结束在 picker 而
+  scannedScenario 旧帮手硬点 .reader-reopen 超时——测试接序 bug,
+  非产品缺陷)。
+- **Standards 轴:零硬违规**,judgement-call 6 条记档,引文现场
+  核验 6/6 属实:①smoke 摘要三处手搓(:197 助手/:303/:786 重内联
+  )+ store 接线 8 处重复 import;②acceptPdf 六参 Data Clump
+  (ReaderPage.tsx:233-239,save+expectedDocId 编码 picker-vs-shelf
+  模式,可收一个 mode 变元);③idb-bytes-store.ts:40 `metadata`
+  名词名于校验型解析器,宜 parse/decodeMetadata;④readerPage
+  测试 14 处注入行可收渲染包装;⑤ReaderPage 本票再吸收四站
+  (+185/−56,Divergent Change 压力,下次拆分记项非本票);⑥
+  `!("docId" in raw)` 用 in 探外源记录(hasOwn 边界,后续 typeof
+  已中和,记完整性)。
+- **Spec 轴:substantially compliant**——裁决 a–l、决策 3、顺序
+  5 步全落地;事务契约(resolve on tx.oncomplete)、两段式
+  (`if (transferred && save)` ReaderPage.tsx:283)、per-docId
+  排序 delete-wins 钉测、缓存打开不重写、persist 四结局全部有
+  断言;裁决 l 干净(manifest/web/server/kernel 零触碰)。引文
+  核验全属实。记档四条:①「存中关扩展只见完整记录」冒烟仅以
+  abort 代理(smoke.mjs:210 注释自认 request success ≠ commit)
+  ,真机检查点补中项(见下⑥);②缓存重开路径的点词键盘/音标
+  回归无断言(既有键盘检查只在首导流,README 让位真机检查点
+  ——见下②);③第 19 项真机检查点未执行系设计使然(裁决 j);
+  ④position 快照静默吞读失败(pdf-position-store.ts:113 catch
+  → 空),书架页码退 1、提示隐藏、无失败态——承既有 getPosition
+  吞法,新展示面,低危记档。良性加座三条:README +30(服务裁决
+  j,但检查点按仓库惯例亦入票面,见下);smoke 内 vite 构建
+  proof bundle(服务裁决 k 不 shipped 钩子);getSnapshot() 超出
+  裁决 g 字面(服务裁决 f 一次性 join)。
+- **维护者真机检查点(过后翻 done,勿跳;含 Spec 缺口补的两项)**:
+  ①重开扩展:书架列出最近 PDF,点击免选直接回书,笔记/页码/缩放
+  全恢复;
+  ②在**缓存重开**的书里点词查词(Enter/空格)与音标零回归
+  (Spec 缺口点名);
+  ③书架与 EPUB recents 并存互不扰;无字节旧书仍显示「选同一个
+  文件继续」小纸条且不与书架重复;
+  ④同文件重选:书架仍一条(不重复,storedAt 刷新);
+  ⑤删除:× 后条目消失,笔记/位置留(重选同文件回挂且书架重现);
+  ⑥**存字节进行中关扩展页**(选一个大 PDF 立刻关标签):重开后
+  书架要么有完整条目要么没有,绝不半截(Spec 缺口点名——事务
+  契约真证据);
+  ⑦**重启整个浏览器**:书架仍在(persist 生效);
+  ⑧替换/读/删失败可重试,选择入口常在(README 项);
+  ⑨四类型笔记与 EPUB 面零回归。
