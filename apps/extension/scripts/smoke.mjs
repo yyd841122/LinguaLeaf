@@ -21,10 +21,27 @@ import { extname, join, normalize } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
+import { build as viteBuild } from "vite";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const repoRoot = fileURLToPath(new URL("../../..", import.meta.url));
 const DIST = join(root, "dist");
+// Bundle the actual store for a narrow native proof, without exposing test
+// hooks in the shipped extension. This directory is removed in finally.
+const proofDir = mkdtempSync(join(tmpdir(), "lingualeaf-pdf-bytes-proof-"));
+await viteBuild({
+  configFile: false,
+  build: {
+    outDir: proofDir,
+    emptyOutDir: true,
+    minify: false,
+    lib: {
+      entry: join(root, "src/store/idb-bytes-store.ts"),
+      formats: ["es"],
+      fileName: () => "pdf-bytes-proof.js",
+    },
+  },
+});
 
 // ---- Step 1: fresh build. The smoke always tests what the source says. --
 console.log("[smoke] building extension (fresh dist)...");
@@ -75,7 +92,9 @@ const server = createServer(async (req, res) => {
   );
   const name = path === "/" || path === "\\" ? "reader.html" : path.slice(1);
   try {
-    const body = readFileSync(join(DIST, name));
+    const body = readFileSync(
+      name === "pdf-bytes-proof.js" ? join(proofDir, name) : join(DIST, name)
+    );
     res.writeHead(200, {
       "content-type": MIME[extname(name)] ?? "application/octet-stream",
     });
@@ -167,9 +186,156 @@ const startChromium = async () => {
 // ---- Step 4: the scenarios. Each asserts its own line through `check`; ----
 // ---- the chore they share is importBook, the reader's reopen →        ----
 // ---- file-input sequence that resets between books.                   ----
+// This proves localhost's native IDB/Blob contract, not extension-origin
+// close/restart persistence. README's load-unpacked checkpoints own that proof.
+const proveNativePdfBytes = async (page, port) => {
+  await page.goto(`http://127.0.0.1:${port}/`);
+  const first = await page.evaluate(
+    async (source) => {
+      const { createPdfBytesStore, createIndexedDbBytesBackend, readPdfBlob } =
+        await import("/pdf-bytes-proof.js");
+      const digest = async (bytes) =>
+        "pdf:sha256-v1:" +
+        [...new Uint8Array(await crypto.subtle.digest("SHA-256", bytes))]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+      const store = createPdfBytesStore(
+        createIndexedDbBytesBackend(indexedDB, "pdf-shelf-native-proof")
+      );
+      const blob = new Blob([new Uint8Array(source)]);
+      const docId = await digest(await blob.arrayBuffer());
+      await store.save({ docId, title: "Committed PDF", blob });
+      const initial = await store.get(docId);
+      const before = await store.list();
+      // Abort AFTER a put request succeeds: request success is not commit.
+      const original = IDBObjectStore.prototype.put;
+      let requestSucceeded = false;
+      IDBObjectStore.prototype.put = function (...args) {
+        const request = original.apply(this, args);
+        if (this.name === "bytes") {
+          request.addEventListener("success", () => {
+            requestSucceeded = true;
+            this.transaction.abort();
+          });
+        }
+        return request;
+      };
+      let replacementRejected = false;
+      let insertRejected = false;
+      const other = new Blob(["another complete PDF"]);
+      const otherId = await digest(await other.arrayBuffer());
+      try {
+        await store.save({ docId, title: "Must roll back", blob }).catch(() => {
+          replacementRejected = true;
+        });
+        await store
+          .save({ docId: otherId, title: "Must not exist", blob: other })
+          .catch(() => {
+            insertRejected = true;
+          });
+      } finally {
+        IDBObjectStore.prototype.put = original;
+      }
+      const after = await store.list();
+      // Delay pre-transaction preparation and inject a later failure. The
+      // queued delete must still execute; failed saves cannot poison the queue.
+      let release;
+      let started;
+      const ready = new Promise((resolve) => {
+        started = resolve;
+      });
+      const delayed = new Blob(["delayed"]);
+      delayed.arrayBuffer = () => {
+        started();
+        return new Promise((_, reject) => {
+          release = reject;
+        });
+      };
+      const saving = store.save({
+        docId: otherId,
+        title: "Delayed",
+        blob: delayed,
+      });
+      const savingOutcome = saving.then(
+        () => false,
+        () => true
+      );
+      const deleting = store.delete(otherId);
+      await ready;
+      release(new Error("injected late Blob failure"));
+      const lateRejected = await savingOutcome;
+      await deleting;
+      return {
+        docId,
+        matches: (await digest(await readPdfBlob(initial.blob))) === docId,
+        complete:
+          initial.blob.size === blob.size && initial.title === "Committed PDF",
+        rollback:
+          requestSucceeded &&
+          replacementRejected &&
+          insertRejected &&
+          JSON.stringify(before) === JSON.stringify(after),
+        lateRejected,
+      };
+    },
+    [...samplePdf]
+  );
+  check(
+    "PDF native proof: import commits complete bytes and matching digest",
+    first.complete && first.matches
+  );
+  check(
+    "PDF native proof: late transaction abort rolls back insert and replacement",
+    first.rollback
+  );
+  check(
+    "PDF native proof: delayed failure then delete stays deleted",
+    first.lateRejected
+  );
+  await page.reload();
+  const reopened = await page.evaluate(async (docId) => {
+    const { createPdfBytesStore, createIndexedDbBytesBackend, readPdfBlob } =
+      await import("/pdf-bytes-proof.js");
+    const store = createPdfBytesStore(
+      createIndexedDbBytesBackend(indexedDB, "pdf-shelf-native-proof")
+    );
+    const record = await store.get(docId);
+    const hash = [
+      ...new Uint8Array(
+        await crypto.subtle.digest("SHA-256", await readPdfBlob(record.blob))
+      ),
+    ]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+    return (
+      record.title === "Committed PDF" &&
+      docId === `pdf:sha256-v1:${hash}` &&
+      (await store.list()).length === 1
+    );
+  }, first.docId);
+  check(
+    "PDF native proof: reload reopens original bytes without file picker",
+    reopened
+  );
+  await page.evaluate(
+    () =>
+      new Promise((resolve, reject) => {
+        const request = indexedDB.deleteDatabase("pdf-shelf-native-proof");
+        request.onsuccess = resolve;
+        request.onerror = () => reject(request.error);
+        request.onblocked = () =>
+          reject(new Error("proof database still connected"));
+      })
+  );
+};
+
 const runScenarios = async (page, port) => {
   const importBook = async (file) => {
-    await page.click(".reader-reopen");
+    // The reopen button only exists inside a reading view; scenarios may
+    // arrive already on the landing picker (the shelf scenarios do).
+    if (await page.locator(".reader-reopen").count()) {
+      await page.click(".reader-reopen");
+    }
     await page.waitForSelector('input[type="file"]');
     await page.setInputFiles('input[type="file"]', file);
   };
@@ -606,25 +772,164 @@ const runScenarios = async (page, port) => {
       "PDF notes: leaving removes all PDF overlays",
       (await page.locator("[data-pdf-word], [data-pdf-note]").count()) === 0
     );
+    await page.waitForSelector('[aria-label="PDF 书架"] li[data-pdf-doc-id]');
+    const cached = await page.evaluate(async () => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      const store = createPdfBytesStore();
+      const entries = await store.list();
+      const record = await store.get(entries[0].docId);
+      const digest = [
+        ...new Uint8Array(
+          await crypto.subtle.digest("SHA-256", await record.blob.arrayBuffer())
+        ),
+      ]
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join("");
+      return {
+        entry: entries[0],
+        digest: `pdf:sha256-v1:${digest}`,
+        count: entries.length,
+      };
+    });
     check(
-      "PDF notes: hint coexists with EPUB recents",
-      (await page.locator('[aria-label="最近 PDF 会话"]').count()) === 1 &&
+      "PDF shelf: real picker bytes survived PDF.js transfer and committed intact",
+      cached.count === 1 && cached.digest === cached.entry.docId
+    );
+    check(
+      "PDF shelf: coexists with EPUB recents without a duplicate reselect hint",
+      (await page.locator('[aria-label="最近 PDF 会话"]').count()) === 0 &&
         (await page
           .getByRole("button", { name: "Smoke EPUB", exact: true })
           .count()) === 1
     );
+    // Seed a legacy recent identity without bytes to prove all three entry
+    // forms coexist. It is a convenience record, not another cached PDF.
+    const legacyId = "pdf:sha256-v1:" + "0".repeat(64);
+    await page.evaluate(async (docId) => {
+      const key = "pdf-positions";
+      const record = (await window.chrome.storage.local.get(key))[key];
+      record.recent = { docId, title: "Legacy PDF", page: 7, scale: 1 };
+      await window.chrome.storage.local.set({ [key]: record });
+    }, legacyId);
     await page.reload();
     await page.waitForSelector('[aria-label="最近 PDF 会话"]');
     check(
-      "PDF notes: reopening reader preserves nonclickable hint and EPUB recents",
+      "PDF shelf: cached row, EPUB recents and nonclickable no-bytes hint coexist after reload",
       (await page
-        .locator(
-          '[aria-label="最近 PDF 会话"] button, [aria-label="最近 PDF 会话"] a'
-        )
-        .count()) === 0 &&
+        .locator('[aria-label="PDF 书架"] li[data-pdf-doc-id]')
+        .count()) === 1 &&
         (await page
           .getByRole("button", { name: "Smoke EPUB", exact: true })
-          .count()) === 1
+          .count()) === 1 &&
+        (await page
+          .locator(
+            '[aria-label="最近 PDF 会话"] button, [aria-label="最近 PDF 会话"] a'
+          )
+          .count()) === 0 &&
+        (
+          await page.locator('[aria-label="最近 PDF 会话"]').textContent()
+        ).includes("Legacy PDF")
+    );
+    // Reopen WITHOUT any setInputFiles call. Restore a nondefault page and
+    // zoom first, then reload again to exercise the complete cached chain.
+    await page.locator('[aria-label="PDF 书架"] .reader-recent').click();
+    await waitPdfNotes();
+    await assertSiblingTypes(
+      "PDF",
+      page.locator("[data-pdf-note]").first(),
+      "PDF smoke note"
+    );
+    await page.getByRole("button", { name: "150%", exact: true }).click();
+    await checkPdfNotesGeometry("cached 150% zoom");
+    await page.click(".reader-pager button:last-child");
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector(".reader-position")
+          ?.textContent?.startsWith("2 /"),
+      undefined,
+      { timeout: 10000 }
+    );
+    await waitPdfNotes();
+    await page.click(".reader-reopen");
+    await page.waitForSelector('[aria-label="PDF 书架"] li[data-pdf-doc-id]');
+    await page.waitForFunction(() =>
+      document
+        .querySelector('[aria-label="PDF 书架"] li')
+        ?.textContent?.includes("第 2 页")
+    );
+    check(
+      "PDF shelf: row carries the latest page",
+      (await page.locator('[aria-label="PDF 书架"] li').textContent()).includes(
+        "第 2 页"
+      )
+    );
+    await page.reload();
+    await page.locator('[aria-label="PDF 书架"] .reader-recent').click();
+    await waitPdfNotes();
+    check(
+      "PDF shelf: reload and picker-free reopen restore page and scale",
+      (await page.locator(".reader-position").textContent()).startsWith(
+        "2 /"
+      ) &&
+        (await page
+          .getByRole("button", { name: "150%", exact: true })
+          .getAttribute("aria-pressed")) === "true"
+    );
+    const untouched = await page.evaluate(async () => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      return (await createPdfBytesStore().list())[0];
+    });
+    check(
+      "PDF shelf: cached opens never rewrite Blob metadata",
+      JSON.stringify(untouched) === JSON.stringify(cached.entry)
+    );
+    await page.click(".reader-pager button:first-child");
+    await waitPdfNotes();
+    await assertSiblingTypes(
+      "PDF",
+      page.locator("[data-pdf-note]").first(),
+      "PDF smoke note"
+    );
+    await page.click(".reader-reopen");
+    await page
+      .getByRole("button", {
+        name: `从书架删除《${cached.entry.title}》`,
+        exact: true,
+      })
+      .click();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[aria-label="PDF 书架"]') &&
+        document.querySelectorAll('[aria-label="PDF 书架"] li').length === 0 &&
+        !document.querySelector('[aria-label="最近 PDF 会话"]')
+    );
+    const deleted = await page.evaluate(async (docId) => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      const store = createPdfBytesStore();
+      let missing = false;
+      try {
+        await store.get(docId);
+      } catch {
+        missing = true;
+      }
+      const positions = (
+        await window.chrome.storage.local.get("pdf-positions")
+      )["pdf-positions"];
+      const notes = (await window.chrome.storage.local.get("pdf-notes"))[
+        "pdf-notes"
+      ];
+      return (
+        missing &&
+        (await store.list()).length === 0 &&
+        positions.recent === null &&
+        positions.positions.some((position) => position.docId === docId) &&
+        notes.notes.some((note) => note.docId === docId)
+      );
+    }, cached.entry.docId);
+    check(
+      "PDF shelf: delete commits bytes and recent removal but retains notes/position",
+      deleted
     );
     await page.setInputFiles('input[type="file"]', {
       name: "renamed.pdf",
@@ -641,6 +946,28 @@ const runScenarios = async (page, port) => {
       page.locator("[data-pdf-note]").first(),
       "PDF smoke note"
     );
+    await page.click(".reader-reopen");
+    await page.waitForSelector('[aria-label="PDF 书架"] li');
+    const beforeReplace = await page.evaluate(async () => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      return (await createPdfBytesStore().list())[0].storedAt;
+    });
+    await page.setInputFiles('input[type="file"]', {
+      name: "same-again.pdf",
+      mimeType: "application/pdf",
+      buffer: samplePdf,
+    });
+    await waitPdfNotes();
+    await page.click(".reader-reopen");
+    await page.waitForFunction(async (previous) => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      const entries = await createPdfBytesStore().list();
+      return entries.length === 1 && entries[0].storedAt > previous;
+    }, beforeReplace);
+    check(
+      "PDF shelf: reselect recreates shelf and repeated picker import refreshes one identity",
+      (await page.locator('[aria-label="PDF 书架"] li').count()) === 1
+    );
   };
 
   const scannedScenario = async () => {
@@ -651,6 +978,10 @@ const runScenarios = async (page, port) => {
     scanned
       .addPage([612, 792])
       .drawRectangle({ x: 50, y: 400, width: 500, height: 300 });
+    const before = await page.evaluate(async () => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      return await createPdfBytesStore().list();
+    });
     await importBook({
       name: "scan.pdf",
       mimeType: "application/pdf",
@@ -660,6 +991,14 @@ const runScenarios = async (page, port) => {
     check(
       "PDF: scanned gets the 书-wording rejection",
       (await page.textContent(".reader-error")).includes("扫描版 PDF 不支持")
+    );
+    const after = await page.evaluate(async () => {
+      const { createPdfBytesStore } = await import("/pdf-bytes-proof.js");
+      return await createPdfBytesStore().list();
+    });
+    check(
+      "PDF shelf: scanned rejection never commits a candidate",
+      JSON.stringify(before) === JSON.stringify(after)
     );
   };
 
@@ -711,6 +1050,7 @@ try {
     }
   });
 
+  await proveNativePdfBytes(page, port);
   await runScenarios(page, port);
 
   // The only tolerable console error is the favicon 404 — identified by its
@@ -731,6 +1071,7 @@ try {
     pageErrors.join(" | ")
   );
 } finally {
+  rmSync(proofDir, { recursive: true, force: true });
   proc?.kill("SIGKILL");
   server.close();
   // Let the SIGKILL land before deleting the profile, or a still-dying

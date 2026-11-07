@@ -8,6 +8,11 @@ export type PdfRecent = PdfPosition & { title: string };
 export interface PdfPositionStore {
   getPosition(docId: string): Promise<PdfPosition | null>;
   getRecent(): Promise<PdfRecent | null>;
+  getSnapshot(): Promise<{
+    positions: PdfPosition[];
+    recent: PdfRecent | null;
+  }>;
+  clearRecentIf(docId: string): Promise<void>;
   setPosition(position: PdfRecent): Promise<void>;
 }
 type PositionRecord = {
@@ -99,6 +104,27 @@ export function createPdfPositionStore(
       } catch {
         return null;
       }
+    },
+    async getSnapshot() {
+      await pendingWrite;
+      try {
+        const { positions, recent } = decode(await record.read());
+        return { positions, recent };
+      } catch {
+        return { positions: [], recent: null };
+      }
+    },
+    clearRecentIf(docId) {
+      const run = record.update(async (raw, write) => {
+        const data = decode(raw);
+        if (data.recent?.docId !== docId) return;
+        data.recent = null;
+        await write(data);
+      });
+      // Unlike best-effort position saves, cleanup failures must be visible
+      // to the shelf so they can be retried without deleting any positions.
+      pendingWrite = run.catch(() => undefined);
+      return run;
     },
     setPosition(position) {
       pendingWrite = record

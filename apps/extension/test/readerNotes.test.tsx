@@ -8,6 +8,10 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildEpub } from "@lingualeaf/import-core/testing";
+import {
+  createMemoryPdfBytesBackend,
+  createPdfBytesStore,
+} from "../src/store/idb-bytes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import type { ExtBook } from "../src/reader/import-book";
 import { createMemoryLibraryStore } from "../src/store/library-store";
@@ -80,7 +84,12 @@ async function openReader(notes: NotesStore = createMemoryNotesStore()) {
     book: BOOK,
   });
   const tree = () => (
-    <ReaderPage store={vocab} notes={notes} library={library} />
+    <ReaderPage
+      pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+      store={vocab}
+      notes={notes}
+      library={library}
+    />
   );
   const view = render(tree());
   fireEvent.click(await screen.findByRole("button", { name: BOOK.title }));
@@ -503,7 +512,14 @@ async function openReaderWithoutWaiting(notes: NotesStore) {
     title: BOOK.title,
     book: BOOK,
   });
-  render(<ReaderPage store={vocab} notes={notes} library={library} />);
+  render(
+    <ReaderPage
+      pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+      store={vocab}
+      notes={notes}
+      library={library}
+    />
+  );
   fireEvent.click(await screen.findByRole("button", { name: BOOK.title }));
 }
 
@@ -522,7 +538,14 @@ describe("same-title import protection in the reader", () => {
   it("silently reimports equal source content, blocks changed content, and cancellation preserves notes and book", async () => {
     const library = createMemoryLibraryStore();
     const notes = createMemoryNotesStore();
-    render(<ReaderPage store={vocab} notes={notes} library={library} />);
+    render(
+      <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+        store={vocab}
+        notes={notes}
+        library={library}
+      />
+    );
     await pick("<p>Original words.</p>");
     await screen.findByRole("heading", { name: BOOK.title });
     const original = await library.openDocument(ANCHOR.docId);
@@ -555,7 +578,14 @@ describe("same-title import protection in the reader", () => {
     });
     const notes = createMemoryNotesStore();
     notes.list = vi.fn().mockRejectedValue(new Error("read failed"));
-    render(<ReaderPage store={vocab} notes={notes} library={library} />);
+    render(
+      <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+        store={vocab}
+        notes={notes}
+        library={library}
+      />
+    );
     await pick("<p>Different content.</p>");
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "笔记读取失败，未替换原书"

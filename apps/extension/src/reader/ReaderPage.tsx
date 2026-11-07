@@ -5,7 +5,6 @@ import { segmentOriginal, type StatusApplied } from "@lingualeaf/reading-model";
 import {
   IMPORT_ERROR_COPY,
   importBookFromFile,
-  readAsArrayBuffer,
   type ExtBook,
 } from "./import-book";
 import {
@@ -48,16 +47,25 @@ import {
 import {
   createPdfPositionStore,
   type PdfPositionStore,
-  type PdfRecent,
 } from "../store/pdf-position-store";
+import {
+  createPdfBytesStore,
+  readPdfBlob,
+  type PdfBytesStore,
+} from "../store/idb-bytes-store";
+import {
+  requestStoragePersistence,
+  type PersistenceResult,
+} from "../store/storage-persistence";
+import { usePdfShelf, type PdfShelfEntry } from "./usePdfShelf";
+import { PdfShelf } from "./PdfShelf";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
 // → reading, with errors as a phase that keeps the entry usable. The
 // offline dictionary and the vocabulary store resolve once per mount; the
 // store is injectable so tests drive the memory backend. Reading progress
-// itself arrives with ticket 05's storage work — a closed tab forgets the
-// book, and re-entry starts at the file picker.
+// and PDF bytes persist locally; re-entry starts at the shelf and picker.
 type ReaderState =
   | { phase: "empty" }
   | { phase: "importing" }
@@ -99,12 +107,14 @@ export function ReaderPage({
   notes: injectedNotes,
   pdfNotes: injectedPdfNotes,
   pdfPositions: injectedPdfPositions,
+  pdfBytes: injectedPdfBytes,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
   notes?: NotesStore;
   pdfNotes?: PdfNotesStore;
   pdfPositions?: PdfPositionStore;
+  pdfBytes?: PdfBytesStore;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
@@ -120,7 +130,31 @@ export function ReaderPage({
     () => injectedPdfPositions ?? createPdfPositionStore(),
     [injectedPdfPositions]
   );
-  const [pdfRecent, setPdfRecent] = useState<PdfRecent | null>(null);
+  const pdfBytes = useMemo(
+    () => injectedPdfBytes ?? createPdfBytesStore(),
+    [injectedPdfBytes]
+  );
+  const persistencePromise = useRef<Promise<PersistenceResult> | null>(null);
+  const [persistence, setPersistence] = useState<PersistenceResult | null>(
+    null
+  );
+  const persistenceOwner = useOwner();
+  const { run: runPersistence } = useSettle(persistenceOwner);
+  useEffect(() => {
+    persistencePromise.current ??= requestStoragePersistence();
+    void runPersistence(persistencePromise.current, {
+      onFresh: setPersistence,
+    });
+    return () => persistenceOwner.invalidate();
+  }, [persistenceOwner, runPersistence]);
+  const [pdfSaveError, setPdfSaveError] = useState<string | null>(null);
+  const shelfVisible = state.phase === "empty" || state.phase === "error";
+  const {
+    snapshot: shelf,
+    failed: shelfFailed,
+    refresh: refreshPdfShelf,
+  } = usePdfShelf(pdfBytes, pdfPositions, shelfVisible);
+  const pdfRecent = shelf?.recent;
   const openOwner = useOwner();
   const { run: runOpen } = useSettle(openOwner);
   // Accepted sessions are held immediately, including the interval before
@@ -196,6 +230,77 @@ export function ReaderPage({
   // scroll effect after the chapter renders.
   const restoreRef = useRef<ChapterProgress | null>(null);
 
+  const acceptPdf = async (
+    blob: Blob,
+    filename: string,
+    offline: OfflineDictionary,
+    openTicket: ReturnType<typeof openOwner.mark>,
+    save: boolean,
+    expectedDocId?: string
+  ) => {
+    const bytes = await readPdfBlob(blob);
+    const docId = await pdfFingerprint(bytes);
+    if (expectedDocId && docId !== expectedDocId)
+      throw new Error("PDF 书架字节与所选书不符");
+    if (openTicket.stale()) return;
+    let session: PdfSession;
+    try {
+      session = await openPdf(bytes, filename);
+    } catch (error) {
+      const reason = classifyPdfError(error);
+      if (!reason) throw error;
+      throw new UploadRejected(reason, String(error));
+    }
+    let transferred = false;
+    try {
+      if (openTicket.stale()) return;
+      const lengths = await sampleTextLengths(session.doc);
+      if (detectScanned(lengths))
+        throw new UploadRejected(
+          "scanned-pdf",
+          "image-only PDF has no text layer"
+        );
+      const position = await pdfPositions.getPosition(docId);
+      await runOpen(Promise.resolve(session), {
+        ticket: openTicket,
+        onFresh: () => {
+          transferred = true;
+          acceptedSession.current = session;
+          setPdfSaveError(null);
+          setState({
+            phase: "pdf",
+            docId,
+            title: session.title,
+            session,
+            page: Math.min(session.pageCount, Math.max(1, position?.page ?? 1)),
+            scale: position?.scale ?? 1,
+            lookup: offline.ipaLookup(),
+          });
+        },
+      });
+      // Acceptance is the only shelf admission point. Do not await storage
+      // on the reading path; the File is retained by the queued save.
+      if (transferred && save) {
+        const saving = pdfBytes.save({ docId, title: session.title, blob });
+        // A commit refreshes the current picker even if the originating
+        // session has already been left. Only feedback follows its ticket.
+        void saving.then(refreshPdfShelf, refreshPdfShelf);
+        void runOpen(
+          saving.then(
+            () => null,
+            () => "PDF 未能存入书架，请重选同一个文件重试。"
+          ),
+          {
+            ticket: openTicket,
+            onFresh: setPdfSaveError,
+          }
+        );
+      }
+    } finally {
+      if (!transferred) await destroyPdf(session);
+    }
+  };
+
   const handleFile = async (file: File | undefined | null) => {
     if (!file || state.phase === "importing") return;
     if (!closeNote()) return;
@@ -207,53 +312,9 @@ export function ReaderPage({
     try {
       const offline: OfflineDictionary = await dictionary;
       if (/\.pdf$/i.test(file.name)) {
-        // The shared read shape (import-book's readAsArrayBuffer): the one
-        // FileReader form both jsdom and Edge implement.
-        const bytes = await readAsArrayBuffer(file);
-        const docId = await pdfFingerprint(bytes);
-        if (openTicket.stale()) return;
-        let session: PdfSession;
-        try {
-          session = await openPdf(bytes, file.name);
-        } catch (error) {
-          // pdf.js's native failures ride the shared rejection vocabulary;
-          // anything unmapped keeps its own story (the 意外 copy).
-          const reason = classifyPdfError(error);
-          if (!reason) throw error;
-          throw new UploadRejected(reason, String(error));
-        }
-        let transferred = false;
-        try {
-          if (openTicket.stale()) return;
-          const lengths = await sampleTextLengths(session.doc);
-          if (detectScanned(lengths))
-            throw new UploadRejected(
-              "scanned-pdf",
-              "image-only PDF has no text layer"
-            );
-          const position = await pdfPositions.getPosition(docId);
-          await runOpen(Promise.resolve(session), {
-            ticket: openTicket,
-            onFresh: () => {
-              transferred = true;
-              acceptedSession.current = session;
-              setState({
-                phase: "pdf",
-                docId,
-                title: session.title,
-                session,
-                page: Math.min(
-                  session.pageCount,
-                  Math.max(1, position?.page ?? 1)
-                ),
-                scale: position?.scale ?? 1,
-                lookup: offline.ipaLookup(),
-              });
-            },
-          });
-        } finally {
-          if (!transferred) await destroyPdf(session);
-        }
+        // Hold the picker File itself BEFORE PDF.js gets a derived buffer.
+        // openPdf may transfer/detach that buffer; the File remains intact.
+        await acceptPdf(file, file.name, offline, openTicket, true);
         return;
       }
       const book = await importBookFromFile(file, offline.ipaLookup());
@@ -303,8 +364,6 @@ export function ReaderPage({
   // The landing's recents: loaded whenever the picker shows.
   useEffect(() => {
     if (state.phase !== "empty") return;
-    const ticket = openOwner.mark();
-    void runOpen(pdfPositions.getRecent(), { ticket, onFresh: setPdfRecent });
     let cancelled = false;
     library
       .listDocuments()
@@ -318,7 +377,7 @@ export function ReaderPage({
     return () => {
       cancelled = true;
     };
-  }, [state.phase, library, pdfPositions, openOwner, runOpen]);
+  }, [state.phase, library]);
 
   // 重开扩展回到原处: a recents click opens the stored book at its saved
   // position (GLOSSARY: 扩展阅读页 remembers, the storage seam persists).
@@ -349,6 +408,34 @@ export function ReaderPage({
         });
       },
     });
+  };
+
+  const reopenPdf = async (entry: PdfShelfEntry) => {
+    if (state.phase === "importing" || !closeNote()) return;
+    reopenOwner.invalidate();
+    openOwner.invalidate();
+    const ticket = openOwner.mark();
+    setLookup(null);
+    setState({ phase: "importing" });
+    try {
+      const record = await pdfBytes.get(entry.docId);
+      await acceptPdf(
+        record.blob,
+        record.title,
+        await dictionary,
+        ticket,
+        false,
+        entry.docId
+      );
+    } catch {
+      await runOpen(
+        Promise.resolve("PDF 书架读取失败，请重试打开或选择同一个文件。"),
+        {
+          ticket,
+          onFresh: (copy) => setState({ phase: "error", copy }),
+        }
+      );
+    }
   };
 
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
@@ -486,6 +573,11 @@ export function ReaderPage({
             onClose={() => setLookup(null)}
             onStatusApplied={handleStatusApplied}
           />
+        ) : null}
+        {pdfSaveError ? (
+          <p className="reader-hint" role="alert">
+            {pdfSaveError}
+          </p>
         ) : null}
         <PdfReader
           key={state.docId}
@@ -666,7 +758,35 @@ export function ReaderPage({
           </ol>
         </nav>
       ) : null}
-      {pdfRecent ? (
+      {shelfFailed ? (
+        <p className="reader-hint" role="alert">
+          PDF 书架读取失败。
+          <button
+            type="button"
+            onClick={() => {
+              void refreshPdfShelf();
+            }}
+          >
+            重试读取 PDF 书架
+          </button>
+        </p>
+      ) : null}
+      {shelf ? (
+        <PdfShelf
+          entries={shelf.entries}
+          bytes={pdfBytes}
+          positions={pdfPositions}
+          onOpen={(entry) => {
+            void reopenPdf(entry);
+          }}
+          refresh={refreshPdfShelf}
+          failed={shelfFailed}
+        />
+      ) : !shelfFailed ? (
+        <p className="reader-hint">PDF 书架读取中…</p>
+      ) : null}
+      {pdfRecent &&
+      !shelf?.entries.some((entry) => entry.docId === pdfRecent.docId) ? (
         <p className="reader-hint" aria-label="最近 PDF 会话">
           《{pdfRecent.title}》第 {pdfRecent.page} 页——选同一个文件继续
         </p>
@@ -680,6 +800,15 @@ export function ReaderPage({
           onChange={onPick}
         />
       </label>
+      {persistence && persistence !== "granted" ? (
+        <p className="reader-hint" data-persistence={persistence}>
+          {persistence === "unavailable"
+            ? "浏览器未提供持久存储申请，书架由浏览器管理空间。"
+            : persistence === "denied"
+              ? "浏览器未授予持久存储，书架由浏览器管理空间。"
+              : "持久存储申请失败，书架仍可使用。"}
+        </p>
+      ) : null}
       <p className="reader-hint">
         标注在浏览器本地完成：无网络、无服务进程。加密、损坏的档案与扫描版
         PDF（无文本层）无法导入。

@@ -101,3 +101,53 @@ describe("PDF positions and latest-session convenience data", () => {
     }
   });
 });
+
+describe("PDF shelf position snapshot and recent cleanup", () => {
+  it("joins a single snapshot and serializes conditional recent clearing with writes", async () => {
+    const bag: Record<string, unknown> = {};
+    const store = createPdfPositionStore({
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next) {
+        Object.assign(bag, structuredClone(next));
+      },
+    });
+    await store.setPosition(a);
+    await store.clearRecentIf(b.docId);
+    expect(await store.getRecent()).toEqual(a);
+    const writing = store.setPosition(b);
+    const clearing = store.clearRecentIf(a.docId);
+    await Promise.all([writing, clearing]);
+    expect(await store.getRecent()).toEqual(b);
+    await store.clearRecentIf(b.docId);
+    expect(await store.getSnapshot()).toEqual({
+      positions: [
+        { docId: a.docId, page: a.page, scale: a.scale },
+        { docId: b.docId, page: b.page, scale: b.scale },
+      ],
+      recent: null,
+    });
+  });
+  it("propagates cleanup failure, preserves positions and can retry", async () => {
+    let fail = false;
+    const bag: Record<string, unknown> = {};
+    const store = createPdfPositionStore({
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next) {
+        if (fail) throw new Error("quota");
+        Object.assign(bag, structuredClone(next));
+      },
+    });
+    await store.setPosition(a);
+    fail = true;
+    await expect(store.clearRecentIf(a.docId)).rejects.toThrow("quota");
+    expect(await store.getRecent()).toEqual(a);
+    fail = false;
+    await store.clearRecentIf(a.docId);
+    expect(await store.getRecent()).toBeNull();
+    expect(await store.getPosition(a.docId)).not.toBeNull();
+  });
+});

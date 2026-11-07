@@ -122,6 +122,17 @@ body {
 .reader-recent:hover {
   text-decoration: underline;
 }
+.pdf-shelf li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.pdf-shelf .reader-recent {
+  overflow-wrap: anywhere;
+}
+.pdf-shelf li [role="alert"] {
+  grid-column: 1 / -1;
+  margin: 0;
+}
 /* The PDF in-place overlay (ticket 06, geometry per ticket 01): word hit
    targets sit exactly on their text over the canvas; each IPA hangs below
    its word's baseline band in the translucent chip the spike proved —

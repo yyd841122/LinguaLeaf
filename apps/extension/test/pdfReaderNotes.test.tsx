@@ -7,6 +7,10 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  createMemoryPdfBytesBackend,
+  createPdfBytesStore,
+} from "../src/store/idb-bytes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import * as pdf from "../src/reader/pdf";
 import { pdfFingerprint } from "../src/store/pdf-fingerprint";
@@ -95,11 +99,13 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  delete (navigator as { storage?: unknown }).storage;
 });
 function mount(
   notes = createMemoryPdfNotesStore(),
   positions = createMemoryPdfPositionStore(),
-  library = createMemoryLibraryStore()
+  library = createMemoryLibraryStore(),
+  bytes = createPdfBytesStore(createMemoryPdfBytesBackend())
 ) {
   const tree = () => (
     <ReaderPage
@@ -108,9 +114,10 @@ function mount(
       notes={createMemoryNotesStore()}
       pdfNotes={notes}
       pdfPositions={positions}
+      pdfBytes={bytes}
     />
   );
-  return { view: render(tree()), tree, notes, positions, library };
+  return { view: render(tree()), tree, notes, positions, library, bytes };
 }
 async function pick(tail = "A") {
   fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
@@ -498,7 +505,7 @@ describe("PDF line notes, reattachment and position", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("已存");
   });
 
-  it("persists only a nonclickable latest-session hint beside EPUB recents across remount, and drops drafts", async () => {
+  it("preserves the legacy no-bytes hint beside EPUB recents across remount, and drops drafts", async () => {
     const library = createMemoryLibraryStore();
     await library.saveDocument({
       id: "doc:EPUB",
@@ -515,6 +522,8 @@ describe("PDF line notes, reattachment and position", () => {
     ctx.view.unmount();
     expect(window.confirm).not.toHaveBeenCalled();
     expect(await ctx.notes.list(await id())).toEqual([]);
+    // Simulate a legacy session whose bytes were never cached.
+    await ctx.bytes.delete(await id());
     render(ctx.tree());
     expect(await screen.findByLabelText("最近 PDF 会话")).toHaveTextContent(
       "《Same title》第 2 页——选同一个文件继续"
@@ -709,5 +718,378 @@ describe("PDF ownership", () => {
     expect(candidates[2]!.doc.destroy).not.toHaveBeenCalled();
     reopen();
     expect(candidates[2]!.doc.destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("PDF shelf admission and byte ownership", () => {
+  it("retains the picker Blob when PDF.js transfers its buffer", async () => {
+    const ctx = mount();
+    vi.mocked(pdf.openPdf).mockImplementation(async (buffer) => {
+      structuredClone(buffer, { transfer: [buffer] });
+      expect(buffer.byteLength).toBe(0);
+      return session();
+    });
+    await pick();
+    await waitFor(async () => expect(await ctx.bytes.list()).toHaveLength(1));
+    expect((await ctx.bytes.get(await id())).blob.size).toBe(
+      new Blob([source()]).size
+    );
+  });
+
+  it("never shelves scanned or superseded candidates", async () => {
+    const ctx = mount();
+    vi.mocked(pdf.sampleTextLengths).mockResolvedValueOnce([0]);
+    fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+      target: { files: [new File([source()], "same.pdf")] },
+    });
+    await screen.findByText(/扫描版 PDF 不支持/);
+    expect(await ctx.bytes.list()).toEqual([]);
+    const sample = deferred<number[]>();
+    vi.mocked(pdf.sampleTextLengths).mockReturnValueOnce(sample.promise);
+    fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+      target: { files: [new File([source()], "same.pdf")] },
+    });
+    await waitFor(() => expect(pdf.sampleTextLengths).toHaveBeenCalledTimes(2));
+    ctx.view.unmount();
+    await act(async () => sample.resolve([120]));
+    expect(await ctx.bytes.list()).toEqual([]);
+  });
+
+  it("shows quota failure without blocking accepted reading", async () => {
+    const backend = createMemoryPdfBytesBackend();
+    vi.spyOn(backend, "put").mockRejectedValue(new Error("QuotaExceededError"));
+    const ctx = mount(
+      undefined,
+      undefined,
+      undefined,
+      createPdfBytesStore(backend)
+    );
+    await pick();
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "PDF 未能存入书架"
+    );
+    expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled();
+    expect(await ctx.bytes.list()).toEqual([]);
+  });
+
+  it("requests persistence once per mount across file opens and rerenders", async () => {
+    const persist = vi.fn().mockResolvedValue(false);
+    Object.defineProperty(navigator, "storage", {
+      configurable: true,
+      value: { persist },
+    });
+    const ctx = mount();
+    await pick();
+    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    ctx.view.rerender(ctx.tree());
+    expect(persist).toHaveBeenCalledTimes(1);
+    expect(
+      await screen.findByText("浏览器未授予持久存储，书架由浏览器管理空间。")
+    ).toBeInTheDocument();
+    delete (navigator as { storage?: unknown }).storage;
+  });
+});
+
+function shelfRow(docId: string) {
+  return [
+    ...document.querySelectorAll<HTMLElement>("li[data-pdf-doc-id]"),
+  ].find((node) => node.getAttribute("data-pdf-doc-id") === docId);
+}
+async function land() {
+  fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+  await screen.findByLabelText("PDF 书架");
+}
+
+describe("PDF shelf entries, failure tiers and mutation ordering", () => {
+  it("joins one position snapshot, coexists with EPUB and no-bytes hints, and reopens notes/page/scale without rewriting bytes", async () => {
+    const positions = createMemoryPdfPositionStore();
+    const library = createMemoryLibraryStore();
+    await library.saveDocument({
+      id: "doc:EPUB",
+      title: "EPUB",
+      book: { title: "EPUB", chapters: [] },
+    });
+    await positions.setPosition({
+      docId: await id("B"),
+      title: "Cached",
+      page: 3,
+      scale: 1.5,
+    });
+    await positions.setPosition({
+      docId: await id(),
+      title: "Legacy",
+      page: 2,
+      scale: 1,
+    });
+    const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
+    await bytes.save({
+      docId: await id("B"),
+      title: "Cached",
+      blob: new Blob([source("B")]),
+    });
+    const snapshot = vi.spyOn(positions, "getSnapshot");
+    const getPosition = vi.spyOn(positions, "getPosition");
+    const get = vi.spyOn(bytes, "get");
+    const saveBytes = vi.spyOn(bytes, "save");
+    const notes = createMemoryPdfNotesStore();
+    for (const type of NOTE_TYPES)
+      await notes.save(
+        {
+          docId: await id("B"),
+          page: 3,
+          lineIndex: 0,
+          lineText: lineText(3),
+          type,
+        },
+        type
+      );
+    mount(notes, positions, library, bytes);
+    await screen.findByRole("button", { name: "Cached" });
+    expect(shelfRow(await id("B"))).toHaveTextContent("第 3 页");
+    expect(snapshot).toHaveBeenCalledTimes(1);
+    expect(getPosition).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    expect(await screen.findByLabelText("最近 PDF 会话")).toHaveTextContent(
+      "Legacy"
+    );
+    expect(screen.getByRole("button", { name: "EPUB" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cached" }));
+    await enabled();
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "150%" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    expect(openNote()).toHaveValue("progress");
+    for (const [index, label] of ["进度", "感受", "思路", "疑问"].entries()) {
+      fireEvent.click(screen.getByRole("tab", { name: label }));
+      expect(screen.getByRole("textbox")).toHaveValue(NOTE_TYPES[index]);
+    }
+    expect(saveBytes).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await land();
+    expect(screen.queryByLabelText("最近 PDF 会话")).toBeNull();
+  });
+
+  it("shows list/open failures as retryable failures and keeps the picker available", async () => {
+    const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
+    await bytes.save({
+      docId: await id(),
+      title: "Cached",
+      blob: new Blob([source()]),
+    });
+    vi.spyOn(bytes, "list").mockRejectedValueOnce(new Error("database open"));
+    mount(undefined, undefined, undefined, bytes);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "PDF 书架读取失败"
+    );
+    expect(screen.queryByText("书架暂无 PDF。")).toBeNull();
+    expect(screen.getByLabelText("选择 EPUB 或 PDF 文件")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "重试读取 PDF 书架" }));
+    await screen.findByRole("button", { name: "Cached" });
+    vi.spyOn(bytes, "get").mockRejectedValueOnce(new Error("missing bytes"));
+    fireEvent.click(screen.getByRole("button", { name: "Cached" }));
+    expect(
+      await screen.findByText("PDF 书架读取失败，请重试打开或选择同一个文件。")
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("选择 EPUB 或 PDF 文件")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Cached" }));
+    await screen.findByRole("heading", { name: "Same title" });
+  });
+
+  it("rejects cached bytes under the wrong docId and retries after a Blob read failure", async () => {
+    const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
+    await bytes.save({
+      docId: await id(),
+      title: "Cached",
+      blob: new Blob([source()]),
+    });
+    const get = vi.spyOn(bytes, "get");
+    get.mockResolvedValueOnce({
+      docId: await id(),
+      title: "Cached",
+      size: new Blob([source("B")]).size,
+      storedAt: 1,
+      blob: new Blob([source("B")]),
+    });
+    mount(undefined, undefined, undefined, bytes);
+    fireEvent.click(await screen.findByRole("button", { name: "Cached" }));
+    await screen.findByText("PDF 书架读取失败，请重试打开或选择同一个文件。");
+    expect(pdf.openPdf).not.toHaveBeenCalled();
+    const blob = new Blob([source()]);
+    Object.defineProperty(blob, "arrayBuffer", {
+      value: () => Promise.reject(new Error("Blob read")),
+    });
+    get.mockResolvedValueOnce({
+      docId: await id(),
+      title: "Cached",
+      size: blob.size,
+      storedAt: 1,
+      blob,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Cached" }));
+    await screen.findByText("PDF 书架读取失败，请重试打开或选择同一个文件。");
+    expect(pdf.openPdf).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cached" }));
+    await screen.findByRole("heading", { name: "Same title" });
+  });
+
+  it("refreshes the current picker when a save finishes after leaving reading", async () => {
+    const backend = createMemoryPdfBytesBackend();
+    const gate = deferred<void>();
+    const put = backend.put.bind(backend);
+    vi.spyOn(backend, "put").mockImplementation((record) =>
+      gate.promise.then(() => put(record))
+    );
+    const bytes = createPdfBytesStore(backend);
+    mount(undefined, undefined, undefined, bytes);
+    await pick();
+    await land();
+    expect(screen.queryByRole("button", { name: "Same title" })).toBeNull();
+    await act(async () => gate.resolve());
+    expect(
+      await screen.findByRole("button", { name: "Same title" })
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText("最近 PDF 会话")).toBeNull();
+  });
+
+  it("queues deletion behind a delayed replacement and removes the row only after commit", async () => {
+    const backend = createMemoryPdfBytesBackend();
+    const bytes = createPdfBytesStore(backend);
+    await bytes.save({
+      docId: await id(),
+      title: "Old",
+      blob: new Blob([source()]),
+    });
+    const gate = deferred<void>();
+    const put = backend.put.bind(backend);
+    vi.spyOn(backend, "put").mockImplementation((record) =>
+      gate.promise.then(() => put(record))
+    );
+    const ctx = mount(undefined, undefined, undefined, bytes);
+    await pick();
+    await land();
+    const remove = await screen.findByRole("button", {
+      name: "从书架删除《Old》",
+    });
+    fireEvent.click(remove);
+    expect(remove).toBeDisabled();
+    expect(shelfRow(await id())).toBeInTheDocument();
+    await act(async () => gate.resolve());
+    await waitFor(async () => expect(shelfRow(await id())).toBeUndefined());
+    expect(await bytes.list()).toEqual([]);
+    expect(await ctx.positions.getRecent()).toBeNull();
+    expect(await ctx.positions.getPosition(await id())).not.toBeNull();
+    expect(window.confirm).not.toHaveBeenCalled();
+  });
+
+  it("keeps the row on failed deletion, then deletes bytes while retaining notes and positions for reselect", async () => {
+    const ctx = mount();
+    await pick();
+    await enabled();
+    await save("Keep my note");
+    await land();
+    vi.spyOn(ctx.bytes, "delete").mockRejectedValueOnce(
+      new Error("delete failed")
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "从书架删除《Same title》" })
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent("PDF 删除失败");
+    expect(shelfRow(await id())).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "从书架删除《Same title》" })
+    );
+    await waitFor(async () => expect(shelfRow(await id())).toBeUndefined());
+    expect(await ctx.notes.list(await id())).toHaveLength(1);
+    expect(await ctx.positions.getPosition(await id())).not.toBeNull();
+    await pick();
+    await enabled();
+    expect(openNote()).toHaveValue("Keep my note");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await land();
+    expect(
+      await screen.findByRole("button", { name: "Same title" })
+    ).toBeInTheDocument();
+  });
+
+  it("retries recent cleanup independently after bytes deletion commits", async () => {
+    const ctx = mount();
+    await pick();
+    await land();
+    vi.spyOn(ctx.positions, "clearRecentIf").mockRejectedValueOnce(
+      new Error("storage")
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "从书架删除《Same title》" })
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "最近会话清理失败"
+    );
+    expect(await ctx.bytes.list()).toEqual([]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "重试清理最近 PDF 会话" })
+    );
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(await ctx.positions.getRecent()).toBeNull();
+    expect(await ctx.positions.getPosition(await id())).not.toBeNull();
+  });
+
+  it("keeps each concurrent deletion disabled until its own commit", async () => {
+    const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
+    await bytes.save({
+      docId: await id(),
+      title: "A",
+      blob: new Blob([source()]),
+    });
+    await bytes.save({
+      docId: await id("B"),
+      title: "B",
+      blob: new Blob([source("B")]),
+    });
+    const remove = bytes.delete.bind(bytes);
+    const a = deferred<void>();
+    const b = deferred<void>();
+    const aId = await id();
+    vi.spyOn(bytes, "delete").mockImplementation((docId) =>
+      (docId === aId ? a.promise : b.promise).then(() => remove(docId))
+    );
+    mount(undefined, undefined, undefined, bytes);
+    const buttonA = await screen.findByRole("button", {
+      name: "从书架删除《A》",
+    });
+    const buttonB = screen.getByRole("button", { name: "从书架删除《B》" });
+    fireEvent.click(buttonA);
+    fireEvent.click(buttonB);
+    expect(buttonA).toBeDisabled();
+    expect(buttonB).toBeDisabled();
+    await act(async () => a.resolve());
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "从书架删除《A》" })
+      ).toBeNull()
+    );
+    expect(buttonB).toBeDisabled();
+    await act(async () => b.resolve());
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "从书架删除《B》" })
+      ).toBeNull()
+    );
+  });
+
+  it("drops an earlier document's late save failure after opening another PDF", async () => {
+    const backend = createMemoryPdfBytesBackend();
+    const gate = deferred<void>();
+    vi.spyOn(backend, "put").mockImplementationOnce(() => gate.promise);
+    mount(undefined, undefined, undefined, createPdfBytesStore(backend));
+    await pick();
+    await land();
+    await pick("B");
+    await act(async () => gate.reject(new Error("late quota")));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      screen.getByRole("heading", { name: "Same title" })
+    ).toBeInTheDocument();
   });
 });

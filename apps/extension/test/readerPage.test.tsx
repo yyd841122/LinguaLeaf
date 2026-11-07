@@ -14,6 +14,10 @@ import {
 import { createMemoryPdfNotesStore } from "../src/store/pdf-notes-store";
 import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
+import {
+  createMemoryPdfBytesBackend,
+  createPdfBytesStore,
+} from "../src/store/idb-bytes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { importBook } from "../src/reader/import-book";
@@ -83,6 +87,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
   it("imports a fixture EPUB and reads it chapter by chapter", async () => {
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -106,6 +111,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
   it("reports a broken archive with the invalid-epub copy and keeps the entry usable", async () => {
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -129,6 +135,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
   it("declines unrecognized files with the unsupported copy", async () => {
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -150,6 +157,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
     // real browser smoke (InvalidPDFException is the browser's shape).
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -183,6 +191,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
     });
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -208,6 +217,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
     });
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -237,6 +247,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
     });
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
       />
@@ -420,6 +431,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
@@ -452,6 +464,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     harness.memory.map.set("woke", "known");
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
@@ -477,6 +490,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
@@ -507,6 +521,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
@@ -541,6 +556,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
@@ -574,6 +590,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
     const harness = deferredBackend();
     render(
       <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
         notes={createMemoryNotesStore()}
         library={createMemoryLibraryStore()}
         store={createVocabularyStore(
@@ -644,6 +661,7 @@ function renderWithSeams({
     );
   return render(
     <ReaderPage
+      pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
       notes={createMemoryNotesStore()}
       store={vocab}
       pdfNotes={createMemoryPdfNotesStore()}
