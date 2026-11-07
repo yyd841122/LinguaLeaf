@@ -15,5 +15,10 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci
+      - run: npm ci --ignore-scripts
+      # Skip-workspace-prepare ordering: import-core's tsc needs
+      # reading-model's dist types, and npm ci races the two prepares
+      # (first CI run failed exactly there). Build them in order.
+      - run: npm rebuild better-sqlite3
+      - run: npm run build --workspace @lingualeaf/reading-model && npm run build --workspace @lingualeaf/import-core
       - run: npm run verify
