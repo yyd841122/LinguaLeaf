@@ -114,3 +114,27 @@ storage 后端经注入缝替换为 WebView 等价物,书架 + EPUB 阅读链路
 4. Lane A 管线的 Codex 独立审核(票面逐条 + 变异心证),随收官同场
 5. 若点词发音(speechSynthesis)真机不可靠 → 原生 TTS 插件回填,记录
    进票(spec 既有预案);若选择器真机也可疑 → 换文件插件,替换记录进票
+
+### 2026-11-09 人验确认(caller 会话内问答记档)
+
+- **EPUB 链路人验:通过**——维护者确认(会话内「确认epub 通过」)
+- **飞行模式断网全链路:已验证**(维护者勾选)
+- **杀进程重开资产仍在:已验证**(维护者勾选:书/进度/生词/笔记都在)
+- **点词发音:不通过**——按钮可点、不出声(speechSynthesis 在 Android
+  WebView 静默,spec 既有预案触发)→ 存根票
+  [09-mobile-pronunciation-native-tts](09-mobile-pronunciation-native-tts.md)
+  承接原生 TTS 回填(needs-triage:提前立 vs 并入 07 同插件,triage 拍板)
+- 验收门「点词查详情(含发音)」字面未全绿,02 暂不翻 done,等发音缺口
+  处置拍板(按预案路由 09 后翻 done,或等 09 落地)
+- caller 显式补跑根 `npm run verify`:**EXIT=0**(84 文件,1028 passed |
+  3 skipped)
+
+### 2026-11-09 Codex 独立审核:usage 限额触顶,改期补跑
+
+首跑失败(codex-runner EXIT=1,非 stalled):**usage limit hit,22:02 PM
+重置**。按纪律失败不重试。jobId `review-plan-mw994ujb-wcwqsz`,threadId
+`01a1c055-61e5-7603-917b-629e3d03e036`(入档;prompt 已在该 thread 内,
+`/cc-suite:continue 01a1c055-61e5-7603-917b-629e3d03e036` 或 resume 补跑,
+审核契约全文见该次调用)。待收口第 4 条照旧,改到限额恢复后执行。
+双轴内置评审(Standards/Spec sub-agent)已先行跑过并记档,本条为独立模型
+终审,不因 fallback 缺位。
