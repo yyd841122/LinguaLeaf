@@ -1,6 +1,6 @@
-# 07 听书后台:前台服务 + 通知栏控制
-Status: ready-for-agent(2026-11-09 立票;第二批)
-Blocked by: 06
+# 08 听书后台:前台服务 + 通知栏控制
+Status: ready-for-agent(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 07)
+Blocked by: 07
 
 ## 目标
 

@@ -1,6 +1,6 @@
-# 04 备份/恢复:全量 JSON 双端手动互通
-Status: ready-for-agent(2026-11-09 立票)
-Blocked by: 03
+# 05 备份/恢复:全量 JSON 双端手动互通
+Status: ready-for-agent(2026-11-09 立票;/to-tickets 补全轮重编号,原 04)
+Blocked by: 02(与 04 并行,双轨)
 
 ## 目标
 

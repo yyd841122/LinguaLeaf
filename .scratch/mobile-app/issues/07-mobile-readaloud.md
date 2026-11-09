@@ -1,6 +1,6 @@
-# 06 听书 MVP:系统 TTS 连续朗读 EPUB
-Status: ready-for-agent(2026-11-09 立票;第二批)
-Blocked by: 05
+# 07 听书 MVP:系统 TTS 连续朗读 EPUB
+Status: ready-for-agent(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
+Blocked by: 06
 
 ## 目标
 

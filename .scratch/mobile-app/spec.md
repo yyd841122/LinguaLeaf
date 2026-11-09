@@ -1,7 +1,7 @@
 # mobile-app:LinguaLeaf 手机应用(Android)
-Status: ready-for-agent(2026-11-09 /to-spec 成文;票链 01-07 同日 ready-for-agent,见 issues/)
+Status: ready-for-agent(2026-11-09 /to-spec 成文;/to-tickets 定稿八票双轨,见 issues/)
 
-需求澄清(/grill-with-docs,2026-11-09:设计树三轮、十二题拍板)→ /to-spec 成文。架构决策本体 = **ADR-0008**(Capacitor 纯端侧、扩展阅读器为基座)。GLOSSARY 术语沿用:手机应用、听书(与发音严格分开)、生词本、标注、句子块、按需翻译、属主令牌。
+需求澄清(/grill-with-docs,2026-11-09:设计树三轮、十二题拍板)→ /to-spec 成文 → /to-tickets 定稿(八票双轨)。架构决策本体 = **ADR-0008**(Capacitor 纯端侧、扩展阅读器为基座)。GLOSSARY 术语沿用:手机应用、听书(与发音严格分开)、生词本、标注、句子块、按需翻译、属主令牌。
 
 ## Problem Statement
 
@@ -62,7 +62,7 @@ Status: ready-for-agent(2026-11-09 /to-spec 成文;票链 01-07 同日 ready-for
 
 - 模块:新 apps/mobile 包承载 reader/store 搬移面;共享内核(reading-model / import-core)不动
 - 持久化:storage 后端经既有注入缝替换为 WebView 等价物(Capacitor Preferences 或纯 IDB,票内定),倾向少一个原生插件
-- 翻译缝:服务端翻译逻辑的纯 TS 部分客户端化,直连 DeepSeek;按需翻译语义(ADR-0004:按章、显式触发)不变;异步落回沿用属主令牌/落回裁决不变量
+- 翻译缝:服务端翻译逻辑的纯 TS 部分客户端化,直连 DeepSeek;按需翻译语义(ADR-0004:按章、显式触发)不变;**范围仅 EPUB**(PDF 无章节结构,见 Out of Scope);异步落回沿用属主令牌/落回裁决不变量
 - 备份:版本化 JSON;必含生词本/笔记/进度/书签,书原文件可选;导入冲突粒度实现时定并记录;PC 侧仅加一条全量导出路由
 - 听书:系统 TTS 原生插件,同插件伺候发音与听书;句子块序列连读,进度跟随;PDF 按页面文本行序(已知差异,ADR-0008)
 - 交互基线:上下滚动(D10);深色跟随系统;显示开关语义沿用 GLOSSARY
@@ -84,6 +84,7 @@ Status: ready-for-agent(2026-11-09 /to-spec 成文;票链 01-07 同日 ready-for
 - 左右翻页(D10 未立案)、自动同步(D8 否决)
 - 云 TTS / 离线神经 TTS(D7 后置增强票)
 - 扫描件 PDF(既有导入边界)
+- **PDF 译文行**:按需翻译仅覆盖 EPUB(句子块章);PDF 坐标叠加无章节结构(2026-11-09 /to-tickets 澄清)
 - web 端功能演进(唯一例外:备份全量导出路由一处小改);扩展本体任何行为变更(D12)
 
 ## Further Notes
@@ -100,17 +101,21 @@ Status: ready-for-agent(2026-11-09 /to-spec 成文;票链 01-07 同日 ready-for
 - **依赖线**:react ^19.2.8、pdfjs-dist ^4.10.38、vite ~7.3.6(apps/extension/package.json)
 - **PC 侧备份落点**:apps/web/src/api.ts 为单文件薄 fetch 封装;导出路由落 books-router 旁
 
-### 批次与票索引
+### 批次与票索引(2026-11-09 /to-tickets 定稿,八票双轨)
+
+- **第一批(能日常装上手机用)**:01 → 02 → {03 ∥ 04 ∥ 05 三线并行} → 06
+- **第二批**:07 → 08
 
 | 票 | 标题 | Blocked by |
 |----|------|-----------|
 | 01 | Capacitor 脚手架:空壳真机可装 | — |
-| 02 | 阅读器搬移:离线全链路真机可用 | 01 |
-| 03 | 翻译缝:DeepSeek 客户端直连 + 设置页 | 02 |
-| 04 | 备份/恢复:全量 JSON 双端手动互通 | 03 |
-| 05 | 第一批收口:触控/安全区/深色跟随(exit gate) | 04 |
-| 06 | 听书 MVP:系统 TTS 连续朗读 EPUB | 05 |
-| 07 | 听书后台:前台服务 + 通知栏 | 06 |
+| 02 | storage 后端替换 + EPUB 链 | 01 |
+| 03 | PDF 链 | 02 |
+| 04 | 翻译缝:DeepSeek 客户端直连 + 设置页 | 02(与 05 并行) |
+| 05 | 备份/恢复:全量 JSON 双端手动互通 | 02(与 04 并行) |
+| 06 | 第一批收口:触控/安全区/深色跟随(exit gate) | 04 + 05 |
+| 07 | 听书 MVP:系统 TTS 连续朗读 EPUB | 06 |
+| 08 | 听书后台:前台服务 + 通知栏 | 07 |
 
 ### 领票与门
 

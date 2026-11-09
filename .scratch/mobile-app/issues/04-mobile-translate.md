@@ -1,10 +1,10 @@
-# 03 翻译缝:DeepSeek 客户端直连 + 设置页 key 管理
-Status: ready-for-agent(2026-11-09 立票)
-Blocked by: 02
+# 04 翻译缝:DeepSeek 客户端直连 + 设置页 key 管理
+Status: ready-for-agent(2026-11-09 立票;/to-tickets 补全轮重编号,原 03)
+Blocked by: 02(与 05 并行,双轨)
 
 ## 目标
 
-按需翻译(ADR-0004:按章、显式触发)在手机端直连 DeepSeek:移植服务端翻译逻辑纯 TS 部分,设置页运行时管 key,不编译进 APK。
+按需翻译(ADR-0004:按章、显式触发)在手机端直连 DeepSeek:移植服务端翻译逻辑纯 TS 部分,设置页运行时管 key,不编译进 APK。**范围仅 EPUB**:句子块章承载按需翻译;PDF 坐标叠加无章节结构,译文行 Out of Scope(spec)。
 
 ## 范围
 
