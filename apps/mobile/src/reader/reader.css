@@ -300,3 +300,37 @@ body {
   min-width: 22px;
   line-height: 1;
 }
+
+/* The speak failure flag (ticket 09): a fixed dismissible card, so a
+   speak that cannot sound is never a silent click. The box mirrors the
+   kernel popup's card (annotated-shared.css .lookup-popup) — including
+   the light background, whose dark-mode variant is ticket 06's scope. */
+.speak-flag {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 30;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  background: #ffffff;
+  border: 1px solid #dde3d8;
+  border-radius: 0.5rem;
+  padding: 0.6rem 0.9rem;
+  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+}
+.speak-flag-copy {
+  flex: 1;
+  color: #b3261e;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+.speak-flag-close {
+  border: none;
+  background: none;
+  font-size: 1rem;
+  color: gray;
+  padding: 0 0.2rem;
+  cursor: pointer;
+}

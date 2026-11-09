@@ -623,6 +623,65 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
   });
 });
 
+// ─── ticket 09: the speak failure flag ───
+
+describe("ReaderPage — the speak failure flag (ticket 09)", () => {
+  beforeEach(() => {
+    stubDictionaryFetch(POPUP_DICT);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    // The speak router holds listeners across tests; drop this test's.
+    vi.restoreAllMocks();
+  });
+
+  it("a speak that cannot sound raises a readable flag on the page", async () => {
+    // Browser-host fallback with a synthesis that explodes: the flag must
+    // name the failure (synthesis failed, not engine missing) and stay.
+    class FakeUtterance {
+      lang = "";
+      constructor(public text: string) {}
+    }
+    vi.stubGlobal("speechSynthesis", {
+      cancel: vi.fn(),
+      speak: () => {
+        throw new Error("synthesis exploded");
+      },
+    } as unknown as SpeechSynthesis);
+    vi.stubGlobal(
+      "SpeechSynthesisUtterance",
+      FakeUtterance as unknown as SpeechSynthesisUtterance
+    );
+
+    const harness = deferredBackend();
+    render(
+      <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+        store={createVocabularyStore(
+          new OfflineDictionary(POPUP_DICT),
+          harness.backend
+        )}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
+    await openPopupFor("runs", harness);
+
+    fireEvent.click(screen.getByRole("button", { name: "发音" }));
+    const flag = await screen.findByRole("alert");
+    expect(flag).toHaveTextContent("发音失败");
+    expect(flag).toHaveTextContent("请稍后再试");
+    // The popup stays open and the reader can keep reading — the flag
+    // rides beside it, and the reader can dismiss it.
+    expect(
+      screen.getByRole("dialog", { name: "词详情：runs" })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭发音提示" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
 // ─── ticket 05: progress memory + recents ───
 
 import {
