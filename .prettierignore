@@ -3,3 +3,8 @@
 # 生成物按字节参与 --check 新鲜度比对,rewrap 会制造假漂移
 apps/server/src/export/file-script.generated.ts
 apps/server/src/export/style.generated.ts
+# 烘料词典按字节复用(extension 烘料 → mobile 资产 cmp 同一),lint-staged
+# 的 {*}: prettier 会把 minified JSON 重排成 pretty(+3.4MB 假漂移);
+# 字节同一就是这两份资产的契约(2026-11-09 mobile-app 02 实证被重排)
+apps/extension/public/dictionary.json
+apps/mobile/public/dictionary.json
