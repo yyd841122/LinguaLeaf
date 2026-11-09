@@ -1,5 +1,5 @@
 # 01 Capacitor 脚手架:apps/mobile 空壳真机可装
-Status: ready-for-human(2026-11-09 实现进树,验收门真机项待人验,见 ## Comments)
+Status: done(2026-11-09 收官:人验确认 + verify 补跑 EXIT=0 + Codex 独立审核裁决记档,见 ## Comments)
 Blocked by: 无
 
 ## 目标
@@ -82,3 +82,25 @@ gradle/Android SDK 构建、JDK 21 安装(delegation-lanes:宿主网络、跨进
   `还没有书，先导入一本吧。`;screencap 截图视觉一致(标题+分隔线+书架空态)
 - logcat 尾扫:无 FATAL、无 E/chromium、无 Capacitor error
 - 备注:设备双条目并存(经典 + mdns tls),全程 `-s 192.168.0.2:38193`
+
+### 2026-11-09 收官:人验确认 + caller 补跑 + Codex 独立审核 → done
+
+**人验确认(验收门第 2 条)**:维护者会话内「确认」——亲眼核对手机实机
+空书架页(LinguaLeaf 标题 + 书架空态),机检记录见上节。两道门齐。
+
+**caller 显式补跑 `npm run verify`**:EXIT=0(68 文件,828 passed | 2 skipped)。
+
+**Codex 独立审核**(Lane A 管线终步,read-only 沙箱 gpt-6.1-sol/high):
+jobId `review-plan-mw95al9o-qgvua9`,threadId
+`01a1bff2-f50f-7b61-ac80-b1f9a1f70146`(入档备 /cc-suite:continue)。
+- 票面「范围」六条:五 PASS + 一 CONCERN;实现链/根接线/APK 产物(4,199,751
+  字节、包名、label、min 24/target 36)现场取数全对上;02-08 范围正确未误报缺失
+- **总裁决 NEEDS REVISION,但零代码返工项**——唯一挡收官项 = 人验确认
+  未记进票面(其审核时点在人验之前),本节即补记,裁决关闭
+- 两条证据边界 CONCERN(记档不返工):
+  1. 「领票时 npm latest」事后无法独立复证——票面规则本为「以 npm 实际
+     安装为准」,实装 8.6.0 现场证实,边界接受
+  2. live reload 只验接线(CAP_DEV_SERVER_URL 注入 + README 流程),未热更
+     实测——留 02 开工首日 dev 流即用即测,不再单立验证项
+- 变异心证:占位页面由 App.test.tsx 三断言覆盖;「删入口脚本/拔根接线」类
+  变异靠 APK 冷启人验 + 本审核的直接读取捕获,与既有门互补,无漏检缺口
