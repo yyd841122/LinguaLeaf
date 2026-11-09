@@ -1,5 +1,5 @@
 # 02 storage 后端替换 + EPUB 链:断网真机读 EPUB 全链路
-Status: ready-for-human(2026-11-09 实现收官:装机机检全绿 + verify EXIT=0(终树复跑)+ 双轴评审入 Comments;真机全链路与杀进程门待人验)
+Status: done(2026-11-09 收官:人验四门过三,发音缺口按 spec 预案路由存根 09,维护者拍板 A 翻 done;Codex 终审 usage 触顶改期补跑,如有实项按 follow-up 处置,见 ## Comments)
 Blocked by: 01
 
 ## 目标
@@ -138,3 +138,14 @@ storage 后端经注入缝替换为 WebView 等价物,书架 + EPUB 阅读链路
 审核契约全文见该次调用)。待收口第 4 条照旧,改到限额恢复后执行。
 双轴内置评审(Standards/Spec sub-agent)已先行跑过并记档,本条为独立模型
 终审,不因 fallback 缺位。
+
+### 2026-11-09 收官翻 done(维护者拍板 A)
+
+发音缺口处置拍板:**A = 按预案翻 done + 09 提前立票实现**(三选项 A/B/C
+中取 A;B=并入 07、C=等 09 落地)。02 的纯端侧 EPUB 链路本体(导入/音标/
+查词/生词四态/进度/书签/笔记 + 飞行模式 + 杀进程持久)已全验,验收门唯一
+未绿项「点词查详情(含发音)」路由存根
+[09-mobile-pronunciation-native-tts](09-mobile-pronunciation-native-tts.md)
+(已立 ready-for-agent,排 06 收口前实现,07 听书复用同插件)。
+Codex 独立终审仍欠(usage 触顶,22:02 重置后补跑,threadId 已档):
+**done 不遮审核欠账**——补跑若出实项,按 follow-up 修笔处置并补跑 verify。
