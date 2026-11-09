@@ -70,3 +70,15 @@ gradle/Android SDK 构建、JDK 21 安装(delegation-lanes:宿主网络、跨进
    确认启动到空书架页(LinguaLeaf 标题 + 「书架 / 还没有书,先导入一本吧。」)
 3. caller 显式补跑根 `npm run verify`(退出码不等于 verify 门)
 4. Lane A 管线的 Codex 独立审核(票面逐条 + 变异心证),随收官同场
+
+### 2026-11-09 装机机检记录(无线 adb,PCAM00/ColorOS)
+
+机检是「装机机检记录」,用户验收是另一道门——手机亮屏后维护者亲眼确认即门过。
+
+- 装机:`adb install -r` **Success**(streamed install;无线传输 ~4 分钟)
+- 冷启:`am start -W` LaunchState **COLD**,TotalTime **1137ms**,
+  mCurrentFocus = `dev.lingualeaf.app/.MainActivity`,isKeyguardShowing=false
+- 验屏:`uiautomator dump` 四文案齐——`LinguaLeaf`、`书架`、
+  `还没有书，先导入一本吧。`;screencap 截图视觉一致(标题+分隔线+书架空态)
+- logcat 尾扫:无 FATAL、无 E/chromium、无 Capacitor error
+- 备注:设备双条目并存(经典 + mdns tls),全程 `-s 192.168.0.2:38193`
