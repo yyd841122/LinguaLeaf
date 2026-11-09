@@ -9,7 +9,7 @@ Status: ready-for-agent(2026-11-09 /to-spec 成文;/to-tickets 定稿八票双�
 
 ## Solution
 
-自用侧载的 Android 应用(Capacitor 壳 + WebView 跑现有 React 代码):把扩展阅读器的纯端侧全链路(双格式导入、离线词典、生词本四态、进度/书签/笔记)搬进新包,加一条 DeepSeek 按需翻译网络缝(key 运行时自填、不进安装包)和全新听书(系统 TTS 连续朗读)。分两批交付:第一批日常可用(装上手机就能导入读书),第二批听书(含锁屏后台播)。
+自用侧载的 Android 应用(Capacitor 壳 + WebView 跑现有 React 代码):把扩展阅读器的纯端侧全链路(双格式导入、离线词典、生词本四态、进度/笔记)搬进新包,加一条 DeepSeek 按需翻译网络缝(key 运行时自填、不进安装包)和全新听书(系统 TTS 连续朗读)。分两批交付:第一批日常可用(装上手机就能导入读书),第二批听书(含锁屏后台播)。〔2026-11-09 02 收官审核勘误:原句「进度/书签/笔记」把书签误写成扩展既有能力——书签是 web 侧能力(apps/web/src/bookmarks.ts),扩展阅读器没有;story 11 由新票在移动端新建,见 .scratch/mobile-app/issues/10-mobile-bookmarks.md〕
 
 ## User Stories
 

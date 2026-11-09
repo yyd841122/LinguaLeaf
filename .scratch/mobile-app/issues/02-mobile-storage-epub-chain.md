@@ -149,3 +149,57 @@ storage 后端经注入缝替换为 WebView 等价物,书架 + EPUB 阅读链路
 (已立 ready-for-agent,排 06 收口前实现,07 听书复用同插件)。
 Codex 独立终审仍欠(usage 触顶,22:02 重置后补跑,threadId 已档):
 **done 不遮审核欠账**——补跑若出实项,按 follow-up 修笔处置并补跑 verify。
+
+### 2026-11-09 Codex 独立终审记档(NEEDS REVISION:书签失实为首)
+
+补跑完成:jobId `review-plan-mw9c1wh8-k2ijo2`,threadId
+`01a1c055-61e5-7603-917b-629e3d03e036`(resume 同 thread),gpt-6.1-sol/high,
+read-only。审计基线 a015f31...55a1688。全报告在 thread 内,要点与处置:
+
+**票面逐条 18 项:15 PASS + 3 CONCERN + 1 FAIL**。替换面接线、零 chrome
+(5 处注释 0 代码)、字典字节身份(cmp=0)、装机与人验记录、09 路由忠实度
+等全 PASS;变异 a/b 有 catcher(mobile typecheck / 适配器契约测试)。
+
+**FAIL(14 书签)——核实属实,照单全收**:书签能力在扩展阅读器中**从未
+存在**(书签是 apps/web 的 reading-bookmarks 特性);spec Solution 段把
+「进度/书签/笔记」误写成扩展既有能力,to-tickets 转录进本票门,收官记录
+随之失实。处置:① spec.md:12 事实句已勘误(本票 Comments 留档);② 新票
+10-mobile-bookmarks 承接(needs-triage,时点/形状待拍板);③ **收官声明
+修正**:下段「纯端侧 EPUB 链路本体(…进度/书签/笔记…)已全验」中「书签」
+二字撤销——已验 = 进度 + 笔记(发音路由 09,书签路由 10)。
+
+**mutation c(字典字节门)NO CATCHER → follow-up 修笔(done 记录预授权)**:
+新增 apps/mobile/test/dictionaryAsset.test.ts——mobile 副本与 extension
+烘料逐字节同一 + 两路径都在 .prettierignore,双断言套件(jsdom 的
+import.meta.url 陷阱按记忆配方 cwd 锚绕开),mobile 套件绿。从此删 ignore
+条目或 rewrap 落盘都会红。
+
+**事实记录修正(审计 事实复核 1/2)**:src 实际 = **18 逐字副本**
+(reader 13 + store 4 + dict 1)**+ 7 修改**(namespace-record / library /
+vocabulary / notes / pdf-notes / pdf-position / ReaderPage)+ 1 新增
+(idb-namespace-storage);pdf-position 的必填补丁此前漏计。test 实际 =
+**13 逐字 + 2 修改**(libraryStore chrome-stub 段重写 / readerPage 一行
+注释)+ 1 新增(适配器),另有 App.test 重写与 setup.ts 加 crypto stub。
+字节量、APK 大小、测试计数(201|1 / 1028|3)审计复核吻合。
+
+**两项 CONCERN 记档**:PDF「不启用」——决策 4 原文即「02 门只验 EPUB,
+03 打开」,语义已record在案,不改历史文本;verify 独立复证——审计按
+read-only 契约只复核 typecheck/lint,caller 门照例另行补跑(EXIT 见下条
+补记)。
+
+**done 状态**:随书签处置拍板更新——与发音同法(路由 10 维持 done)或
+退回 ready-for-human(书签落地再翻),维护者定。
+
+### 2026-11-09 收官补记:书签拍板 + 修笔 verify → 终审闭环
+
+- **书签处置拍板:立票 10 + 02 维持 done**(与发音→09 同法;10 排期随
+  triage,建议与 09 并列 06 收口前)。收官声明以本票上一节的修正为准:
+  EPUB 链路已验 = 导入/音标/查词/生词四态/进度/笔记 + 飞行模式 + 杀进程
+  持久;发音路由 09,书签路由 10。
+- **mutation c 修笔落地**:apps/mobile/test/dictionaryAsset.test.ts
+  (?raw 导入双断言:字节同一 + ignore 清单;mobile 测试块禁 Node 全局,
+  vite ?raw 在 transform 期内联,process/jsdom 两坑均绕开)。
+- **caller 补跑根 `npm run verify`:EXIT=0**(85 文件,1030 passed |
+  3 skipped,含新门)。终审 NEEDS REVISION 的三个实项全部闭环:书签路由
+  10、字典门补齐、收官声明修正;两项 CONCERN(PDF 措辞、verify 独立
+  复证)记档处置如上。02 维持 done。
