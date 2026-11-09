@@ -8,8 +8,8 @@ import type { Plugin } from "vite";
 // wrapper's capture phase (apps/mobile/src/reader/WordLookupPopup.tsx),
 // which needs no build pipeline at all.
 
-// The specifier only ever appears inside the mobile router, and the plugin
-// rejects every other import, so the module is reached exactly once.
+// The specifier only ever appears inside the mobile router; every other
+// import passes through untouched (a null return lets Vite resolve it).
 export const KERNEL_SPEAK_VIRTUAL_ID = "virtual:lingualeaf-kernel-speak";
 
 export interface KernelSpeakPaths {

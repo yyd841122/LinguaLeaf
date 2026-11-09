@@ -44,7 +44,7 @@ import {
   type PersistenceResult,
 } from "../store/storage-persistence";
 import { usePdfShelf, type PdfShelfEntry } from "./usePdfShelf";
-import { onSpeakFailure } from "../speak/router";
+import { onSpeakOutcome } from "../speak/router";
 import { SpeakFailureFlag } from "../speak/SpeakFailureFlag";
 import type { SpeakFailure } from "../speak/speak-failure";
 import { ReaderLanding } from "./ReaderLanding";
@@ -105,13 +105,21 @@ export function ReaderPage({
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
-  // The speak router's failure story (ticket 09): every speak click — the
-  // popup's 发音 button via the wrapper's capture seam — raises a classified
-  // failure here, and the flag stays until the reader dismisses it. The
-  // router is module-level, so the subscription rides the component's
+  // The speak router's outcome story (ticket 09): every speak click — the
+  // popup's 发音 button via the wrapper's capture seam — lands here, and a
+  // classified failure raises the flag while a fresh success retires it
+  // (the settle-channel rule: no stale verdict may outlive its truth).
+  // The flag stays until the reader dismisses it or the next speak lands.
+  // The router is module-level, so the subscription rides the component's
   // lifetime and no per-popup state can outlive its credibility.
   const [speakFailure, setSpeakFailure] = useState<SpeakFailure | null>(null);
-  useEffect(() => onSpeakFailure(setSpeakFailure), []);
+  useEffect(
+    () =>
+      onSpeakOutcome((outcome) =>
+        setSpeakFailure(outcome.kind === "success" ? null : outcome)
+      ),
+    []
+  );
   // One namespace storage per mount backs all four record seams
   // (library / vocabulary / notes / pdf-notes) — one IndexedDB database,
   // one connection discipline; tests inject memory stores instead, so

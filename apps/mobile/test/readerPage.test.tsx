@@ -631,28 +631,26 @@ describe("ReaderPage — the speak failure flag (ticket 09)", () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
-    // The speak router holds listeners across tests; drop this test's.
-    vi.restoreAllMocks();
+    // The router subscription retires with the page: RTL cleanup unmounts
+    // the ReaderPage, and the effect's unsubscribe runs on unmount.
   });
 
-  it("a speak that cannot sound raises a readable flag on the page", async () => {
-    // Browser-host fallback with a synthesis that explodes: the flag must
-    // name the failure (synthesis failed, not engine missing) and stay.
+  function stubSpeech(speak: () => void): void {
     class FakeUtterance {
       lang = "";
       constructor(public text: string) {}
     }
     vi.stubGlobal("speechSynthesis", {
       cancel: vi.fn(),
-      speak: () => {
-        throw new Error("synthesis exploded");
-      },
+      speak,
     } as unknown as SpeechSynthesis);
     vi.stubGlobal(
       "SpeechSynthesisUtterance",
       FakeUtterance as unknown as SpeechSynthesisUtterance
     );
+  }
 
+  async function openPopupPage(): Promise<void> {
     const harness = deferredBackend();
     render(
       <ReaderPage
@@ -667,6 +665,15 @@ describe("ReaderPage — the speak failure flag (ticket 09)", () => {
     );
     await pickFile(await fixtureFile("book.epub", await POPUP_EPUB()));
     await openPopupFor("runs", harness);
+  }
+
+  it("a speak that cannot sound raises a readable flag on the page", async () => {
+    // Browser-host fallback with a synthesis that explodes: the flag must
+    // name the failure (synthesis failed, not engine missing) and stay.
+    stubSpeech(() => {
+      throw new Error("synthesis exploded");
+    });
+    await openPopupPage();
 
     fireEvent.click(screen.getByRole("button", { name: "发音" }));
     const flag = await screen.findByRole("alert");
@@ -679,6 +686,23 @@ describe("ReaderPage — the speak failure flag (ticket 09)", () => {
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭发音提示" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("a later successful speak retires the previous failure's flag", async () => {
+    stubSpeech(() => {
+      throw new Error("synthesis exploded");
+    });
+    await openPopupPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "发音" }));
+    await screen.findByRole("alert");
+    // The next click lands: a fresh success retires the stale verdict —
+    // the last rendered state must not outlive its credibility.
+    stubSpeech(() => undefined);
+    fireEvent.click(screen.getByRole("button", { name: "发音" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument()
+    );
   });
 });
 

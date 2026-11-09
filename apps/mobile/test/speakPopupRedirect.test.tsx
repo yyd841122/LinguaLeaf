@@ -2,13 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { WordLookupPopup } from "../src/reader/WordLookupPopup";
 import type { VocabularyStore } from "../src/store/vocabulary-store";
-import { onSpeakFailure, speakWord } from "../src/speak/router";
+import { onSpeakOutcome, speakWord } from "../src/speak/router";
 
 // The binding catcher for ticket 09's seam: the kernel popup's speak button
-// must land in the MOBILE router (the Vite/Vitest redirect rebinds the
-// kernel's speak.js import). The stub makes the two paths distinguishable —
-// the router catches a synthesis throw and raises the failure flag; the
-// kernel's own speakWord would let it fly uncaught and no flag would rise.
+// must land in the MOBILE router (the wrapper's capture-phase handler
+// intercepts the click before the kernel's own browser speakWord runs). The
+// stub makes the two paths distinguishable — the router catches a synthesis
+// throw and raises the failure flag; the kernel's own speakWord would let
+// it fly uncaught and no flag would rise. The same catcher pins the
+// accessible name the interception matches on: if the kernel re-words its
+// speak button, this fails loudly instead of the seam dying silently.
 const throwSpeak = vi.fn((utterance: { text: string }) => {
   throw new Error(`synthesis exploded for: ${utterance.text}`);
 });
@@ -38,8 +41,8 @@ const store: VocabularyStore = {
 describe("kernel popup speaks through the mobile router", () => {
   it("a synthesis failure inside the kernel popup raises the mobile flag", () => {
     stubSpeech();
-    const failures: string[] = [];
-    const stop = onSpeakFailure((failure) => failures.push(failure.kind));
+    const outcomes: string[] = [];
+    const stop = onSpeakOutcome((outcome) => outcomes.push(outcome.kind));
     render(
       <WordLookupPopup
         store={store}
@@ -54,7 +57,7 @@ describe("kernel popup speaks through the mobile router", () => {
     // kernel fallback the utterance object carries it.
     expect(throwSpeak).toHaveBeenCalledTimes(1);
     expect(throwSpeak.mock.calls[0]?.[0].text).toBe("runs");
-    expect(failures).toEqual(["synthesis-failed"]);
+    expect(outcomes).toEqual(["synthesis-failed"]);
     // The router's module-level speakWord is the same function the popup
     // ended up holding — one speak story per app, not two.
     expect(speakWord).toBeDefined();
