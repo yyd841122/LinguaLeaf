@@ -35,6 +35,10 @@ export default tseslint.config(
       ".output/**",
       "**/dist/**",
       "**/dist-spike/**",
+      // Capacitor Android platform: authored code is TS at apps/mobile root
+      // and src/test — everything under android/ that eslint could parse is
+      // generated (cap sync's bundle copies, gradle build intermediates)
+      "apps/mobile/android/**",
       "apps/server/src/export/file-script.generated.ts",
       "apps/server/src/export/style.generated.ts",
       ".data/**",
@@ -86,6 +90,7 @@ export default tseslint.config(
       "scripts/**/*.{js,mjs}",
       "**/vite.config.ts",
       "**/vitest.config.ts",
+      "**/capacitor.config.ts",
       "*.config.js",
     ],
     languageOptions: { globals: globals.node },
@@ -106,6 +111,8 @@ export default tseslint.config(
       "packages/import-core/test/**/*.ts",
       "apps/extension/src/**/*.{ts,tsx}",
       "apps/extension/test/**/*.{ts,tsx}",
+      "apps/mobile/src/**/*.{ts,tsx}",
+      "apps/mobile/test/**/*.{ts,tsx}",
     ],
     languageOptions: { globals: globals.browser },
     rules: noNodeGlobalsInBrowser,
@@ -118,6 +125,7 @@ export default tseslint.config(
     files: [
       "apps/web/**/*.{ts,tsx}",
       "apps/extension/**/*.{ts,tsx}",
+      "apps/mobile/**/*.{ts,tsx}",
       "packages/reading-model/**/*.{ts,tsx}",
     ],
     plugins: { "react-hooks": reactHooks },

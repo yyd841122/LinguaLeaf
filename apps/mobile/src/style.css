@@ -1,0 +1,36 @@
+/* 空壳占位样式（票 01）。触控、安全区、深色跟随是票 06 的收口范围，
+   这里只保证可读与基本布局。 */
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    "Noto Sans SC",
+    sans-serif;
+}
+
+.bookshelf {
+  padding: 16px;
+}
+
+.bookshelf__app {
+  font-size: 1.4rem;
+  margin: 0 0 16px;
+}
+
+.bookshelf__shelf {
+  border-top: 1px solid #ddd;
+  padding-top: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .bookshelf__shelf {
+    border-top-color: #444;
+  }
+}
