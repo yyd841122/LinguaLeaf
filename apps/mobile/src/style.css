@@ -1,5 +1,6 @@
-/* 空壳占位样式（票 01）。触控、安全区、深色跟随是票 06 的收口范围，
-   这里只保证可读与基本布局。 */
+/* 全局壳样式。阅读链样式由 reader/reader.css 承载(ReaderPage 导入,
+   含 annotated-shared 共享标注样式);触控、安全区、深色跟随是票 06
+   的收口范围,这里只保证可读与基本布局。 */
 :root {
   color-scheme: light dark;
 }
@@ -13,24 +14,4 @@ body {
     Roboto,
     "Noto Sans SC",
     sans-serif;
-}
-
-.bookshelf {
-  padding: 16px;
-}
-
-.bookshelf__app {
-  font-size: 1.4rem;
-  margin: 0 0 16px;
-}
-
-.bookshelf__shelf {
-  border-top: 1px solid #ddd;
-  padding-top: 12px;
-}
-
-@media (prefers-color-scheme: dark) {
-  .bookshelf__shelf {
-    border-top-color: #444;
-  }
 }

@@ -13,6 +13,9 @@
   "dependencies": {
     "@capacitor/android": "^8.6.0",
     "@capacitor/core": "^8.6.0",
+    "@lingualeaf/import-core": "0.1.0",
+    "@lingualeaf/reading-model": "0.1.0",
+    "pdfjs-dist": "^4.10.38",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
@@ -24,7 +27,9 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^5.0.4",
+    "fake-indexeddb": "^6.2.8",
     "jsdom": "^27.0.1",
+    "pdf-lib": "^1.17.1",
     "vite": "~7.3.6"
   }
 }

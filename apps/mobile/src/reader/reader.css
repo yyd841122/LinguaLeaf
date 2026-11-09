@@ -1,0 +1,302 @@
+/* The annotation styles are the shared annotated stylesheet — the same
+   sheet the web reader and the export render from (ipa-word pairing,
+   popup, blocks). Only the extension's shell lives here. */
+@import "@lingualeaf/reading-model/annotated-shared.css";
+:root {
+  color-scheme: light dark;
+  --reader-max: 44rem;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font-family: Georgia, "Times New Roman", "Songti SC", serif;
+  line-height: 1.7;
+}
+.reader {
+  max-width: var(--reader-max);
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+.reader-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 90vh;
+  justify-content: center;
+}
+.reader-title {
+  font-size: 1.4rem;
+  margin: 0;
+}
+.reader-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border: 2px dashed gray;
+  border-radius: 8px;
+  padding: 2rem 1.5rem;
+  cursor: pointer;
+}
+.reader-hint,
+.reader-status {
+  color: gray;
+  font-size: 0.9rem;
+}
+.reader-error {
+  color: #b3261e;
+}
+.reader-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid gray;
+  padding-bottom: 0.75rem;
+}
+.reader-tools {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+.reader-toggle[aria-pressed="true"] {
+  font-weight: bold;
+  color: #6a4fa3;
+}
+/* The 生词本 state row: the web reader's local vocabulary styles,
+   hand-mirrored here (the shared annotated sheet carries the popup box
+   itself; this row lives app-side on both hosts). */
+.lookup-vocab {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin-top: 0.45rem;
+  padding-top: 0.45rem;
+  border-top: 1px solid #ecefe6;
+}
+.lookup-vocab-label {
+  color: #5c6f64;
+  font-size: 0.8rem;
+}
+.lookup-vocab-option {
+  border: 1px solid #dde3d8;
+  background: none;
+  border-radius: 999px;
+  padding: 0 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  cursor: pointer;
+  color: #22342a;
+}
+.lookup-vocab-option:hover {
+  background: #ecefe6;
+}
+.lookup-vocab-option[aria-pressed="true"] {
+  background: #ecefe6;
+  border-color: #5c6f64;
+}
+.reader-recents ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.reader-recents li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.reader-recent {
+  background: none;
+  border: none;
+  color: #6a4fa3;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+}
+.reader-recent:hover {
+  text-decoration: underline;
+}
+.pdf-shelf li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.pdf-shelf .reader-recent {
+  overflow-wrap: anywhere;
+}
+.pdf-shelf li [role="alert"] {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+/* The PDF in-place overlay (ticket 06, geometry per ticket 01): word hit
+   targets sit exactly on their text over the canvas; each IPA hangs below
+   its word's baseline band in the translucent chip the spike proved —
+   tight leading gives the transcription no free band of its own. */
+.pdf-stage {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.pdf-stage canvas {
+  display: block;
+}
+.pdf-word {
+  position: absolute;
+  /* The canvas already carries the page's own glyphs (in the PDF's
+     embedded font); the span's DOM text would paint a second, misfit copy
+     over them — the ghosting the real-Edge acceptance caught. Transparent
+     keeps the hit target and screen-reader text without repainting.
+     Selection is also off: a drag-select painted the selection rectangle
+     over the span's box, covering the canvas word beneath it — the white
+     bar the acceptance caught next. The canvas text is not selectable
+     anyway, so the overlay offers no selection to lose. */
+  color: transparent;
+  user-select: none;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 0.1rem;
+}
+.pdf-word:hover {
+  /* Translucent: the word span owns no visible glyphs (transparent text
+     over the canvas), so an opaque hover tint would read as a solid bar
+     covering the word — the tint must let the canvas glyphs show. */
+  background: rgba(236, 239, 230, 0.55);
+}
+.pdf-word:focus-visible {
+  /* Keyboard focus needs a visible cue; focus-visible keeps it tied to
+     keyboard navigation. Translucency leaves the canvas glyphs readable,
+     just as the hover tint does. */
+  background: rgba(236, 239, 230, 0.55);
+}
+.pdf-ipa {
+  position: absolute;
+  color: #6a4fa3;
+  font-size: 0.62em;
+  line-height: 1;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 2px;
+  padding: 0 1px;
+  pointer-events: none;
+  user-select: none;
+}
+.reader-toc ol {
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+}
+.reader-toc button {
+  background: none;
+  border: none;
+  color: #6a4fa3;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+}
+.reader-toc button[aria-current="true"] {
+  font-weight: bold;
+  text-decoration: underline;
+}
+.reader-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2rem;
+}
+.reader-position {
+  color: gray;
+  font-size: 0.9rem;
+}
+/* Note button and popup styling mirrors apps/web/src/style.css's kernel
+   NoteButton host styles. The extension editor is single-type and local. */
+.block-note-button {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  border: 0;
+  background: transparent;
+  color: #8b958b;
+  cursor: pointer;
+  font-size: 1rem;
+  vertical-align: baseline;
+}
+.block-note-button.has-note {
+  color: #3e7547;
+  background: #e8f1e5;
+}
+.block-note-button:focus-visible {
+  outline: 2px solid #6a4fa3;
+  outline-offset: 2px;
+}
+.note-popup {
+  position: fixed;
+  z-index: 100;
+  box-sizing: border-box;
+  max-width: calc(100vw - 16px);
+  overflow: auto;
+  padding: 0.7rem;
+  border: 1px solid #c9d6c5;
+  border-radius: 8px;
+  box-shadow: 0 5px 22px #0003;
+  background: #fffef9;
+  color: #243627;
+}
+.note-popup .note-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.4rem;
+}
+.note-popup [role="tab"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.25rem;
+}
+.note-popup [role="tab"][aria-selected="true"] {
+  background: #e7f2df;
+  font-weight: bold;
+}
+.note-popup [role="tab"]:focus-visible {
+  outline: 2px solid #56833b;
+  outline-offset: 1px;
+}
+.note-popup textarea {
+  display: block;
+  width: 100%;
+  min-height: 5rem;
+  resize: vertical;
+  font: inherit;
+  color: #243627;
+  background: #fffef9;
+}
+.note-limit {
+  font-size: 0.75rem;
+  margin: 0.3rem 0;
+}
+.note-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.note-popup [role="alert"] {
+  color: #b3261e;
+  font-size: 0.85rem;
+}
+
+.pdf-note-button {
+  position: absolute;
+  z-index: 2;
+  margin: 0;
+  padding: 0 3px;
+  min-width: 22px;
+  line-height: 1;
+}
