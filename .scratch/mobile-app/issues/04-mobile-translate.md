@@ -24,3 +24,8 @@ Blocked by: 02(与 05 并行,双轨)
 
 - 设置页填入自己的 DeepSeek key
 - 在线翻译一章 + 错 key + 断网三项验证
+
+## Lane(领票时定,2026-11-10)
+
+DeepSeek 直连需宿主网络 + 真机实测(Codex 沙箱禁网)→ **Lane A**;实现侧先
+按票面走本地 OpenAI 兼容 mock 验管线(零真实调用)。
