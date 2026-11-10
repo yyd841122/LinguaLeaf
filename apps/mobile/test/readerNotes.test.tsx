@@ -13,6 +13,8 @@ import {
   createPdfBytesStore,
 } from "../src/store/idb-bytes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
+import { createMemoryTranslationStore } from "../src/store/translation-store";
+import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import type { ExtBook } from "../src/reader/import-book";
 import { createMemoryLibraryStore } from "../src/store/library-store";
 import {
@@ -89,6 +91,8 @@ async function openReader(notes: NotesStore = createMemoryNotesStore()) {
       store={vocab}
       notes={notes}
       library={library}
+      translations={createMemoryTranslationStore()}
+      settings={createMemoryTranslateSettingsStore()}
     />
   );
   const view = render(tree());
@@ -518,6 +522,8 @@ async function openReaderWithoutWaiting(notes: NotesStore) {
       store={vocab}
       notes={notes}
       library={library}
+      translations={createMemoryTranslationStore()}
+      settings={createMemoryTranslateSettingsStore()}
     />
   );
   fireEvent.click(await screen.findByRole("button", { name: BOOK.title }));
@@ -544,6 +550,8 @@ describe("same-title import protection in the reader", () => {
         store={vocab}
         notes={notes}
         library={library}
+        translations={createMemoryTranslationStore()}
+        settings={createMemoryTranslateSettingsStore()}
       />
     );
     await pick("<p>Original words.</p>");
@@ -584,6 +592,8 @@ describe("same-title import protection in the reader", () => {
         store={vocab}
         notes={notes}
         library={library}
+        translations={createMemoryTranslationStore()}
+        settings={createMemoryTranslateSettingsStore()}
       />
     );
     await pick("<p>Different content.</p>");

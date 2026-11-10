@@ -21,6 +21,8 @@ import {
 } from "../src/store/pdf-notes-store";
 import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
+import { createMemoryTranslationStore } from "../src/store/translation-store";
+import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import { createMemoryLibraryStore } from "../src/store/library-store";
 import type { VocabularyStore } from "../src/store/vocabulary-store";
 
@@ -115,6 +117,8 @@ function mount(
       pdfNotes={notes}
       pdfPositions={positions}
       pdfBytes={bytes}
+      translations={createMemoryTranslationStore()}
+      settings={createMemoryTranslateSettingsStore()}
     />
   );
   return { view: render(tree()), tree, notes, positions, library, bytes };

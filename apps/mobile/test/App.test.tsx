@@ -8,6 +8,7 @@ import {
 } from "../src/store/idb-bytes-store";
 import type { ExtBook } from "../src/reader/import-book";
 import { createMemoryLibraryStore } from "../src/store/library-store";
+import { createMemoryTranslationStore } from "../src/store/translation-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
 import { createMemoryPdfNotesStore } from "../src/store/pdf-notes-store";
 import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
@@ -40,6 +41,7 @@ async function renderApp(library = createMemoryLibraryStore()) {
   render(
     <App
       store={createVocabularyStore(EMPTY_DICTIONARY, memoryBackend())}
+      translations={createMemoryTranslationStore()}
       library={library}
       notes={createMemoryNotesStore()}
       pdfNotes={createMemoryPdfNotesStore()}

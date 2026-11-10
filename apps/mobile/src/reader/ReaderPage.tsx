@@ -50,6 +50,19 @@ import type { SpeakFailure } from "../speak/speak-failure";
 import { ReaderLanding } from "./ReaderLanding";
 import { usePdfOpen, type OpenedPdf } from "./usePdfOpen";
 import { createIdbNamespaceStorage } from "../store/idb-namespace-storage";
+import {
+  createTranslationStore,
+  type TranslationStore,
+} from "../store/translation-store";
+import {
+  createTranslateSettingsStore,
+  type TranslateSettingsStore,
+} from "../store/translate-settings-store";
+import {
+  chapterTasks,
+  type ChapterTaskRegistry,
+} from "../translate/chapter-tasks";
+import { TranslateSettings } from "../translate/TranslateSettings";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -95,6 +108,9 @@ export function ReaderPage({
   pdfNotes: injectedPdfNotes,
   pdfPositions: injectedPdfPositions,
   pdfBytes: injectedPdfBytes,
+  translations: injectedTranslations,
+  settings: injectedSettings,
+  registry: injectedRegistry,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
@@ -102,9 +118,17 @@ export function ReaderPage({
   pdfNotes?: PdfNotesStore;
   pdfPositions?: PdfPositionStore;
   pdfBytes?: PdfBytesStore;
+  translations?: TranslationStore;
+  settings?: TranslateSettingsStore;
+  registry?: ChapterTaskRegistry;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
+  // The translation settings overlay (ticket 04): opened from the
+  // landing or the reading face; the revision counter bumps on close so
+  // the reading face re-reads its configured fact without a remount.
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsRevision, setSettingsRevision] = useState(0);
   // The speak router's outcome story (ticket 09): every speak click — the
   // popup's 发音 button via the wrapper's capture seam — lands here, and a
   // classified failure raises the flag while a fresh success retires it
@@ -141,6 +165,19 @@ export function ReaderPage({
     () => injectedPdfBytes ?? createPdfBytesStore(),
     [injectedPdfBytes]
   );
+  // The translation seams (ticket 04): settled lines and the runtime
+  // settings — both plain namespace records over the same one IndexedDB
+  // database; tests inject memory stores instead. The chapter task
+  // registry is module-level (tasks outlive faces).
+  const translations = useMemo(
+    () => injectedTranslations ?? createTranslationStore(idbStorage),
+    [injectedTranslations, idbStorage]
+  );
+  const settings = useMemo(
+    () => injectedSettings ?? createTranslateSettingsStore(idbStorage),
+    [injectedSettings, idbStorage]
+  );
+  const registry = injectedRegistry ?? chapterTasks;
   const persistencePromise = useRef<Promise<PersistenceResult> | null>(null);
   const [persistence, setPersistence] = useState<PersistenceResult | null>(
     null
@@ -338,6 +375,15 @@ export function ReaderPage({
           onClose={() => setSpeakFailure(null)}
         />
       ) : null}
+      {settingsOpen ? (
+        <TranslateSettings
+          store={settings}
+          onClose={() => {
+            setSettingsOpen(false);
+            setSettingsRevision((value) => value + 1);
+          }}
+        />
+      ) : null}
       <ReaderLanding
         phase={
           state.phase === "reading" || state.phase === "pdf"
@@ -355,6 +401,7 @@ export function ReaderPage({
         onFile={handleFile}
         onReopenDocument={reopenDocument}
         onReopenPdf={reopenPdf}
+        onOpenSettings={() => setSettingsOpen(true)}
       />
       {state.phase === "pdf" ? (
         <>
@@ -407,11 +454,16 @@ export function ReaderPage({
           resolvedStore={resolvedStore}
           notes={notes}
           library={library}
+          translations={translations}
+          settings={settings}
+          registry={registry}
+          settingsRevision={settingsRevision}
           editorRef={noteEditor}
           restoreRef={restoreRef}
           scrollSaveAt={scrollSaveAt}
           onChapter={(chapterIndex) => setState({ ...state, chapterIndex })}
           onToggleIpa={() => setShowIpa((shown) => !shown)}
+          onOpenSettings={() => setSettingsOpen(true)}
           onReopen={() => setState({ phase: "empty" })}
         />
       ) : null}

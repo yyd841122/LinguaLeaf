@@ -23,6 +23,7 @@ export function ReaderLanding({
   onFile,
   onReopenDocument,
   onReopenPdf,
+  onOpenSettings,
 }: {
   phase: "empty" | "importing" | "error" | null;
   error: string | null;
@@ -36,6 +37,7 @@ export function ReaderLanding({
   onFile: (file: File | undefined | null) => Promise<void>;
   onReopenDocument: (entry: LibraryEntry) => void;
   onReopenPdf: (entry: PdfShelfEntry) => Promise<void>;
+  onOpenSettings: () => void;
 }) {
   const [recents, setRecents] = useState<LibraryEntry[] | null>(null);
   const dropDepth = useRef(0);
@@ -93,7 +95,16 @@ export function ReaderLanding({
       onDragOver={onDragOver}
       onDrop={onDrop}
     >
-      <h1 className="reader-title">LinguaLeaf</h1>
+      <div className="reader-head">
+        <h1 className="reader-title">LinguaLeaf</h1>
+        <button
+          type="button"
+          className="reader-settings"
+          onClick={onOpenSettings}
+        >
+          设置
+        </button>
+      </div>
       {phase === "importing" ? (
         <p className="reader-status" role="status">
           导入中…
@@ -176,7 +187,7 @@ export function ReaderLanding({
         </p>
       ) : null}
       <p className="reader-hint">
-        标注在浏览器本地完成：无网络、无服务进程。加密、损坏的档案与扫描版
+        标注在本地完成：无服务进程；仅按需翻译按需联网。加密、损坏的档案与扫描版
         PDF（无文本层）无法导入。
       </p>
     </main>
