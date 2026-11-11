@@ -14,6 +14,7 @@ import {
 } from "../src/store/idb-bytes-store";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { createMemoryTranslationStore } from "../src/store/translation-store";
+import { createMemoryBookmarkStore } from "../src/store/bookmark-store";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import type { ExtBook } from "../src/reader/import-book";
 import { createMemoryLibraryStore } from "../src/store/library-store";
@@ -93,6 +94,7 @@ async function openReader(notes: NotesStore = createMemoryNotesStore()) {
       library={library}
       translations={createMemoryTranslationStore()}
       settings={createMemoryTranslateSettingsStore()}
+      bookmarks={createMemoryBookmarkStore()}
     />
   );
   const view = render(tree());
@@ -524,6 +526,7 @@ async function openReaderWithoutWaiting(notes: NotesStore) {
       library={library}
       translations={createMemoryTranslationStore()}
       settings={createMemoryTranslateSettingsStore()}
+      bookmarks={createMemoryBookmarkStore()}
     />
   );
   fireEvent.click(await screen.findByRole("button", { name: BOOK.title }));
@@ -552,6 +555,7 @@ describe("same-title import protection in the reader", () => {
         library={library}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     await pick("<p>Original words.</p>");
@@ -594,6 +598,7 @@ describe("same-title import protection in the reader", () => {
         library={library}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     await pick("<p>Different content.</p>");

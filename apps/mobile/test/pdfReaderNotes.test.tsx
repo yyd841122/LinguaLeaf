@@ -22,6 +22,7 @@ import {
 import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
 import { createMemoryTranslationStore } from "../src/store/translation-store";
+import { createMemoryBookmarkStore } from "../src/store/bookmark-store";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import { createMemoryLibraryStore } from "../src/store/library-store";
 import type { VocabularyStore } from "../src/store/vocabulary-store";
@@ -119,6 +120,7 @@ function mount(
       pdfBytes={bytes}
       translations={createMemoryTranslationStore()}
       settings={createMemoryTranslateSettingsStore()}
+      bookmarks={createMemoryBookmarkStore()}
     />
   );
   return { view: render(tree()), tree, notes, positions, library, bytes };

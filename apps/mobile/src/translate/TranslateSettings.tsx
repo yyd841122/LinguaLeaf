@@ -46,7 +46,7 @@ export function TranslateSettings({
 
   if (!values) {
     return (
-      <div className="settings-veil" role="dialog" aria-label="翻译设置">
+      <div className="overlay-veil" role="dialog" aria-label="翻译设置">
         {loadFailed ? (
           <p className="reader-error" role="alert">
             设置读取失败，无法确认已保存的配置。
@@ -89,9 +89,9 @@ export function TranslateSettings({
   };
 
   return (
-    <div className="settings-veil" role="dialog" aria-label="翻译设置">
-      <form className="settings-card" onSubmit={submit}>
-        <h2 className="settings-title">翻译设置</h2>
+    <div className="overlay-veil" role="dialog" aria-label="翻译设置">
+      <form className="overlay-card" onSubmit={submit}>
+        <h2 className="overlay-title">翻译设置</h2>
         <label className="settings-field">
           <span className="settings-label">API Key</span>
           <input
@@ -149,7 +149,7 @@ export function TranslateSettings({
             已保存
           </p>
         ) : null}
-        <div className="settings-actions">
+        <div className="overlay-actions">
           <button type="submit" className="settings-save">
             保存
           </button>

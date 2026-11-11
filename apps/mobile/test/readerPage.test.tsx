@@ -15,6 +15,7 @@ import { createMemoryPdfNotesStore } from "../src/store/pdf-notes-store";
 import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
 import { createMemoryTranslationStore } from "../src/store/translation-store";
+import { createMemoryBookmarkStore } from "../src/store/bookmark-store";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import {
   createMemoryPdfBytesBackend,
@@ -94,6 +95,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
@@ -120,6 +122,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     const garbage = await fixtureFile(
@@ -146,6 +149,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     const doc = await fixtureFile("paper.docx", new Uint8Array([1, 2, 3]));
@@ -170,6 +174,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     const pdf = await fixtureFile("paper.pdf", new Uint8Array([1, 2, 3]));
@@ -206,6 +211,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     await pickFile(await fixtureFile("book.epub", bytes));
@@ -234,6 +240,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     await pickFile(await fixtureFile("book.epub", bytes));
@@ -266,6 +273,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
       />
     );
     await pickFile(await fixtureFile("book.epub", bytes));
@@ -452,6 +460,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -487,6 +496,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -515,6 +525,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -548,6 +559,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -585,6 +597,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -621,6 +634,7 @@ describe("ReaderPage — the word popup (ticket 04)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -687,6 +701,7 @@ describe("ReaderPage — the speak failure flag (ticket 09)", () => {
         library={createMemoryLibraryStore()}
         translations={createMemoryTranslationStore()}
         settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
         store={createVocabularyStore(
           new OfflineDictionary(POPUP_DICT),
           harness.backend
@@ -782,6 +797,7 @@ function renderWithSeams({
       library={library ?? createMemoryLibraryStore()}
       translations={createMemoryTranslationStore()}
       settings={createMemoryTranslateSettingsStore()}
+      bookmarks={createMemoryBookmarkStore()}
     />
   );
 }

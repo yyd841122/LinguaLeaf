@@ -10,6 +10,12 @@ import type { VocabularyStore, VocabState } from "../store/vocabulary-store";
 import type { ChapterProgress, LibraryStore } from "../store/library-store";
 import type { NotesStore } from "../store/notes-store";
 import type { TranslationStore } from "../store/translation-store";
+import {
+  byReadingOrder,
+  type BookmarkRow,
+  type BookmarkStore,
+  type BookmarkTarget,
+} from "../store/bookmark-store";
 import type { TranslateSettingsStore } from "../store/translate-settings-store";
 import {
   chapterTasks as defaultRegistry,
@@ -35,6 +41,32 @@ import { WordLookupPopup } from "./WordLookupPopup";
 const TRANSLATION_FAILURE_COPY =
   "翻译失败：无法连接翻译服务，或密钥无效。请检查网络与设置页中的配置，然后重试。";
 
+// The reading-walk anchor the progress save and the bookmark plant share:
+// the last block whose top has crossed under the sticky head. One rule
+// for both callers — a planted mark lands exactly where progress would
+// say the reader is, never a second opinion (ticket 10).
+const READING_ANCHOR_TOP = 96;
+const topmostVisibleBlockIndex = (): number => {
+  let current = 0;
+  for (const block of document.querySelectorAll<HTMLElement>(
+    "[data-block-index]"
+  )) {
+    if (block.getBoundingClientRect().top <= READING_ANCHOR_TOP) {
+      current = Number(block.dataset.blockIndex ?? 0);
+    }
+  }
+  return current;
+};
+
+// The bookmark row's planted-at stamp: month-day + hour:minute — the
+// reader-planted marks' distinguishing fact (two marks in one chapter
+// differ by when, not by where their invisible block index sits).
+const formatPlantedAt = (iso: string): string => {
+  const t = new Date(iso);
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return `${t.getMonth() + 1}-${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
+};
+
 // EPUB owns its tint walk, popup and progress; the host owns book/chapter
 // selection and the injected seams. Remounting for each open clears tints,
 // while chapter switches preserve local patches over in-flight bulk reads.
@@ -48,6 +80,7 @@ export function EpubReader({
   library,
   translations,
   settings,
+  bookmarks,
   registry = defaultRegistry,
   settingsRevision = 0,
   editorRef,
@@ -67,6 +100,8 @@ export function EpubReader({
   library: LibraryStore;
   translations: TranslationStore;
   settings: TranslateSettingsStore;
+  // The bookmark seam (ticket 10): planted marks for this document.
+  bookmarks: BookmarkStore;
   // The chapter task registry (module-level by default; injected for
   // tests): the task outlives chapter switches and this face's remounts.
   registry?: ChapterTaskRegistry;
@@ -109,6 +144,13 @@ export function EpubReader({
   );
   const [settingsAttempt, setSettingsAttempt] = useState(0);
   const [settingsLoadFailed, setSettingsLoadFailed] = useState(false);
+  // The bookmark face (ticket 10): the panel's rows (null until the open's
+  // read lands), the read's retry counter, and the pending jump a row
+  // click arms.
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [bookmarkRows, setBookmarkRows] = useState<BookmarkRow[] | null>(null);
+  const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
+  const [jumpTarget, setJumpTarget] = useState<BookmarkTarget | null>(null);
 
   // Per-chapter 生词本 states for the tints. Bulk reads land by merge:
   // keys the local map already holds win, so a popup patch (or a bulk read
@@ -160,17 +202,9 @@ export function EpubReader({
       const now = Date.now();
       if (now - scrollSaveAt.current < 400) return;
       scrollSaveAt.current = now;
-      let current = 0;
-      for (const block of document.querySelectorAll<HTMLElement>(
-        "[data-block-index]"
-      )) {
-        if (block.getBoundingClientRect().top <= 96) {
-          current = Number(block.dataset.blockIndex ?? 0);
-        }
-      }
       void library.setProgress(docId, {
         chapterIndex,
-        blockIndex: current,
+        blockIndex: topmostVisibleBlockIndex(),
       });
     };
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -272,6 +306,46 @@ export function EpubReader({
     };
   }, [settings, settingsRevision, settingsAttempt]);
 
+  // The bookmark panel's list: read on every open — a fresh open refetches
+  // (the web session's same trade: stale client rows lose to fresh truth)
+  // — through the one settle channel the ops share. Teardown invalidates
+  // the read's ticket: a closed panel's late list cannot outvote the
+  // reopened panel's own read.
+  const bookmarksOwner = useOwner();
+  const bookmarksSettle = useSettle(bookmarksOwner);
+  const runBookmarks = bookmarksSettle.run;
+  useEffect(() => {
+    if (!showBookmarks) return;
+    setBookmarkRows(null);
+    void runBookmarks(bookmarks.list(docId), {
+      onFresh: (rows) => setBookmarkRows(rows),
+    });
+    return () => bookmarksOwner.invalidate();
+  }, [
+    bookmarks,
+    docId,
+    showBookmarks,
+    bookmarkAttempt,
+    runBookmarks,
+    bookmarksOwner,
+  ]);
+
+  // A row click's jump: anchor the block once the chapter has rendered —
+  // the restore-scroll effect's same rAF + data-block-index technique,
+  // state-driven here because a click, not a ref, arms it. A jump whose
+  // chapter never lands (a replaced book's out-of-range mark) simply sits
+  // unarmed until the next jump replaces it.
+  useEffect(() => {
+    if (!jumpTarget || jumpTarget.chapter !== chapterIndex) return;
+    const raf = requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(`[data-block-index='${jumpTarget.block}']`)
+        ?.scrollIntoView?.();
+      setJumpTarget(null);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [jumpTarget, chapterIndex]);
+
   // The trigger: the cached settings start the task synchronously; the
   // registry refuses a second task for a running chapter. A fresh
   // attempt clears the failure flag (intent-side clear; the channel
@@ -329,6 +403,47 @@ export function EpubReader({
       // to the seam (scroll writes cover the within-chapter drift).
       void library.setProgress(docId, { chapterIndex: index, blockIndex: 0 });
     }
+  };
+  // 打书签: the plant lands on the position progress would report — the
+  // current chapter's topmost visible block — and the store's
+  // same-position idempotence makes a double click one mark.
+  const plantBookmark = () => {
+    void runBookmarks(
+      bookmarks.add(docId, {
+        chapter: chapterIndex,
+        block: topmostVisibleBlockIndex(),
+      }),
+      {
+        onFresh: (row) =>
+          setBookmarkRows((current) => {
+            const rows = current ?? [];
+            // The store's idempotence returns the existing row for a
+            // replant; the local merge keeps the web session's shape —
+            // known id no-ops, fresh row re-enters reading order.
+            return rows.some((existing) => existing.id === row.id)
+              ? rows
+              : [...rows, row].sort(byReadingOrder);
+          }),
+      }
+    );
+  };
+  const removeBookmark = (id: number) => {
+    void runBookmarks(bookmarks.remove(docId, id), {
+      onFresh: () =>
+        setBookmarkRows((current) =>
+          (current ?? []).filter((row) => row.id !== id)
+        ),
+    });
+  };
+  // 跳回: the row's chapter rides the TOC's own goChapter (the progress
+  // write it makes is the chapter fact; the block anchor lands right
+  // after), and the panel closes — the jump is the reader's next fact.
+  const jumpToBookmark = (row: BookmarkRow) => {
+    if (!closeNote()) return;
+    setLookup(null);
+    setShowBookmarks(false);
+    setJumpTarget({ chapter: row.chapter, block: row.block });
+    if (row.chapter !== chapterIndex) goChapter(row.chapter);
   };
   // The trigger's three facts (web's same shape): running → 翻译中 N%
   // locked; settled with lines → 已翻译 locked (the web reading page's
@@ -395,6 +510,19 @@ export function EpubReader({
             }}
           >
             设置
+          </button>
+          {/* 书签 (ticket 10): the panel plants a mark at the current
+              position, lists them in reading order, jumps back, deletes. */}
+          <button
+            type="button"
+            className="reader-bookmarks"
+            onClick={() => {
+              if (!closeNote()) return;
+              setLookup(null);
+              setShowBookmarks(true);
+            }}
+          >
+            书签
           </button>
           <button
             type="button"
@@ -480,6 +608,80 @@ export function EpubReader({
           message={failure}
           onClose={() => setFailure(null)}
         />
+      ) : null}
+      {showBookmarks ? (
+        <div className="overlay-veil" role="dialog" aria-label="书签">
+          <div className="overlay-card bookmark-card">
+            <h2 className="overlay-title">书签</h2>
+            <button
+              type="button"
+              className="bookmark-plant"
+              // The plant waits for the open's read: planting into a
+              // pending list would merge the row locally, only for the
+              // older snapshot to overwrite the panel when its read
+              // lands (one channel, no invalidate between the marks).
+              disabled={bookmarkRows === null}
+              onClick={plantBookmark}
+            >
+              在当前位置打书签
+            </button>
+            {/* One channel for the list and both ops: a fresh failure
+                raises this flag, a fresh success retires it (the channel
+                never clears on a run's start). The retry re-reads the
+                list — fresh truth also settles a failed op's aftermath. */}
+            {bookmarksSettle.failed ? (
+              <p className="reader-error" role="alert">
+                书签操作失败，请重试。
+                <button
+                  type="button"
+                  onClick={() => setBookmarkAttempt((value) => value + 1)}
+                >
+                  重试读取书签
+                </button>
+              </p>
+            ) : null}
+            {bookmarkRows === null ? (
+              <p className="reader-status">读取书签中…</p>
+            ) : bookmarkRows.length === 0 ? (
+              <p className="reader-status">
+                还没有书签。点「在当前位置打书签」给当前阅读位置留个标记。
+              </p>
+            ) : (
+              <ul className="bookmark-list">
+                {bookmarkRows.map((row) => {
+                  const title = book.chapters[row.chapter]?.title ?? "未知章节";
+                  return (
+                    <li key={row.id} className="bookmark-row">
+                      <button
+                        type="button"
+                        className="bookmark-jump"
+                        onClick={() => jumpToBookmark(row)}
+                      >
+                        <span className="bookmark-title">{title}</span>
+                        <span className="bookmark-at">
+                          {formatPlantedAt(row.createdAt)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="bookmark-delete"
+                        aria-label={`删除书签：${title}`}
+                        onClick={() => removeBookmark(row.id)}
+                      >
+                        删除
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="overlay-actions">
+              <button type="button" onClick={() => setShowBookmarks(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
       <footer className="reader-pager">
         <button

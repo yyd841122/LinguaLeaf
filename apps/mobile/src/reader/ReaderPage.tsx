@@ -59,6 +59,10 @@ import {
   type TranslateSettingsStore,
 } from "../store/translate-settings-store";
 import {
+  createBookmarkStore,
+  type BookmarkStore,
+} from "../store/bookmark-store";
+import {
   chapterTasks,
   type ChapterTaskRegistry,
 } from "../translate/chapter-tasks";
@@ -110,6 +114,7 @@ export function ReaderPage({
   pdfBytes: injectedPdfBytes,
   translations: injectedTranslations,
   settings: injectedSettings,
+  bookmarks: injectedBookmarks,
   registry: injectedRegistry,
 }: {
   store?: VocabularyStore;
@@ -120,6 +125,7 @@ export function ReaderPage({
   pdfBytes?: PdfBytesStore;
   translations?: TranslationStore;
   settings?: TranslateSettingsStore;
+  bookmarks?: BookmarkStore;
   registry?: ChapterTaskRegistry;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
@@ -176,6 +182,13 @@ export function ReaderPage({
   const settings = useMemo(
     () => injectedSettings ?? createTranslateSettingsStore(idbStorage),
     [injectedSettings, idbStorage]
+  );
+  // The bookmark seam (ticket 10): planted marks, one more plain namespace
+  // record over the same one IndexedDB database; tests inject the memory
+  // store instead.
+  const bookmarks = useMemo(
+    () => injectedBookmarks ?? createBookmarkStore(idbStorage),
+    [injectedBookmarks, idbStorage]
   );
   const registry = injectedRegistry ?? chapterTasks;
   const persistencePromise = useRef<Promise<PersistenceResult> | null>(null);
@@ -456,6 +469,7 @@ export function ReaderPage({
           library={library}
           translations={translations}
           settings={settings}
+          bookmarks={bookmarks}
           registry={registry}
           settingsRevision={settingsRevision}
           editorRef={noteEditor}
