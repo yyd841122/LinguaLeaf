@@ -40,6 +40,7 @@ export function EpubChapter({
   showIpa,
   translations,
   showTranslation,
+  markedBlocks = new Set<number>(),
   statusOf,
   onWordClick,
   onOpenNote,
@@ -54,6 +55,9 @@ export function EpubChapter({
   // the reader owns the store read, the chapter only renders it.
   translations: Record<number, string>;
   showTranslation: boolean;
+  // The chapter's bookmarked block indexes (ticket 10): the reader derives
+  // them from the doc-wide rows; the chapter only paints the marker.
+  markedBlocks?: ReadonlySet<number>;
   statusOf: StatusReader;
   onWordClick: (click: WordClick) => void;
   onOpenNote: () => void;
@@ -117,7 +121,11 @@ export function EpubChapter({
       >
         <h2>{chapter.title}</h2>
         {chapter.blocks.map((block, index) => (
-          <div key={index} data-block-index={index}>
+          <div
+            key={index}
+            data-block-index={index}
+            className={markedBlocks.has(index) ? "block-marked" : undefined}
+          >
             <AnnotatedBlockView
               block={annotatedBlock(
                 block,

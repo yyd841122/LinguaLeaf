@@ -47,7 +47,16 @@ body {
 .reader-error {
   color: #b3261e;
 }
+/* Sticky (ticket 10 人验 round 2): the tools row must stay reachable
+   mid-chapter — the plant captures the topmost visible block, which is
+   the reading position only if the 书签 button never forces a scroll
+   back to the chapter top. canvas is the scheme-aware page color, so the
+   stuck head masks the text scrolling under it in both themes. */
 .reader-head {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: canvas;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -521,4 +530,22 @@ body {
   cursor: pointer;
   font-size: 0.9rem;
   color: #b3261e;
+}
+
+/* The in-text bookmark marker (ticket 10 人验 round 2): the planted block
+   gets the app's purple as an inset edge plus a faint wash — box-shadow,
+   not border or padding, so a mark appearing mid-read never reflows the
+   text it marks. */
+.block-marked {
+  box-shadow: inset 3px 0 0 #6a4fa3;
+  background: rgba(106, 79, 163, 0.06);
+}
+
+/* scrollIntoView on a block anchor stops one head-height short of the
+   viewport top, so the anchored block (a jump target, a restored
+   position) clears the sticky head instead of hiding under it — the same
+   96px clearance READING_ANCHOR_TOP uses (EpubReader.tsx), one fact in
+   two places. */
+[data-block-index] {
+  scroll-margin-top: 96px;
 }

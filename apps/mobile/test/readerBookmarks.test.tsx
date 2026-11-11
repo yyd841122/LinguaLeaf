@@ -35,10 +35,12 @@ import { OfflineDictionary } from "../src/dict/offline-dictionary";
 // at the position progress would report (the shared topmost-visible-block
 // rule), lists rows in reading order, jumps back through the TOC's own
 // chapter switch, deletes, and reports seam failures as one readable flag
-// a fresh success retires. The settle-channel invariant is pinned too: a
-// closed panel's late list cannot outvote the reopened panel's read.
-// Chapter-title queries are scoped to the dialog — the title also names
-// the TOC entry and the chapter heading outside it.
+// a fresh success retires. The planted block also carries a visible
+// in-text marker, driven by the doc-wide rows the face reads at mount.
+// The settle-channel invariant is pinned too: a closed panel's late list
+// cannot outvote the reopened panel's read. Chapter-title queries are
+// scoped to the dialog — the title also names the TOC entry, the chapter
+// heading outside it, and possibly the marked block's own text.
 
 const FIXTURE_DICT = {
   ipa: { woke: "woʊk", words: "wɜːdz" },
@@ -240,6 +242,44 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     expect(await bookmarks.list(DOC_ID)).toEqual([]);
   });
 
+  it("marks the planted block in the face, and the marker retires on 删除", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    await renderReadingFace(bookmarks);
+
+    const dialog = await openPanel();
+    await awaitEmptyList(dialog);
+    plantHere();
+    expect(await within(dialog).findByText("Chapter One")).toBeInTheDocument();
+
+    // jsdom lays every block at top 0, so the topmost rule plants the
+    // chapter's LAST block: the marker lands on that exact block.
+    const planted = document.querySelector(
+      "[data-block-index='1']"
+    ) as HTMLElement;
+    expect(planted.classList.contains("block-marked")).toBe(true);
+    // An unmarked sibling carries no marker.
+    const first = document.querySelector(
+      "[data-block-index='0']"
+    ) as HTMLElement;
+    expect(first.classList.contains("block-marked")).toBe(false);
+
+    // The marker is a fact of the face, not the panel: close, it stays.
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(planted.classList.contains("block-marked")).toBe(true);
+
+    // 删除 retires it everywhere.
+    const again = await openPanel();
+    await within(again).findByText("Chapter One");
+    fireEvent.click(
+      screen.getByRole("button", { name: "删除书签：Chapter One" })
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/还没有书签/)).toBeInTheDocument()
+    );
+    expect(planted.classList.contains("block-marked")).toBe(false);
+  });
+
   it("a failed op raises one readable flag and the next success retires it", async () => {
     stubDictionaryOnly();
     const inner = createMemoryBookmarkStore();
@@ -274,15 +314,15 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     stubDictionaryOnly();
     const inner = createMemoryBookmarkStore();
     await inner.add(DOC_ID, { chapter: 0, block: 0 });
+    // The seam fails every read until the test flips it — order-independent
+    // (the face reads the doc's marks at mount AND on panel open; the flag
+    // must come from the open's read, the panel being the flag's surface).
     let failList = true;
     const bookmarks: BookmarkStore = {
-      list: (docId) => {
-        if (failList) {
-          failList = false;
-          return Promise.reject(new Error("idb read died"));
-        }
-        return inner.list(docId);
-      },
+      list: (docId) =>
+        failList
+          ? Promise.reject(new Error("idb read died"))
+          : inner.list(docId),
       add: (docId, target) => inner.add(docId, target),
       remove: (docId, id) => inner.remove(docId, id),
     };
@@ -292,6 +332,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     const flag = await screen.findByRole("alert");
     expect(flag.textContent).toContain("书签操作失败");
 
+    failList = false;
     fireEvent.click(screen.getByRole("button", { name: "重试读取书签" }));
     expect(await within(dialog).findByText("Chapter One")).toBeInTheDocument();
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
@@ -322,10 +363,12 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     const bookmarks: BookmarkStore = {
       list: (docId) => {
         calls += 1;
-        // The first read hangs until the test releases it — by then the
-        // panel has closed and reopened, and only the reopened read's
-        // answer may speak (teardown invalidated the first ticket).
-        return calls === 1
+        // Call 1 is the mount read (the face's markers — it lands fresh).
+        // Call 2 is the OPEN's read — that one hangs until the test
+        // releases it, by which time the panel has closed and reopened,
+        // and only the reopened read's answer may speak (teardown
+        // invalidated the open's ticket).
+        return calls === 2
           ? firstGate.then(() => [planted, staleRow])
           : inner.list(docId);
       },
@@ -334,7 +377,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     };
     await renderReadingFace(bookmarks);
 
-    // Open (read #1 gated), close before it lands, reopen (read #2 lands).
+    // Open (read #2 gated), close before it lands, reopen (read #3 lands).
     await openPanel();
     expect(screen.getByText(/读取书签中/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -349,7 +392,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     });
     expect(within(dialog).getAllByText("Chapter One")).toHaveLength(1);
     expect(within(dialog).queryByText("Chapter Two")).toBeNull();
-    expect(calls).toBe(2);
+    expect(calls).toBe(3);
     expect(await inner.list(DOC_ID)).toEqual([planted]);
   });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState, type RefObject } from "react";
+import { useEffect, useMemo, useState, type RefObject } from "react";
 import {
   useOwner,
   useSettle,
@@ -306,14 +306,27 @@ export function EpubReader({
     };
   }, [settings, settingsRevision, settingsAttempt]);
 
+  const bookmarksOwner = useOwner();
+  const bookmarksSettle = useSettle(bookmarksOwner);
+  const runBookmarks = bookmarksSettle.run;
+
+  // The document's marks, read once per open through the ops' shared
+  // channel: the face's in-text markers ride these rows, and the plant's
+  // same-position idempotence starts from this baseline. A failed read is
+  // silent here — markers are best-effort, and the panel's open refetches
+  // through the same channel and flags fresh failures.
+  useEffect(() => {
+    void runBookmarks(bookmarks.list(docId), {
+      onFresh: (rows) => setBookmarkRows(rows),
+    });
+    return () => bookmarksOwner.invalidate();
+  }, [bookmarks, docId, runBookmarks, bookmarksOwner]);
+
   // The bookmark panel's list: read on every open — a fresh open refetches
   // (the web session's same trade: stale client rows lose to fresh truth)
   // — through the one settle channel the ops share. Teardown invalidates
   // the read's ticket: a closed panel's late list cannot outvote the
   // reopened panel's own read.
-  const bookmarksOwner = useOwner();
-  const bookmarksSettle = useSettle(bookmarksOwner);
-  const runBookmarks = bookmarksSettle.run;
   useEffect(() => {
     if (!showBookmarks) return;
     setBookmarkRows(null);
@@ -385,6 +398,18 @@ export function EpubReader({
   };
 
   const chapter = book.chapters[chapterIndex];
+  // The face's in-text markers: the current chapter's planted blocks,
+  // derived from the doc-wide rows — a chapter switch re-derives without a
+  // refetch, and a plant/remove lands here through the local merges.
+  const markedBlocks = useMemo(
+    () =>
+      new Set(
+        (bookmarkRows ?? [])
+          .filter((row) => row.chapter === chapterIndex)
+          .map((row) => row.block)
+      ),
+    [bookmarkRows, chapterIndex]
+  );
   // The tint walk reads the merged map through the store's one key rule.
   const stateOf = (word: string): VocabState | null =>
     resolvedStore?.stateKey(word) != null
@@ -589,6 +614,7 @@ export function EpubReader({
           showIpa={showIpa}
           translations={chapterTranslations ?? {}}
           showTranslation={showTranslation}
+          markedBlocks={markedBlocks}
           statusOf={(word) => stateOf(word)}
           onWordClick={setLookup}
           onOpenNote={() => setLookup(null)}
