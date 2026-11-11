@@ -1,5 +1,5 @@
 # 10 移动端书签:当前位置打书签 + 目录跳回
-Status: ready-for-agent(2026-11-11 triage 完毕:三问全拍板见 ## 拍板,Lane B)
+Status: ready-for-human(2026-11-11 实现收官:根 verify EXIT=0、双轴评审 3 修 4 记档;真机三项人验待做,见 Comments 与用户操作项)
 Blocked by: 02
 
 ## 问题
@@ -75,3 +75,37 @@ spec story 11(「我要在当前位置打书签并从目录跳回」)与 Solutio
 不设上限、同位幂等、id 本地自增;③02 门书签字样已在 02 Comments 路由。
 票面补全范围/验收门/Lane,基线记法:the HEAD before this ticket's first
 implementation commit。
+
+### 2026-11-11 实现收官(Lane A 中途翻转)
+
+**Lane 翻转记档**:领票按票面走 Lane B(`/cc-suite:implement` 后台作业
+implement-mwbghwlr-6o6wcy),Codex 死于额度触顶(rawOutput 空、零产出,
+11-15 10:55 恢复)。维护者拍板翻 **Lane A**:Claude 直接实现,双轴评审
+(Claude 子代理)兜底,**Codex 独立终审 11-15 恢复后补跑**(02 票 usage
+触顶改期同法;settle-channel 01 维护者点名翻转先例)。实现 commit:
+`feat(mobile): 票 10 书签`(10 文件 +932/-19)。
+
+**门**:根 verify 两跑——首跑 EXIT=1(extension pdfReaderNotes it.each
+第 4 变体找不到 alert,单文件两跑全绿判孤发抖动),全量重跑 **EXIT=0
+(100 文件,1113 passed | 3 skipped,较票前 +2 文件 +17 测试)**。
+
+**双轴评审裁决(3 修 4 记)**:
+- 修①:settle 不变量测试原是装饰性(变异探针:删 teardown invalidate
+  全绿——两次 gated 读返回同值)。改为陈旧读携带可区分多行,删 invalidate
+  时探针红得精准(实跑验证过)。
+- 修②:jumpTarget 内联 `{chapter, block}` 与 `BookmarkTarget` 类型孪生,
+  收编为具名类型(票内采纳条款)。
+- 修③(Spec 轴实锤):面板开着的 list 读未落时打书签,行先并进 UI、旧
+  快照落地整表覆盖,行从面板消失直到重开。修法:打书签按钮等 list 落地
+  才解锁(disabled-until-landed),测试同步加等待位。
+- 记不修:`Record<string, DocRecord>` 裸访问(hasOwn 规则)——translation-
+  store 全 seam 家族同形,单点修造成分叉,批量清扫候选(与票 04 的
+  (docId, chapterIndex) 裁决同族);overlay-* 改名(票面「同形」的更优
+  解,Standards 轴反点赞,无孤儿选择器);行内时间戳(票面速写外的
+  小字段,同章多签的区分事实);「删除」文字按钮 vs 票面速写「✕」
+  (aria-label 同语义,真机更可发现)。
+- 「换章/换书不复活」门项:结构性无虞(veil 挡住开面板切章;关闭即
+  close→reopen 已测点亮;换书=面卸载通道同灭),记构造性覆盖。
+
+**勿忘(人验后)**:①真机三项 + 杀进程重开,回报后翻 done;②Codex
+额度 11-15 恢复后补独立终审,发现实项按 follow-up 处置。
