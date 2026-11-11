@@ -1,5 +1,5 @@
 # 04 翻译缝:DeepSeek 客户端直连 + 设置页 key 管理
-Status: ready-for-human(2026-11-10 实现收官:根 verify EXIT=0、mock 冒烟绿、双轴评审无阻塞;真机三项人验待做,见 Comments 与用户操作项)
+Status: done(2026-11-11 真机三项人验全过:译文行+开关、错 key 旗、断网旗,不崩)
 Blocked by: 02(与 05 并行,双轨)
 
 ## 目标
@@ -58,3 +58,10 @@ server 的 AbortSignal.timeout——后者 Chromium 103+ 才有,老 Android WebV
 **勿忘(人验前)**:真机三项验证需先在设置页填真实 DeepSeek key(OpenAI 兼容
 根地址,勿带 /anthropic 后缀——浮层有提示)。三项:①在线按章翻译出译文行、
 译文开关可隐;②错 key → 可读失败旗不崩;③断网 → 同旗面不崩。完成后票翻 done。
+
+### 2026-11-11 人验通过,翻 done
+
+装包链路(apps/mobile/README 配方):assembleDebug BUILD SUCCESSFUL →
+`adb install -r` Success(PCAM00 无线)→ 冷启 dump 确认新 dist 在包(书架出现
+票 04 的「设置」入口)。用户真机回报三项全过:①在线按章翻译出译文行、译文开关
+可隐;②错 key → 可读失败旗不崩;③断网 → 同旗面不崩。票面验收门全绿。
