@@ -109,3 +109,40 @@ implement-mwbghwlr-6o6wcy),Codex 死于额度触顶(rawOutput 空、零产出,
 
 **勿忘(人验后)**:①真机三项 + 杀进程重开,回报后翻 done;②Codex
 额度 11-15 恢复后补独立终审,发现实项按 follow-up 处置。
+
+### 2026-11-11 人验 round 2 返修(维护者真机反馈两缺陷,已修)
+
+维护者在长测试书(The Lighthouse Diary,8 章,`.scratch/mobile-app/
+gen-long-epub.mjs` 可再生)上人验,反馈:①「点了书签,没看到具体标识」;
+②「章节过长,每次要返回到顶端打标签,明显不对」。
+
+**根因(互相咬合)**:`reader-head` 工具栏非粘性,随页滚走——读到章中
+想打签必须滚回页顶去够按钮,`topmostVisibleBlockIndex()` 算出的自然是
+章首块(①的面板行全是章 1/章 2 顶位,设备上实证 6 行全是);且被标记
+的块在正文无任何视觉记号,跳回章顶等于什么都看不见。讽刺处:
+`READING_ANCHOR_TOP` 注释本来就写着 "crossed under the **sticky
+head**"——设计意图是粘头,实现漏了。
+
+**修复(commit `fix(mobile): 票 10 书签人验返修`,4 文件 +126/-22)**:
+- `reader-head` 改 `position:sticky;top:0;z-index:10;background:canvas`
+  (canvas 系统色双主题遮底;z 序核对:粘头 10 < 查词弹窗 20 < 面板
+  veil 40 < 笔记弹窗 100)
+- 书签行改「挂载即读」(正文记号数据源 + 打签幂等基线;失败静默——
+  记号 best-effort,面板开启读同通道兜旗),面板开启读语义不变,
+  陈旧票不变量原样(test 7 门控挪到第 2 次调用,calls 2→3)
+- `EpubChapter` 新增 `markedBlocks?: ReadonlySet<number>`,被标记块挂
+  `.block-marked`(inset box-shadow 紫边 + 淡紫底——不用 border/
+  padding,标记出现零回流);面板关闭记号仍在(关闭不重读不置空)
+- `[data-block-index]` 加 `scroll-margin-top:96px`:跳回/恢复锚点停在
+  粘头之下,与 `READING_ANCHOR_TOP` 同一净空事实两处声明
+- test 6 失败语义改序无关(挂载读也走 list 了);新增记号测试
+  (打签块挂 class、未打签块不挂、面板关后仍在、删除后褪去)
+
+**门**:根 verify **EXIT=0(100 文件,1114 passed | 3 skipped,+1)**。
+**真机实证(PCAM00,横屏)**:滚两屏后工具栏仍钉顶 → 章中「在当前
+位置打书签」→ 关面板,被标记句("watch the sky at noon")左侧紫边+
+淡紫底可见 → 再滚走、面板跳回,落点即标记块、恰在粘头之下(96px
+避让生效)。设备上旧 6 条顶位测试签未清,留维护者随手删。
+
+**待办**:维护者按上清单复验(①打书签 ②跳回 ③删除 ④杀进程重开,
+这次在长书章中进行);Codex 终审 11-15 补跑时含本返修 diff。
