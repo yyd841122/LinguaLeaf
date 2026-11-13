@@ -80,15 +80,16 @@ describe("ReaderPage — 备份与恢复 (ticket 05)", () => {
     expect(
       await screen.findByRole("region", { name: "备份与恢复" })
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "导出备份" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "保存到本机" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "分享备份" })).toBeEnabled();
   });
 
-  it("export hands the payload to the adapter and stays quiet on success", async () => {
+  it("分享备份 hands the payload to the adapter and stays quiet on success", async () => {
     stubDictionaryOnly();
     const { adapter, stores } = renderLanding();
     await stores.bookmarks.add("doc:Title A", { chapter: 0, block: 2 });
 
-    fireEvent.click(await screen.findByRole("button", { name: "导出备份" }));
+    fireEvent.click(await screen.findByRole("button", { name: "分享备份" }));
     await waitFor(() => expect(adapter.saved).toHaveLength(1));
     const payload: BackupPayload = adapter.saved[0]!.payload;
     expect(payload.app).toBe(BACKUP_APP);
@@ -149,6 +150,29 @@ describe("ReaderPage — 备份与恢复 (ticket 05)", () => {
       world: "ignored",
     });
     expect(await stores.bookmarks.list("doc:Title A")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("保存到本机 lands the payload in the local save and names the file", async () => {
+    stubDictionaryOnly();
+    const { adapter, stores } = renderLanding();
+    await stores.bookmarks.add("doc:Title A", { chapter: 0, block: 2 });
+
+    fireEvent.click(await screen.findByRole("button", { name: "保存到本机" }));
+    expect(
+      await screen.findByText(/已保存到手机的「下载」目录：/, undefined, {
+        timeout: 3000,
+      })
+    ).toBeInTheDocument();
+    expect(adapter.savedLocal).toHaveLength(1);
+    expect(adapter.savedLocal[0]!.payload.assets.bookmarks).toEqual([
+      {
+        bookTitle: "Title A",
+        chapter: 0,
+        block: 2,
+        createdAt: expect.any(String),
+      },
+    ]);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

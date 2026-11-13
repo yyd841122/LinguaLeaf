@@ -14,6 +14,9 @@ import type { BackupFileAdapter } from "./backup-file";
 
 export interface BackupManager {
   exportBackup(): Promise<void>;
+  // 保存到本机: the same payload, straight into Downloads; resolves with
+  // the file name it was written under (the status line names it).
+  saveBackupLocally(): Promise<{ path: string }>;
   importBackup(file: File): Promise<ImportSummary>;
 }
 
@@ -36,6 +39,9 @@ export function createBackupManager(
   return {
     async exportBackup() {
       await adapter.save(await buildBackup(stores));
+    },
+    async saveBackupLocally() {
+      return adapter.saveLocal(await buildBackup(stores));
     },
     async importBackup(file) {
       let parsed: unknown;

@@ -51,6 +51,7 @@ export function ReaderLanding({
   // reads per-asset counts, the cap's skips included.
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupError, setBackupError] = useState<string | null>(null);
+  const [backupSaved, setBackupSaved] = useState<string | null>(null);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(
     null
   );
@@ -79,23 +80,47 @@ export function ReaderLanding({
     event.target.value = "";
   };
 
-  const onExport = () => {
+  const resetBackupLines = () => {
+    setBackupError(null);
+    setBackupSaved(null);
+    setImportSummary(null);
+  };
+
+  const onSaveLocal = () => {
     if (!backup || backupBusy) return;
     setBackupBusy(true);
-    setBackupError(null);
-    setImportSummary(null);
+    resetBackupLines();
     void backup
-      .exportBackup()
-      .then(() => {
+      .saveBackupLocally()
+      .then((saved) => {
         setBackupBusy(false);
-        setImportSummary(null);
+        setBackupSaved(saved.path);
       })
-      .then(undefined, (error: unknown) => {
+      .catch((error: unknown) => {
         setBackupBusy(false);
         setBackupError(
           error instanceof Error && error.message
             ? error.message
-            : "导出失败，请重试。"
+            : "保存失败，请重试。"
+        );
+      });
+  };
+
+  const onExport = () => {
+    if (!backup || backupBusy) return;
+    setBackupBusy(true);
+    resetBackupLines();
+    void backup
+      .exportBackup()
+      .then(() => {
+        setBackupBusy(false);
+      })
+      .catch((error: unknown) => {
+        setBackupBusy(false);
+        setBackupError(
+          error instanceof Error && error.message
+            ? error.message
+            : "分享失败，请重试。"
         );
       });
   };
@@ -105,8 +130,7 @@ export function ReaderLanding({
     event.target.value = "";
     if (!backup || backupBusy || !file) return;
     setBackupBusy(true);
-    setBackupError(null);
-    setImportSummary(null);
+    resetBackupLines();
     void backup
       .importBackup(file)
       .then((summary) => {
@@ -261,9 +285,17 @@ export function ReaderLanding({
               type="button"
               className="backup-export"
               disabled={backupBusy}
+              onClick={onSaveLocal}
+            >
+              保存到本机
+            </button>
+            <button
+              type="button"
+              className="backup-share"
+              disabled={backupBusy}
               onClick={onExport}
             >
-              导出备份
+              分享备份
             </button>
             <label
               className={`backup-import${backupBusy ? " backup-busy" : ""}`}
@@ -277,6 +309,11 @@ export function ReaderLanding({
               />
             </label>
           </div>
+          {backupSaved ? (
+            <p className="reader-status" role="status">
+              已保存到手机的「下载」目录：{backupSaved}
+            </p>
+          ) : null}
           {importSummary ? (
             <p className="reader-status" role="status">
               {importLine(importSummary)}
