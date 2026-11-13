@@ -14,6 +14,8 @@
     "@capacitor-community/text-to-speech": "^8.0.2",
     "@capacitor/android": "^8.6.0",
     "@capacitor/core": "^8.6.0",
+    "@capacitor/filesystem": "^8.1.5",
+    "@capacitor/share": "^8.0.3",
     "@lingualeaf/import-core": "0.1.0",
     "@lingualeaf/reading-model": "0.1.0",
     "pdfjs-dist": "^4.10.38",

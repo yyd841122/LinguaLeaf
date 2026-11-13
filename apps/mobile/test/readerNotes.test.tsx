@@ -33,6 +33,9 @@ const vocab: VocabularyStore = {
     return new Map();
   },
   async setStatus() {},
+  async exportAll() {
+    return {};
+  },
 };
 const BOOK: ExtBook = {
   title: "Mixed Book",

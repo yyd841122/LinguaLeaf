@@ -36,6 +36,9 @@ const vocab: VocabularyStore = {
     return new Map();
   },
   async setStatus() {},
+  async exportAll() {
+    return {};
+  },
 };
 const source = (tail = "A") => `%PDF-1.7 common head and pages ${tail}`;
 const id = (tail = "A") =>

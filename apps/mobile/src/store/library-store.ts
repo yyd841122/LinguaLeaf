@@ -38,6 +38,10 @@ export interface LibraryStore {
   // The book's blocks, and the touch that moves it up the recents.
   openDocument(id: string): Promise<ExtBook | null>;
   setProgress(id: string, progress: ChapterProgress): Promise<void>;
+  // The backup's enumeration read (ticket 05): progress rows only — the
+  // documents themselves stay out of a backup (the phone re-imports
+  // books; the docId re-derives from the title and reattaches).
+  exportProgress(): Promise<Record<string, ChapterProgress>>;
 }
 
 export type MemoryLibraryStore = LibraryStore & {
@@ -96,6 +100,9 @@ export function createMemoryLibraryStore(
     },
     async setProgress(id, value) {
       progress.set(id, value);
+    },
+    async exportProgress() {
+      return Object.fromEntries(progress);
     },
   };
 }
@@ -162,6 +169,10 @@ export function createLibraryStore(storage: NamespaceStorage): LibraryStore {
         r.progress[id] = value;
         await write(r);
       });
+    },
+    async exportProgress() {
+      const r = await record.read();
+      return Object.fromEntries(Object.entries(r.progress));
     },
   };
 }

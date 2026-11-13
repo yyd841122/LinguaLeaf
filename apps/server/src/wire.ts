@@ -191,3 +191,49 @@ export type ReviewNoteEntry = {
   note: NoteSummary;
 };
 export type ReviewNotesResponse = { entries: ReviewNoteEntry[] };
+
+// The full-backup format (mobile-app ticket 05): the one versioned JSON
+// both hosts emit and only the phone consumes. Device-local ids never
+// enter the format — the book TITLE is the join key both hosts derive
+// (the phone's doc:<title>; the PC's integer book ids stay local), and
+// the import side re-mints bookmark ids (ticket 10's same-position
+// idempotence makes that merge-safe). The version field is the forward
+// door: readers reject versions they do not know rather than guess.
+// Settings never ride a backup: the translation API key is a secret.
+export const BACKUP_APP = "lingualeaf-backup";
+export const BACKUP_VERSION = 1;
+
+// COORDINATE CONVENTION: the format carries the phone's 0-based
+// chapterIndex/blockIndex (positions over ALL blocks — the reading
+// render's data-block-index grid). The PC database is 1-based (schema
+// positions start at 1); the PC export route converts, so the format
+// stays host-neutral and the phone's only consumer reads it verbatim.
+
+export type BackupNoteRow = {
+  bookTitle: string;
+  chapterIndex: number;
+  blockIndex: number;
+  type: NoteType;
+  text: string;
+};
+
+export type BackupBookmarkRow = {
+  bookTitle: string;
+  chapter: number;
+  block: number;
+  createdAt: string;
+};
+
+export type BackupPayload = {
+  app: string;
+  version: number;
+  exportedAt: string;
+  books: { title: string }[];
+  assets: {
+    vocabulary: Record<string, WordStatus>;
+    notes: BackupNoteRow[];
+    progress: Record<string, { chapterIndex: number; blockIndex: number }>;
+    bookmarks: BackupBookmarkRow[];
+    translations: Record<string, Record<string, Record<string, string>>>;
+  };
+};

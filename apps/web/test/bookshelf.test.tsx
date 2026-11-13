@@ -662,6 +662,56 @@ describe("BookshelfPage export (ticket 03)", () => {
     expect(second).not.toBeDisabled();
     expect(second.textContent).toBe("导出");
   });
+  // The whole-library backup (mobile-app ticket 05): the header action
+  // downloads the backup route's attachment through the same blob+anchor
+  // helper, named by its Content-Disposition.
+  it("the 导出备份 action downloads the backup route's file", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/export/backup")) {
+        return htmlResponse(
+          200,
+          "{}",
+          'attachment; filename="lingualeaf-backup-v1-20261113-1000.json"'
+        );
+      }
+      if (url.endsWith("/api/books")) {
+        return jsonResponse(200, shelfState);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    renderShelf();
+    await actAdvance(0);
+    fireEvent.click(screen.getByRole("button", { name: "导出备份" }));
+    await actAdvance(0);
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/export/backup");
+    expect(downloaded.map((entry) => entry.download)).toEqual([
+      "lingualeaf-backup-v1-20261113-1000.json",
+    ]);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("a failed backup export reads as the retry copy", async () => {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/export/backup")) {
+        return htmlResponse(500, "boom");
+      }
+      if (url.endsWith("/api/books")) {
+        return jsonResponse(200, shelfState);
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    renderShelf();
+    await actAdvance(0);
+    fireEvent.click(screen.getByRole("button", { name: "导出备份" }));
+    await actAdvance(0);
+    expect(screen.getByRole("alert")).toHaveTextContent(/备份导出失败/);
+    expect(downloaded).toEqual([]);
+  });
 });
 
 // The explicit continue-reading entry (reading-bookmarks spec P2): a ready

@@ -67,6 +67,11 @@ import {
   type ChapterTaskRegistry,
 } from "../translate/chapter-tasks";
 import { TranslateSettings } from "../translate/TranslateSettings";
+import {
+  createBackupManager,
+  type BackupManager,
+} from "../backup/backup-manager";
+import { createCapacitorBackupFileAdapter } from "../backup/backup-file";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -116,6 +121,7 @@ export function ReaderPage({
   settings: injectedSettings,
   bookmarks: injectedBookmarks,
   registry: injectedRegistry,
+  backup: injectedBackup,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
@@ -127,6 +133,7 @@ export function ReaderPage({
   settings?: TranslateSettingsStore;
   bookmarks?: BookmarkStore;
   registry?: ChapterTaskRegistry;
+  backup?: BackupManager;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
@@ -256,6 +263,22 @@ export function ReaderPage({
   const library = useMemo(
     () => injectedLibrary ?? createLibraryStore(idbStorage),
     [injectedLibrary, idbStorage]
+  );
+
+  // The backup manager (ticket 05): the stores + the share-sheet adapter,
+  // built once the vocabulary seam resolves (its enumeration read rides
+  // the store object). Null until then — the landing hides the section,
+  // the same posture as the recents list before its read lands.
+  const backup = useMemo(
+    () =>
+      injectedBackup ??
+      (resolvedStore
+        ? createBackupManager(
+            { store: resolvedStore, notes, library, bookmarks, translations },
+            createCapacitorBackupFileAdapter()
+          )
+        : null),
+    [injectedBackup, resolvedStore, notes, library, bookmarks, translations]
   );
   // The position a reopened document should restore to, consumed by the
   // scroll effect after the chapter renders.
@@ -411,6 +434,7 @@ export function ReaderPage({
         pdfPositions={pdfPositions}
         refreshPdfShelf={refreshPdfShelf}
         persistence={persistence}
+        backup={backup}
         onFile={handleFile}
         onReopenDocument={reopenDocument}
         onReopenPdf={reopenPdf}

@@ -51,6 +51,10 @@ export function BookshelfPage() {
   const [exportingIds, setExportingIds] = useState<ReadonlySet<number>>(
     () => new Set()
   );
+  // The full-backup export (mobile-app ticket 05): one busy bit — the
+  // button reads 导出中… until the blob download settles, so a slow
+  // library cannot be double-clicked into two downloads.
+  const [backingUp, setBackingUp] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -156,6 +160,22 @@ export function BookshelfPage() {
     }
   };
 
+  // The whole-library backup: the same fetch→Blob→anchor download the
+  // per-book export uses; the route answers the versioned JSON the phone
+  // imports (mobile-app ticket 05). Errors are retryable by shape — the
+  // route either exists or it doesn't.
+  const downloadBackup = async () => {
+    setBackingUp(true);
+    setError(null);
+    try {
+      await downloadAttachment("/api/export/backup");
+    } catch {
+      setError("备份导出失败，请重试。");
+    } finally {
+      setBackingUp(false);
+    }
+  };
+
   const removeBook = async (book: BookSummary) => {
     if (!window.confirm(`删除《${book.title}》？书和它的标注会一并移除。`)) {
       return;
@@ -185,7 +205,17 @@ export function BookshelfPage() {
   return (
     <main className="bookshelf">
       <h1>LinguaLeaf</h1>
-      <p className="subtitle">英文电子书标注阅读器</p>
+      <p className="subtitle">
+        英文电子书标注阅读器
+        <button
+          type="button"
+          className="backup-export"
+          disabled={backingUp}
+          onClick={() => void downloadBackup()}
+        >
+          {backingUp ? "导出中…" : "导出备份"}
+        </button>
+      </p>
 
       <form onSubmit={handleSubmit}>
         <label>

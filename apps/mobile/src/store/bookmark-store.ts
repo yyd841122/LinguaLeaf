@@ -5,9 +5,12 @@ import {
 
 // The manual bookmark store (mobile-app ticket 10): where a reader planted
 // a mark, in the same {chapter, block} coordinates reading progress and
-// the view's data-block-index anchors use. The row model mirrors the wire
-// BookmarkSummary (apps/server/src/wire.ts) so the backup ticket (05) can
-// carry PC-exported marks without a translation layer; ids are minted
+// the view's data-block-index anchors use. The row model mirrors the SHAPE
+// of the wire BookmarkSummary (apps/server/src/wire.ts) so the backup
+// ticket (05) can carry PC-exported marks without a translation layer —
+// the VALUES are phone-semantics 0-based; the PC database is 1-based and
+// its export route converts (wire.ts's coordinate convention). ids are
+// minted
 // locally (a per-record counter) — cross-device id collisions are the
 // import side's merge problem, not this seam's. No per-book cap: the web
 // server's cap is server hygiene, and local data has no such need.
@@ -21,9 +24,16 @@ export type BookmarkRow = {
 
 export type BookmarkTarget = { chapter: number; block: number };
 
+// The backup's enumeration row (ticket 05): the docId rides along so the
+// backup can key rows by book title across devices — the exported format
+// drops the local id (the import side re-mints by position).
+export type StoredBookmarkRow = BookmarkRow & { docId: string };
+
 export interface BookmarkStore {
   // (chapter, block) reading order — the order the panel lists rows in.
   list(docId: string): Promise<BookmarkRow[]>;
+  // The backup's enumeration read: every doc's rows.
+  exportAll(): Promise<StoredBookmarkRow[]>;
   // Same-position add is idempotent: an existing (chapter, block) row is
   // returned unchanged (the wire's 201-fresh / 200-existing semantics).
   add(docId: string, target: BookmarkTarget): Promise<BookmarkRow>;
@@ -76,6 +86,11 @@ export function createMemoryBookmarkStore(): BookmarkStore {
     async list(docId) {
       return docOf(docId).rows.map((row) => ({ ...row }));
     },
+    async exportAll() {
+      return [...byDoc.entries()].flatMap(([docId, record]) =>
+        record.rows.map((row) => ({ ...row, docId }))
+      );
+    },
     async add(docId, target) {
       return { ...plantRow(docOf(docId), target) };
     },
@@ -102,6 +117,12 @@ export function createBookmarkStore(storage: NamespaceStorage): BookmarkStore {
       return record
         .read()
         .then((r) => (r.byDoc[docId]?.rows ?? []).map((row) => ({ ...row })));
+    },
+    async exportAll() {
+      const r = await record.read();
+      return Object.entries(r.byDoc).flatMap(([docId, doc]) =>
+        doc.rows.map((row) => ({ ...row, docId }))
+      );
     },
     add(docId, target) {
       return record.update(async (r, write) => {

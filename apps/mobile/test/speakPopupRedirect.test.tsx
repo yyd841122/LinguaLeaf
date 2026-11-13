@@ -36,6 +36,7 @@ const store: VocabularyStore = {
   lookup: async () => null,
   setStatus: async () => undefined,
   statesFor: async () => new Map(),
+  exportAll: async () => ({}),
 };
 
 describe("kernel popup speaks through the mobile router", () => {

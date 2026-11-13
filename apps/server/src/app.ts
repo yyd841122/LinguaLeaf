@@ -10,6 +10,7 @@ import { createBooksRouter } from "./books-router.js";
 import { createLookupRouter } from "./dict/lookup-router.js";
 import { createReviewRouter } from "./review-router.js";
 import { createVocabRouter } from "./vocab-router.js";
+import { createBackupRouter } from "./backup-router.js";
 import { learnWordIfAbsent } from "./vocab-store.js";
 import { activeTaskCount } from "./task-lifecycle.js";
 
@@ -82,6 +83,9 @@ export function createApp(
 
   // The popup's explicit state operations (ADR-0005).
   app.use("/api/vocab", createVocabRouter(database));
+
+  // The PC's full-backup export (mobile-app ticket 05, ADR-0008's route).
+  app.use("/api/export", createBackupRouter(database));
 
   // The lookup's states store is assembled here, where the book database
   // lives (grilling decision 3): the router itself stays SQL-free.

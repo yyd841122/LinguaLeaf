@@ -294,6 +294,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
         return inner.add(docId, target);
       },
       remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
     };
     await renderReadingFace(bookmarks);
 
@@ -325,6 +326,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
           : inner.list(docId),
       add: (docId, target) => inner.add(docId, target),
       remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
     };
     await renderReadingFace(bookmarks);
 
@@ -374,6 +376,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
       },
       add: (docId, target) => inner.add(docId, target),
       remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
     };
     await renderReadingFace(bookmarks);
 

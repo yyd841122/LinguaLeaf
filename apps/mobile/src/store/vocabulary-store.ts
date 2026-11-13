@@ -29,6 +29,8 @@ export interface StateBackend {
   // a delayed lookup can never overwrite an explicit status that landed
   // while the lookup was reading.
   enroll(key: string): Promise<VocabState>;
+  // The backup's enumeration read (ticket 05): every stored key → state.
+  all(): Promise<Record<string, VocabState>>;
 }
 
 // The extension's one new storage seam (spec): the 生词本 semantics the
@@ -46,6 +48,8 @@ export interface VocabularyStore {
   setStatus(key: string, status: VocabState): Promise<void>;
   // Bulk read for the reading walk's tints; absent keys are New.
   statesFor(keys: string[]): Promise<Map<string, VocabState>>;
+  // The backup's enumeration read (ticket 05): the whole lemma→state map.
+  exportAll(): Promise<Record<string, VocabState>>;
 }
 
 async function lookupFlow(
@@ -69,6 +73,7 @@ export function createVocabularyStore(
     lookup: (word) => lookupFlow(dictionary, backend, word),
     setStatus: (key, status) => backend.put(key, status),
     statesFor: (keys) => backend.getMany(keys),
+    exportAll: () => backend.all(),
   };
 }
 
@@ -93,6 +98,9 @@ export function memoryBackend(): StateBackend & {
     },
     async put(key, status) {
       map.set(key, status);
+    },
+    async all() {
+      return Object.fromEntries(map);
     },
     async enroll(key) {
       // Synchronous map: read and set are one step, the serialize-by-
@@ -143,6 +151,9 @@ export function createStorageBackend(storage: NamespaceStorage): StateBackend {
         await write(all);
         return "learning";
       });
+    },
+    async all() {
+      return { ...(await record.read()) };
     },
   };
 }

@@ -241,6 +241,7 @@ describe("createChapterTaskRegistry", () => {
     const translations: TranslationStore = {
       getChapter: async () => ({}),
       saveTranslations: () => Promise.reject(new Error("disk gone")),
+      exportAll: async () => ({}),
     };
     const registry = createChapterTaskRegistry();
     const events: ChapterTaskEvent[] = [];

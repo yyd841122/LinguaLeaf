@@ -693,6 +693,31 @@ const decodeNote = (row: NoteSqlRow): NoteSummary => ({
   updatedAt: row.updated_at,
 });
 
+// Every settled sentence translation, one row per block — the backup
+// route's raw material (mobile-app ticket 05). Rows carry the PC's
+// 1-based positions; the caller converts to the format's 0-based grid.
+export type SettledTranslationRow = {
+  title: string;
+  chapter: number;
+  block: number;
+  line: string;
+};
+
+export function listSettledTranslations(
+  database: Database.Database
+): SettledTranslationRow[] {
+  return database
+    .prepare(
+      `SELECT b.title AS title, c.position AS chapter, bl.position AS block,
+              bl.translation_text AS line
+       FROM blocks bl
+       JOIN chapters c ON c.id = bl.chapter_id
+       JOIN books b ON b.id = c.book_id
+       WHERE bl.kind = 'sentence' AND bl.translation_text IS NOT NULL`
+    )
+    .all() as SettledTranslationRow[];
+}
+
 export function listNotes(
   database: Database.Database,
   bookId: number

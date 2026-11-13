@@ -13,6 +13,8 @@ export type NoteAnchor = {
 export type ReaderNote = NoteAnchor & { type: NoteType; text: string };
 export interface NotesStore {
   list(docId: string): Promise<ReaderNote[]>;
+  // The backup's enumeration read (ticket 05): every stored note, all docs.
+  exportAll(): Promise<ReaderNote[]>;
   save(
     anchor: NoteAnchor & { type: NoteType },
     text: string
@@ -93,6 +95,12 @@ export function createNotesStore(storage: NamespaceStorage): NotesStore {
       return decode(await record.read()).notes.filter(
         (note) => note.docId === docId
       );
+    },
+    // The backup's enumeration read rides the same decode (and the same
+    // pending-writes settle) as list — one reader, one record grammar.
+    async exportAll() {
+      await pendingWrites.catch(() => undefined);
+      return decode(await record.read()).notes.map((note) => ({ ...note }));
     },
     save(anchor, text) {
       const run = record.update(async (raw, write) => {

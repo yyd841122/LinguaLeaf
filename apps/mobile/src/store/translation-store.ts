@@ -26,6 +26,9 @@ export interface TranslationStore {
     chapterIndex: number,
     entries: TranslationEntry[]
   ): Promise<void>;
+  // The backup's enumeration read (ticket 05): the whole doc → chapter
+  // (string key) → block → line map, cloned.
+  exportAll(): Promise<Record<string, Record<string, ChapterTranslations>>>;
 }
 
 type StoredRecord = {
@@ -40,6 +43,16 @@ export function createMemoryTranslationStore(): TranslationStore {
   return {
     async getChapter(docId, chapterIndex) {
       return { ...(byDoc.get(docId)?.get(chapterIndex) ?? {}) };
+    },
+    async exportAll() {
+      const out: Record<string, Record<string, ChapterTranslations>> = {};
+      for (const [docId, chapters] of byDoc) {
+        out[docId] = {};
+        for (const [chapterIndex, chapter] of chapters) {
+          out[docId][String(chapterIndex)] = { ...chapter };
+        }
+      }
+      return out;
     },
     async saveTranslations(docId, chapterIndex, entries) {
       const chapters = byDoc.get(docId) ?? new Map();
@@ -69,6 +82,17 @@ export function createTranslationStore(
     async getChapter(docId, chapterIndex) {
       const r = await record.read();
       return { ...(r.byDoc[docId]?.[String(chapterIndex)] ?? {}) };
+    },
+    async exportAll() {
+      const r = await record.read();
+      const out: Record<string, Record<string, ChapterTranslations>> = {};
+      for (const [docId, chapters] of Object.entries(r.byDoc)) {
+        out[docId] = {};
+        for (const [chapterIndex, chapter] of Object.entries(chapters)) {
+          out[docId][chapterIndex] = { ...chapter };
+        }
+      }
+      return out;
     },
     saveTranslations(docId, chapterIndex, entries) {
       return record.update(async (r, write) => {

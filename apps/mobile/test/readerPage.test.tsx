@@ -365,6 +365,7 @@ export function deferredBackend() {
       return memory.get(key);
     },
     getMany: (keys) => memory.getMany(keys),
+    all: () => memory.all(),
     put(key, status) {
       let resolve!: () => void;
       const promise = new Promise<void>((r) => {
@@ -1123,6 +1124,7 @@ settleRaceSuite({
         return memory.get(key);
       },
       getMany: (keys) => memory.getMany(keys),
+      all: () => memory.all(),
       put(key, status) {
         let resolve!: () => void;
         let reject!: () => void;

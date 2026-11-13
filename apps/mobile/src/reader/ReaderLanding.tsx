@@ -6,6 +6,8 @@ import type { PdfPositionStore } from "../store/pdf-position-store";
 import type { PersistenceResult } from "../store/storage-persistence";
 import { PdfShelf } from "./PdfShelf";
 import type { PdfShelfEntry, usePdfShelf } from "./usePdfShelf";
+import type { BackupManager } from "../backup/backup-manager";
+import type { ImportSummary } from "../backup/backup-format";
 
 // Keep this station mounted while reading (phase=null): recents and drag
 // depth retain their page lifetime, and returning to the picker refreshes
@@ -20,6 +22,7 @@ export function ReaderLanding({
   pdfPositions,
   refreshPdfShelf,
   persistence,
+  backup,
   onFile,
   onReopenDocument,
   onReopenPdf,
@@ -34,12 +37,23 @@ export function ReaderLanding({
   pdfPositions: PdfPositionStore;
   refreshPdfShelf: () => Promise<void>;
   persistence: PersistenceResult | null;
+  // The backup face (ticket 05): null while the vocabulary seam resolves
+  // — the section hides, the recents-list posture.
+  backup: BackupManager | null;
   onFile: (file: File | undefined | null) => Promise<void>;
   onReopenDocument: (entry: LibraryEntry) => void;
   onReopenPdf: (entry: PdfShelfEntry) => Promise<void>;
   onOpenSettings: () => void;
 }) {
   const [recents, setRecents] = useState<LibraryEntry[] | null>(null);
+  // The backup block's local facts (ticket 05): one busy bit and the two
+  // outcome lines. Errors stay until the next action; the import summary
+  // reads per-asset counts, the cap's skips included.
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(
+    null
+  );
   const dropDepth = useRef(0);
   const pdfRecent = shelf?.recent;
   // The landing's recents: loaded whenever the picker shows.
@@ -63,6 +77,65 @@ export function ReaderLanding({
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
     void onFile(event.target.files?.[0]);
     event.target.value = "";
+  };
+
+  const onExport = () => {
+    if (!backup || backupBusy) return;
+    setBackupBusy(true);
+    setBackupError(null);
+    setImportSummary(null);
+    void backup
+      .exportBackup()
+      .then(() => {
+        setBackupBusy(false);
+        setImportSummary(null);
+      })
+      .then(undefined, (error: unknown) => {
+        setBackupBusy(false);
+        setBackupError(
+          error instanceof Error && error.message
+            ? error.message
+            : "导出失败，请重试。"
+        );
+      });
+  };
+
+  const onImportPick = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!backup || backupBusy || !file) return;
+    setBackupBusy(true);
+    setBackupError(null);
+    setImportSummary(null);
+    void backup
+      .importBackup(file)
+      .then((summary) => {
+        setBackupBusy(false);
+        setImportSummary(summary);
+      })
+      .catch((error: unknown) => {
+        setBackupBusy(false);
+        setBackupError(
+          error instanceof Error && error.message
+            ? error.message
+            : "导入失败，请重试。"
+        );
+      });
+  };
+
+  const importLine = (summary: ImportSummary): string => {
+    const parts = [
+      `生词本 ${summary.vocabulary} 条`,
+      `笔记 ${summary.notes} 条`,
+      `进度 ${summary.progress} 本`,
+      `书签 ${summary.bookmarks} 条`,
+      `译文 ${summary.translations} 行`,
+    ];
+    const skipped =
+      summary.notesSkippedOverCap > 0
+        ? `；${summary.notesSkippedOverCap} 条笔记超出每书 100 条上限，未导入`
+        : "";
+    return `导入完成：${parts.join("、")}${skipped}。`;
   };
 
   // Dragover must be cancelled for drop to fire; dragenter/leave counting
@@ -177,6 +250,45 @@ export function ReaderLanding({
           onChange={onPick}
         />
       </label>
+      {backup ? (
+        <section className="backup-block" aria-label="备份与恢复">
+          <h2 className="backup-title">备份与恢复</h2>
+          <p className="reader-hint">
+            导出生词本、笔记、进度、书签与译文为一个备份文件；导入按资产合并进现有数据，不清空。
+          </p>
+          <div className="backup-actions">
+            <button
+              type="button"
+              className="backup-export"
+              disabled={backupBusy}
+              onClick={onExport}
+            >
+              导出备份
+            </button>
+            <label
+              className={`backup-import${backupBusy ? " backup-busy" : ""}`}
+            >
+              <span>{backupBusy ? "处理中…" : "导入备份"}</span>
+              <input
+                type="file"
+                accept=".json,application/json"
+                aria-label="选择备份文件"
+                onChange={onImportPick}
+              />
+            </label>
+          </div>
+          {importSummary ? (
+            <p className="reader-status" role="status">
+              {importLine(importSummary)}
+            </p>
+          ) : null}
+          {backupError ? (
+            <p className="reader-error" role="alert">
+              {backupError}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
       {persistence && persistence !== "granted" ? (
         <p className="reader-hint" data-persistence={persistence}>
           {persistence === "unavailable"
