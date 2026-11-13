@@ -165,3 +165,28 @@ head**"——设计意图是粘头,实现漏了。
 **门**:根 verify EXIT=0(100 文件,1114 passed | 3 skipped)。
 **真机**:待补——round 3 打包完成时手机无线 adb 已不可达(ping
 192.168.0.2 全丢包,mDNS 无服务),装机验证待设备重连后补做。
+
+### 2026-11-13 round 4 返修(锚线量头实高 + 落点居中;真机已验)
+
+设备重连后 round 3 包装机验证,竖屏实证暴露新问题:粘头在竖屏很高
+(书名折三行,约 500px 物理高),固定 96px 锚线净空是横屏头的高度——
+①跳回/恢复的目标块大半藏在头后只露尾巴;②打签锚点选中的是头后
+看不见的块,比读者感知的当前位置偏早一两块(round 3 自己的装机截图
+t10r3-03/05 即此象)。
+
+**修复(commit `fix(mobile): 票 10 锚线量粘头实高 + 跳转/恢复居中`)**:
+- `readingAnchorTop()`:锚线 = `.reader-head` 实时 `bottom`——设计
+  注释本就写着 "crossed under the sticky head",如今字面成立;横竖屏
+  各自量各自,jsdom rect 全零回退 96(套件语义不变)
+- 跳回与恢复 effect 改 `scrollIntoView({ block: "center" })`:标记块
+  连同 ▼ 钉居中呈现,任何头高都稳在头之下;`scroll-margin-top:96px`
+  规则随之删除(死配置)
+
+**门**:根 verify EXIT=0(100 文件,1114 passed | 3 skipped)。
+**真机(PCAM00 竖屏,自动化实证)**:跳回落点——标记块「The storm
+walked off toward the north near morning.」**整段可见、居中**,左缘
+紫条 + ▼ 钉清晰,上下文完整;restore 路径同法(重开书进度位在中部
+可见)。打签锚点待维护者复验(自动化做到一半维护者拿起手机,停)。
+
+**待办**:维护者四步复验(①章中打书签看 ▼ ②跳回 ③删除 ④杀进程
+重开);Codex 终审 11-15 补跑时含 round 2-4 返修 diff。
