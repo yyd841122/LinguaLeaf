@@ -3,28 +3,31 @@
 // 目挡住 commit 钩子的 rewrap(2026-11-09 实证过 14,943,187 → 18,310,286
 // 的假漂移)。任一半失守,本套件红。
 // 两份烘料资产是 gitignored 的本地产物(烘焙自服务端 sqlite),CI
-// checkout 上天然不存在——字节同一套件在资产缺失时整组跳过(skip 名单
-// 可见,不冒充通过),.prettierignore 契约测试无条件跑(pin 的是已入库
-// 文件)。读取用 vite 的 ?raw 导入:mobile 测试块禁 Node 全局
-// (process/Buffer),jsdom 又会重写 import.meta.url(?raw 在 transform
-// 期内联,两个坑都绕开);资产缺失的探活走动态导入,失败即 skip 信号。
+// checkout 上天然不存在——字节同一套件在资产缺席时整组跳过(skip 名单
+// 可见,不冒充通过);.prettierignore 契约测试无条件跑(pin 的是已入库
+// 文件)。读取不用 vite 的 ?raw:动态导入的字面量在 transform 期仍被
+// import-analysis 静态解析(2026-11-13 CI 实证),缺席即整文件红;测试
+// 文件本身跑在 Node 侧,node:fs 直读既绕开解析、又能先探活再跳过
+// (readerPage.test 等已有 fs 先例)。
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import prettierIgnore from "../../../.prettierignore?raw";
 import { describe, expect, it } from "vitest";
 
-async function tryRaw(
-  importer: () => Promise<{ default: string }>
-): Promise<string | null> {
-  try {
-    return (await importer()).default;
-  } catch {
-    return null; // 烘料资产不在(CI / 未烘焙)——调用方 skip,不冒充断言
-  }
-}
-
-const mobileDict = await tryRaw(() => import("../public/dictionary.json?raw"));
-const extensionDict = await tryRaw(
-  () => import("../../extension/public/dictionary.json?raw")
+// Path anchors go through fileURLToPath+resolve, NOT new URL(relative,
+// import.meta.url): under the jsdom environment the global URL is
+// jsdom's, and it resolves the relative against the document base
+// (http://localhost:3000) ignoring the file base — readerPage.test.tsx's
+// identical pattern.
+const here = dirname(fileURLToPath(import.meta.url));
+const mobileDictPath = resolve(here, "../public/dictionary.json");
+const extensionDictPath = resolve(
+  here,
+  "../../extension/public/dictionary.json"
 );
+const assetsPresent =
+  existsSync(mobileDictPath) && existsSync(extensionDictPath);
 
 describe("dictionary asset .prettierignore pin (rewrap 防线)", () => {
   it("两份资产都在 .prettierignore 的 rewrap 保护清单里", () => {
@@ -33,11 +36,13 @@ describe("dictionary asset .prettierignore pin (rewrap 防线)", () => {
   });
 });
 
-describe.skipIf(mobileDict === null || extensionDict === null)(
+describe.skipIf(!assetsPresent)(
   "dictionary asset byte identity (烘料复用契约;资产缺失即跳过)",
   () => {
     it("mobile 副本与 extension 烘料逐字节同一", () => {
-      expect(mobileDict!.length).toBe(extensionDict!.length);
+      const mobileDict = readFileSync(mobileDictPath, "utf8");
+      const extensionDict = readFileSync(extensionDictPath, "utf8");
+      expect(mobileDict.length).toBe(extensionDict.length);
       expect(mobileDict).toBe(extensionDict);
     });
   }
