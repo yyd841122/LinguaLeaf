@@ -1,5 +1,5 @@
 # 05 备份/恢复:全量 JSON 双端手动互通
-Status: ready-for-agent(2026-11-09 立票;/to-tickets 补全轮重编号,原 04)
+Status: ready-for-human(2026-11-13 Lane A 实现收官:根 verify EXIT=0(103 文件,1133 passed | 3 skipped,+3/+19)、lint 与 sql-locality 门过;真机迁移人验待做,见 Comments 与用户操作项)
 Blocked by: 02(与 04 并行,双轨)
 
 ## 目标
@@ -77,3 +77,28 @@ Blocked by: 02(与 04 并行,双轨)
    同格式 JSON(listShelf/getProgress/listBookmarks/listNotes/
    loadWordStatuses);web 书架页「导出备份」按钮复用 download.ts 的
    fetch→Blob→anchor。
+
+### 2026-11-13 Lane A 实现收官(commit `feat(backup)` 32 文件)
+
+**门**:根 verify **EXIT=0**(103 文件,1133 passed | 3 skipped,+3 文件
++19 测试);`eslint --max-warnings 0` 过;`check:sql-locality` 过(blocks
+表查询归位 book-store 的 `listSettledTranslations`,路由只收行)。
+
+**实现中发现并钉死的跨端事实**:PC 库坐标是 **1-based**
+(persistBook chapters `chapterIndex+1`、blocks 从 1 起;路由
+`isPositiveInteger` 拒 0),手机是 **0-based**(数据块下标含全部块)。
+格式钉死手机语义 0-based,PC 导出路由 -1 换算,wire.ts 类型注释钉约定;
+书签店「mirror wire」注释补「形状同、值差一」澄清。
+
+**三端**:手机(五店 exportAll 读缝双孪生 / backup-format 校验器 /
+backup 编排器 / manager(FileReader 读文件,jsdom 全版本姿势;测试抓出
+File.text() 缺失的坑)/ Capacitor Filesystem+Share 适配器 / 落地面
+备份与恢复区);server(export 路由 + supertest 2 例,书级笔记跳过走
+X-Backup-Skipped-Book-Notes 诊断头);web(书架导出备份按钮 +
+bookshelf.test.tsx 2 例,复用 ticket-03 导出 harness)。
+
+**勿忘**:
+①真机【人验】:PC web 导出备份 → 传手机 → 书架导入备份,生词本/
+笔记/进度/书签/译文全部落位;损坏文件导入被拒且报错可读。回报后翻 done。
+②**Codex 独立终审 11-15 10:55 额度恢复后补跑**(Lane A 翻转挂账,
+同票 10),范围=本票实现 commit + 拍板;发现实项按 follow-up 处置。
