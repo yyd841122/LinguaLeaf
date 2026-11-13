@@ -6,7 +6,11 @@
 
 import type { LibraryStore } from "../store/library-store";
 import { NOTES_PER_BOOK_LIMIT, type NotesStore } from "../store/notes-store";
-import type { BookmarkStore } from "../store/bookmark-store";
+import {
+  isPdfRow,
+  type BookmarkStore,
+  type EpubBookmarkRow,
+} from "../store/bookmark-store";
 import type { TranslationStore } from "../store/translation-store";
 import type { VocabularyStore } from "../store/vocabulary-store";
 import {
@@ -48,7 +52,13 @@ export async function buildBackup(
   const titles = new Set<string>();
   for (const note of notes) titles.add(titleFromDocId(note.docId));
   for (const title of Object.keys(progress)) titles.add(titleFromDocId(title));
-  for (const row of bookmarks) titles.add(titleFromDocId(row.docId));
+  // PDF page rows stay device-local (the format carries EPUB marks only —
+  // same posture as pdf-notes/positions since ticket 05; the version door
+  // for PDF-side assets is stub ticket 12). A PDF doc with page marks but
+  // no other asset therefore stays out of `books` entirely.
+  for (const row of bookmarks) {
+    if (!isPdfRow(row)) titles.add(titleFromDocId(row.docId));
+  }
   for (const docId of Object.keys(translations)) {
     titles.add(titleFromDocId(docId));
   }
@@ -73,12 +83,16 @@ export async function buildBackup(
           position,
         ])
       ),
-      bookmarks: bookmarks.map((row) => ({
-        bookTitle: titleFromDocId(row.docId),
-        chapter: row.chapter,
-        block: row.block,
-        createdAt: row.createdAt,
-      })),
+      bookmarks: bookmarks
+        .filter(
+          (row): row is EpubBookmarkRow & { docId: string } => !isPdfRow(row)
+        )
+        .map((row) => ({
+          bookTitle: titleFromDocId(row.docId),
+          chapter: row.chapter,
+          block: row.block,
+          createdAt: row.createdAt,
+        })),
       translations: Object.fromEntries(
         Object.entries(translations).map(([docId, chapters]) => [
           titleFromDocId(docId),

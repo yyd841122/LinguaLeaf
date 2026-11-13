@@ -149,6 +149,25 @@ describe("buildBackup", () => {
       "Title A": { "0": { "1": "译文一行" } },
     });
   });
+
+  it("keeps PDF page rows device-local: they never enter the payload (ticket 03)", async () => {
+    const stores = makeStores();
+    // A PDF doc with only page marks has no other asset — it must not
+    // surface in `books` either, or the payload would list a book the
+    // assets cannot describe.
+    await stores.bookmarks.add("fp:Pdf Book", { page: 4 });
+    await stores.bookmarks.add("doc:Title A", { chapter: 0, block: 1 });
+    const payload = await buildBackup(stores);
+    expect(payload.assets.bookmarks).toEqual([
+      {
+        bookTitle: "Title A",
+        chapter: 0,
+        block: 1,
+        createdAt: expect.any(String),
+      },
+    ]);
+    expect(payload.books).toEqual([{ title: "Title A" }]);
+  });
 });
 
 describe("applyBackup", () => {

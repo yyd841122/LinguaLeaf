@@ -12,9 +12,11 @@ import type { NotesStore } from "../store/notes-store";
 import type { TranslationStore } from "../store/translation-store";
 import {
   byReadingOrder,
+  isEpubRow,
   type BookmarkRow,
   type BookmarkStore,
-  type BookmarkTarget,
+  type EpubBookmarkRow,
+  type EpubBookmarkTarget,
 } from "../store/bookmark-store";
 import type { TranslateSettingsStore } from "../store/translate-settings-store";
 import {
@@ -33,6 +35,7 @@ import { TranslateFailureFlag } from "../translate/TranslateFailureFlag";
 import { EpubChapter } from "./EpubChapter";
 import type { NoteEditorHandle } from "./NoteEditor";
 import { WordLookupPopup } from "./WordLookupPopup";
+import { formatPlantedAt } from "./bookmark-view";
 
 // The settled-failure copy (ticket 04): a chapter whose every sentence
 // came back null. The Translator contract reports wrong key and network
@@ -64,14 +67,8 @@ const topmostVisibleBlockIndex = (): number => {
   return current;
 };
 
-// The bookmark row's planted-at stamp: month-day + hour:minute — the
-// reader-planted marks' distinguishing fact (two marks in one chapter
-// differ by when, not by where their invisible block index sits).
-const formatPlantedAt = (iso: string): string => {
-  const t = new Date(iso);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${t.getMonth() + 1}-${t.getDate()} ${pad(t.getHours())}:${pad(t.getMinutes())}`;
-};
+// The bookmark row's planted-at stamp lives in ./bookmark-view — one
+// definition for both faces.
 
 // EPUB owns its tint walk, popup and progress; the host owns book/chapter
 // selection and the injected seams. Remounting for each open clears tints,
@@ -156,7 +153,7 @@ export function EpubReader({
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [bookmarkRows, setBookmarkRows] = useState<BookmarkRow[] | null>(null);
   const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
-  const [jumpTarget, setJumpTarget] = useState<BookmarkTarget | null>(null);
+  const [jumpTarget, setJumpTarget] = useState<EpubBookmarkTarget | null>(null);
 
   // Per-chapter 生词本 states for the tints. Bulk reads land by merge:
   // keys the local map already holds win, so a popup patch (or a bulk read
@@ -409,17 +406,24 @@ export function EpubReader({
   };
 
   const chapter = book.chapters[chapterIndex];
+  // This face is EPUB-only: the store's rows are kind-unioned since the
+  // PDF face (ticket 03) joined, and a doc never mixes kinds — the narrow
+  // here is the type-level statement of that fact.
+  const epubBookmarkRows = useMemo(
+    () => (bookmarkRows ?? []).filter(isEpubRow),
+    [bookmarkRows]
+  );
   // The face's in-text markers: the current chapter's planted blocks,
   // derived from the doc-wide rows — a chapter switch re-derives without a
   // refetch, and a plant/remove lands here through the local merges.
   const markedBlocks = useMemo(
     () =>
       new Set(
-        (bookmarkRows ?? [])
+        epubBookmarkRows
           .filter((row) => row.chapter === chapterIndex)
           .map((row) => row.block)
       ),
-    [bookmarkRows, chapterIndex]
+    [epubBookmarkRows, chapterIndex]
   );
   // The tint walk reads the merged map through the store's one key rule.
   const stateOf = (word: string): VocabState | null =>
@@ -474,7 +478,7 @@ export function EpubReader({
   // 跳回: the row's chapter rides the TOC's own goChapter (the progress
   // write it makes is the chapter fact; the block anchor lands right
   // after), and the panel closes — the jump is the reader's next fact.
-  const jumpToBookmark = (row: BookmarkRow) => {
+  const jumpToBookmark = (row: EpubBookmarkRow) => {
     if (!closeNote()) return;
     setLookup(null);
     setShowBookmarks(false);
@@ -685,7 +689,7 @@ export function EpubReader({
               </p>
             ) : (
               <ul className="bookmark-list">
-                {bookmarkRows.map((row) => {
+                {epubBookmarkRows.map((row) => {
                   const title = book.chapters[row.chapter]?.title ?? "未知章节";
                   return (
                     <li key={row.id} className="bookmark-row">

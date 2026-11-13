@@ -21,15 +21,25 @@ import {
 } from "./pdf";
 import type { PdfNote, PdfNotesStore } from "../store/pdf-notes-store";
 import type { PdfPositionStore } from "../store/pdf-position-store";
+import {
+  byReadingOrder,
+  isPdfRow,
+  type BookmarkStore,
+  type PdfBookmarkRow,
+} from "../store/bookmark-store";
+import { formatPlantedAt } from "./bookmark-view";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 
 // The PDF reading view (ticket 06): one page on canvas at a time — a big
 // book is progressive by shape — with the proven word/IPA overlay. Word
 // units carry data-word, so the popup seam is the EPUB one verbatim.
+// The bookmark face (ticket 03) mirrors the EPUB one (ticket 10): plant
+// at the current page, list, jump, delete — same panel shape, page rows.
 export function PdfReader({
   docId,
   notes,
   positions,
+  bookmarks,
   editorRef,
   onOpenNote,
   title,
@@ -47,6 +57,7 @@ export function PdfReader({
   docId: string;
   notes: PdfNotesStore;
   positions: PdfPositionStore;
+  bookmarks: BookmarkStore;
   editorRef: RefObject<NoteEditorHandle | null>;
   onOpenNote: () => void;
   title: string;
@@ -70,6 +81,71 @@ export function PdfReader({
   useEffect(() => {
     void positions.setPosition({ docId, title, page, scale });
   }, [positions, docId, title, page, scale]);
+
+  // The bookmark seam (ticket 03): planted page marks for this document.
+  // Same channel discipline as the EPUB face — one owner carries the
+  // list, the plant and the remove; the mount read is silent (markers
+  // best-effort) while a fresh panel open refetches and flags failures.
+  const [showBookmarks, setShowBookmarks] = useState(false);
+  const [bookmarkRows, setBookmarkRows] = useState<PdfBookmarkRow[] | null>(
+    null
+  );
+  const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
+  const bookmarksOwner = useOwner();
+  const bookmarksSettle = useSettle(bookmarksOwner);
+  const runBookmarks = bookmarksSettle.run;
+  useEffect(() => {
+    void runBookmarks(bookmarks.list(docId), {
+      onFresh: (rows) => setBookmarkRows(rows.filter(isPdfRow)),
+    });
+    return () => bookmarksOwner.invalidate();
+  }, [bookmarks, docId, runBookmarks, bookmarksOwner]);
+  useEffect(() => {
+    if (!showBookmarks) return;
+    setBookmarkRows(null);
+    void runBookmarks(bookmarks.list(docId), {
+      onFresh: (rows) => setBookmarkRows(rows.filter(isPdfRow)),
+    });
+    return () => bookmarksOwner.invalidate();
+  }, [
+    bookmarks,
+    docId,
+    showBookmarks,
+    bookmarkAttempt,
+    runBookmarks,
+    bookmarksOwner,
+  ]);
+  // 打书签: the plant lands on the current page, and the store's
+  // same-position idempotence makes a double click one mark.
+  const plantBookmark = () => {
+    void runBookmarks(bookmarks.add(docId, { page }), {
+      onFresh: (row) =>
+        setBookmarkRows((current) => {
+          if (!isPdfRow(row)) return current;
+          const rows = current ?? [];
+          return rows.some((existing) => existing.id === row.id)
+            ? rows
+            : [...rows, row].sort(byReadingOrder);
+        }),
+    });
+  };
+  const removeBookmark = (id: number) => {
+    void runBookmarks(bookmarks.remove(docId, id), {
+      onFresh: () =>
+        setBookmarkRows((current) =>
+          (current ?? []).filter((row) => row.id !== id)
+        ),
+    });
+  };
+  // 跳回: the jump is a page navigation — the footer's own channel, so
+  // the editor-close guard and the render invalidation ride along — and
+  // the panel closes as part of the jump.
+  const jumpToBookmark = (row: PdfBookmarkRow) => {
+    navigate(() => {
+      setShowBookmarks(false);
+      onPage(row.page);
+    });
+  };
 
   return (
     <main className="reader" aria-label="扩展阅读页">
@@ -99,6 +175,21 @@ export function PdfReader({
           ))}
           <button
             type="button"
+            className="reader-bookmarks"
+            onClick={() => {
+              if (editorRef.current?.requestClose() === false) return;
+              // The note channel doubles as the dismissal channel: its
+              // host handler clears the anchored popup, exactly what the
+              // EPUB twin's button does to its own lookup before the
+              // veil goes up.
+              onOpenNote();
+              setShowBookmarks(true);
+            }}
+          >
+            书签
+          </button>
+          <button
+            type="button"
             className="reader-reopen"
             onClick={() => navigate(onReopen)}
           >
@@ -120,6 +211,80 @@ export function PdfReader({
         onOpenNote={onOpenNote}
         onWordClick={onWordClick}
       />
+      {showBookmarks ? (
+        <div className="overlay-veil" role="dialog" aria-label="书签">
+          <div className="overlay-card bookmark-card">
+            <h2 className="overlay-title">书签</h2>
+            <button
+              type="button"
+              className="bookmark-plant"
+              // The plant waits for the open's read: planting into a
+              // pending list would merge the row locally, only for the
+              // older snapshot to overwrite the panel when its read
+              // lands (one channel, no invalidate between the marks).
+              disabled={bookmarkRows === null}
+              onClick={plantBookmark}
+            >
+              在当前位置打书签
+            </button>
+            {/* One channel for the list and both ops: a fresh failure
+                raises this flag, a fresh success retires it. The retry
+                re-reads the list — fresh truth also settles a failed
+                op's aftermath. */}
+            {bookmarksSettle.failed ? (
+              <p className="reader-error" role="alert">
+                书签操作失败，请重试。
+                <button
+                  type="button"
+                  onClick={() => setBookmarkAttempt((value) => value + 1)}
+                >
+                  重试读取书签
+                </button>
+              </p>
+            ) : null}
+            {bookmarkRows === null ? (
+              <p className="reader-status">读取书签中…</p>
+            ) : bookmarkRows.length === 0 ? (
+              <p className="reader-status">
+                还没有书签。点「在当前位置打书签」给当前阅读位置留个标记。
+              </p>
+            ) : (
+              <ul className="bookmark-list">
+                {bookmarkRows.map((row) => {
+                  const label = `第 ${row.page} 页`;
+                  return (
+                    <li key={row.id} className="bookmark-row">
+                      <button
+                        type="button"
+                        className="bookmark-jump"
+                        onClick={() => jumpToBookmark(row)}
+                      >
+                        <span className="bookmark-title">{label}</span>
+                        <span className="bookmark-at">
+                          {formatPlantedAt(row.createdAt)}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className="bookmark-delete"
+                        aria-label={`删除书签：${label}`}
+                        onClick={() => removeBookmark(row.id)}
+                      >
+                        删除
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            <div className="overlay-actions">
+              <button type="button" onClick={() => setShowBookmarks(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <footer className="reader-pager">
         <button
           type="button"

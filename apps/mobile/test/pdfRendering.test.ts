@@ -3,7 +3,9 @@ import type { TextItem } from "pdfjs-dist/types/src/display/api";
 import type { PdfSession } from "../src/reader/pdf";
 
 const pdfjs = vi.hoisted(() => ({ getDocument: vi.fn() }));
-vi.mock("pdfjs-dist", () => ({
+// The mock pins the legacy specifier pdf.ts actually imports (ticket 03's
+// WebView-compat switch) — a "pdfjs-dist" mock would miss it.
+vi.mock("pdfjs-dist/legacy/build/pdf.mjs", () => ({
   GlobalWorkerOptions: {},
   getDocument: pdfjs.getDocument,
   Util: {

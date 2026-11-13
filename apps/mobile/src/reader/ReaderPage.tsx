@@ -461,6 +461,7 @@ export function ReaderPage({
             docId={state.docId}
             notes={pdfNotes}
             positions={pdfPositions}
+            bookmarks={bookmarks}
             editorRef={noteEditor}
             onOpenNote={() => setLookup(null)}
             title={state.title}
@@ -469,8 +470,17 @@ export function ReaderPage({
             scale={state.scale}
             lookup={state.lookup}
             showIpa={showIpa}
-            onPage={(page) => setState({ ...state, page })}
-            onScale={(scale) => setState({ ...state, scale })}
+            // A page flip or a zoom is itself a position fact — the
+            // anchored popup's coordinates died with the old view (the
+            // EPUB chapter switch clears its lookup the same way).
+            onPage={(page) => {
+              setLookup(null);
+              setState({ ...state, page });
+            }}
+            onScale={(scale) => {
+              setLookup(null);
+              setState({ ...state, scale });
+            }}
             onToggleIpa={() => setShowIpa((shown) => !shown)}
             onWordClick={setLookup}
             onReopen={() => {

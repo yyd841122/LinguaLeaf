@@ -3,12 +3,20 @@
 // the same way the spike proved out, and each word gets its IPA from the
 // offline dictionary — the same 标注管线 as EPUB (one dictionary, one
 // lookup rule), just positioned instead of reflowed.
-import * as pdfjsLib from "pdfjs-dist";
-import { Util } from "pdfjs-dist";
+//
+// The LEGACY build (mobile-app ticket 03): the standard build's main and
+// worker threads both call Promise.withResolvers (Chromium 119+); the
+// legacy build ships the polyfill, so an aging Android System WebView
+// stays in range. Same engine, same API — only the bundle differs. The
+// module worker itself is safe: Capacitor's WebViewLocalServer maps .mjs
+// to application/javascript (new Worker(url, {type:"module"}) verifies
+// JS MIME).
+import * as pdfjsLib from "pdfjs-dist/legacy/build/pdf.mjs";
+import { Util } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { IpaLookup } from "@lingualeaf/import-core";
 import { eligiblePdfLines } from "./pdf-lines";
-import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+import workerUrl from "pdfjs-dist/legacy/build/pdf.worker.min.mjs?url";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerUrl;
 

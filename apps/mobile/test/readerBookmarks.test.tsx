@@ -13,6 +13,7 @@ import { createChapterTaskRegistry } from "../src/translate/chapter-tasks";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import {
   createMemoryBookmarkStore,
+  isEpubRow,
   type BookmarkRow,
   type BookmarkStore,
 } from "../src/store/bookmark-store";
@@ -167,7 +168,7 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     // lays every block at top 0, so the planted block is somewhere in the
     // chapter's block range — the topmost rule itself is the progress
     // save's rule, already shipped).
-    const rows = await bookmarks.list(DOC_ID);
+    const rows = (await bookmarks.list(DOC_ID)).filter(isEpubRow);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.chapter).toBe(0);
     expect(rows[0]!.block).toBeGreaterThanOrEqual(0);
