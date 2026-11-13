@@ -532,17 +532,27 @@ body {
   color: #b3261e;
 }
 
-/* The in-text bookmark marker (ticket 10 人验 round 5): a small bookmark
+/* The in-text bookmark marker (ticket 10 人验 round 6): a small bookmark
    RIBBON hanging off the marked paragraph's end — the classic ribbon
    shape (rectangle, notched underside) drawn by clip-path, in the app's
    purple, right-aligned under the paragraph's last line. It sits in the
    inter-block margin gap (absolute — zero layout shift when it appears
    mid-read), reading as a ribbon slipped into the page at that exact
-   spot. The thin left edge keeps the paragraph findable when the ribbon
-   sits at a screen edge. */
+   spot. The thin left edge rides in the page gutter (absolute, outside
+   the box) — it marks the paragraph without touching a single glyph
+   (人验 round 6: the inset shadow painted over the first character). */
 .block-marked {
   position: relative;
-  box-shadow: inset 3px 0 0 #6a4fa3;
+}
+.block-marked::before {
+  content: "";
+  position: absolute;
+  left: -0.55rem;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #6a4fa3;
+  pointer-events: none;
 }
 .block-marked::after {
   content: "";
