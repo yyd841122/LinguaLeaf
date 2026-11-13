@@ -72,7 +72,11 @@ Blocked by: 02(与 04 并行,双轨)
    - 每书笔记超手机 100 条上限的尾部跳过并在导入摘要里报数
 3. **导出机制(手机)**:@capacitor/filesystem 写缓存 + @capacitor/share
    系统分享(票面「存文件/系统分享」);适配器缝注入,jsdom 打 memory
-   twin。导入 = 文件选择器 → text() → 校验 → 落库。
+   twin。导入 = 文件选择器 → FileReader 读文本 → 校验 → 落库。
+   **追加(2026-11-13 人验反馈)**:导出加「保存到本机」为主按钮——
+   自写 30 行原生插件 SaveToDownloads,MediaStore 插入共享 Downloads
+   集合(Android 10+ 免存储权限),文件落在文件管理的下载目录;分享
+   降为辅按钮「分享备份」。状态行报文件名。
 4. **PC 侧**:GET /api/export/backup(ADR-0008:20 点名的导出路由)组装
    同格式 JSON(listShelf/getProgress/listBookmarks/listNotes/
    loadWordStatuses);web 书架页「导出备份」按钮复用 download.ts 的
