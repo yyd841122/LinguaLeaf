@@ -20,6 +20,10 @@ diff」的批清单家:评审按标准条向本票攒位点,本票一次语义�
    (`(_word, index) => … wordStatuses[index] ?? null`);上票
    annotated-blocks-kernel 评审记档「toAnnotatedBlock 可提具名」所指,
    与 ext 侧同款 adapter 一并看是否值得提具名工厂。
+3. apps/mobile/src/reader/ReaderPage.tsx ~257 —
+   `useState<{ word: string; point: { x: number; y: number } } | null>`,
+   与位点 1 同款孪生;`WordClick` 已在 PdfReader.tsx 导入,清扫时
+   现场取数(2026-11-14 票 03 Standards 轴评审记档)。
 
 ## 开工触发
 

@@ -1,5 +1,5 @@
 # 03 PDF 链:断网真机读 PDF 全链路
-Status: ready-for-agent(2026-11-09 /to-tickets 补全轮拆分)
+Status: ready-for-human(2026-11-14 实现收官:根 verify EXIT=0、Claude 子代理双轴评审无 blocker/concern 修笔 4 记档 3;真机三项人验待做,见 Comments 与用户操作项;Codex 终审 11-15 补跑)
 Blocked by: 02
 
 ## 目标
@@ -36,3 +36,79 @@ PDF 阅读链路在真机启用:导入文本层完好的 PDF → pdfjs 坐标叠
 ready-for-agent(Lane B)——EPUB 书签先行落地,本票门内「书签」届时原样可
 过:PDF 接入以 10 的 bookmark-store 扩 page 目标(见 10 票面范围节),门文本
 不改。顺序茬解除。
+
+### 2026-11-14 领票(Lane A)
+
+**Lane 拍板**:Codex 额度 11-15 10:55 恢复,今日不可用——按 10/05 先例翻
+**Lane A**(Claude 实现 + Claude 子代理双轴评审兜底);独立终审进 11-15
+挂账(与 02/10/05 三笔同批)。
+
+**票面事实核对(现场取数,无漂移)**:
+- pdfjs-dist ^4.10.38(实装 4.10.38,hoisted)✓
+- pdf 三 store + idb-bytes-store 已随迁(02),测试随迁齐 ✓
+- 导入入口与书架形状已备:ReaderPage handleFile `.pdf` 分支、acceptPdf、
+  PdfShelf/usePdfShelf 全接线(02 遗留「不启用」仅指验收未验,无开关)✓
+- detectScanned 扫描件边界在 pdf.ts ✓;PDF 面无翻译接线(设计)✓
+- bookmark-store 已落地(10),page 目标扩展归本票 ✓
+
+**实现期拍板三件**:
+1. **pdfjs 切 legacy build**:pdfjs 4.10 标准版主/worker 双线程依赖
+   `Promise.withResolvers`(Chromium 119+,2023-11);legacy build 自带
+   垫片,Android WebView 基线显著放宽容错。Capacitor 8
+   WebViewLocalServer.getMimeType 已显式 `.mjs → application/javascript`,
+   模块 worker MIME 校验无虞(pdf.ts:12 `new Worker(url,{type:"module"})`
+   现场核对)。pdf.ts 两行导入 + pdfRendering.test mock 目标同步。
+2. **bookmark-store 扩 page 目标**(10 票面既定路线):`BookmarkTarget`
+   成判别联合 `{chapter,block} | {page}`;单书单一形状(EPUB=doc:<title>,
+   PDF=指纹 id),排序与幂等按形状分支;备份导出过滤 page 行——与 05
+   记档「PDF 资产本票不含,版本门留扩展位」同姿势,版本 bump 归 follow-up。
+3. **PDF 书签面镜像 EpubReader**(10 形状):头部「书签」钮 → veil+card
+   面板;行 = 第 N 页 + 落签时刻;plant 幂等按页;jump = onPage 翻页。
+
+**用户操作项提醒(收官人验时勿漏)**:准备文本层完好 PDF 传手机;飞行
+模式重复;杀进程重开仍在——票面「用户操作项」三件。
+
+### 2026-11-14 实现收官(Lane A)
+
+**落地面**(基线 = 本票首个实现 commit 之前的 HEAD):
+1. **pdfjs 切 legacy build**(pdf.ts):设备 WebView 实测 Chromium
+   97.0.4692.98(dumpsys webviewupdate 现场取证)——标准版主/worker
+   依赖 Promise.withResolvers(Chromium 119+),标准版在此机必挂;
+   legacy build 自带 withResolvers 与 structuredClone(98+)垫片
+   (core-js 机制,现场 grep 证实)。Capacitor 8 WebViewLocalServer 对
+   .mjs 显式 application/javascript,模块 worker MIME 校验无虞。
+   dist 产物核对:worker 以哈希资产落包根,标准版特征串已不在包内。
+2. **bookmark-store 扩 page 目标**(按领票拍板 2):判别联合
+   `{chapter,block} | {page}`,sameTarget 分形幂等、byReadingOrder
+   分形排序,两孪生共享 plantRow;EPUB 接口形状零变(票 10 套件复绿)。
+3. **PDF 书签面**(按领票拍板 3):PdfReader 头部「书签」钮 →
+   veil+card 面板;plant 幂等按页、列表页序、jump 走翻页通道、删除;
+   formatPlantedAt 抽 bookmark-view.ts 两面共享一事实。
+4. **备份过滤 page 行**:导出双滤(assets + books),与 05 记档姿势
+   一致;版本门扩展位归 stub 票 12。
+5. **拍板补记(评审追问落档)**:onPage/onScale 清锚定弹窗——EPUB
+   goChapter 同法(EpubReader.tsx setLookup(null) 实证),属门内「点词
+   查详情」链的启用件;书签钮开面板亦清(EPUB 孪生同位行为)。
+
+**验证**:根 `npm run verify` EXIT=0(修笔后 caller 复跑,104 文件,
+**1147 passed | 3 skipped**——计数照最新实跑转抄)。
+
+**双轴评审**(Codex 额度未复,按 Lane 惯例 Claude 子代理兜底,终审挂账
+11-15):Standards 轴 25 条标准查过干净 + 变异心证抽查全有红;Spec 轴
+七问全过。**无 blocker/concern**。修笔 4 件:①PDF 书签钮清弹窗;②翻页
+/缩放清弹窗加 pin(pdfReaderBookmarks 第 6 案);③本套件 fetch stub
+收紧为 dictionary-only 未匹配即抛;④混合形 comparator 归 0 pin(不变
+式原纯散文)。记档 3 件:setLookup 拍板(上 5);票 10 时敏抖动再现
+一次(单跑复绿,签名同 2026-11-13 pre-commit flake,已回记票 10);
+ReaderPage:257 结构孪生入 types-alignment 攒批位点 3(攒够 3 处,
+触发线达成,清扫另启)。
+
+**真机准备(已就绪)**:assembleDebug → `adb install -r` Success,修复
+版(含评审修笔)已装机。冷启冒烟未做——前台属主在用第三方应用,按
+adb 纪律停手,并入门内人验时序。
+
+**人验清单(三件,勿漏)**:
+1. 准备文本层完好 PDF 传入手机 → 导入 → 坐标叠加音标 + 点词查详情 +
+   进度/书签/笔记(书签:打签/列表/跳回/删除)
+2. 飞行模式重复全链
+3. 杀进程重开仍在(进度/书签/笔记/书架)

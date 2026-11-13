@@ -240,3 +240,10 @@ round 6 紫条新位置(页边留白,不碰文字)维护者过目回报「通过
 覆盖范围=实现 commit + round 2-6 返修 diff;发现实项按 follow-up
 处置。测试加固(getByText→findByText)已随 round 6 落地,今日全量
 verify 三连绿。
+
+### 2026-11-14 时敏抖动再现记档(票 03 评审期间)
+
+readerBookmarks.test.tsx 尾段 findByText 1000ms 顶满挂一次(5 文件并行
+即触发,非全量负载专属);单跑复绿 8/8。签名与 2026-11-13 pre-commit
+flake 记档相同,第二次再现——加固候选(去时敏或加长窗)挂起,票 03 的
+pin 测试(pdfReaderBookmarks 第 6 案)未受累。
