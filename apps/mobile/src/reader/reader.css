@@ -532,13 +532,27 @@ body {
   color: #b3261e;
 }
 
-/* The in-text bookmark marker (ticket 10 人验 round 2): the planted block
-   gets the app's purple as an inset edge plus a faint wash — box-shadow,
-   not border or padding, so a mark appearing mid-read never reflows the
-   text it marks. */
+/* The in-text bookmark pin (ticket 10 人验 round 3): a pin AFTER the
+   marked paragraph, not a paint-over — the reader stops at a paragraph
+   and the mark must name that exact spot (人验 feedback: the wash read
+   as the whole passage being marked). The ▼ hangs in the inter-block
+   margin gap (absolute — zero layout shift when a pin appears mid-read);
+   the thin left edge keeps the exact paragraph findable when the pin
+   itself sits right at a screen edge. */
 .block-marked {
+  position: relative;
   box-shadow: inset 3px 0 0 #6a4fa3;
-  background: rgba(106, 79, 163, 0.06);
+}
+.block-marked::after {
+  content: "\25BC";
+  position: absolute;
+  left: 50%;
+  bottom: -1.15rem;
+  transform: translateX(-50%);
+  color: #6a4fa3;
+  font-size: 0.8rem;
+  line-height: 1;
+  pointer-events: none;
 }
 
 /* scrollIntoView on a block anchor stops one head-height short of the
