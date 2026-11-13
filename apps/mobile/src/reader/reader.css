@@ -532,25 +532,26 @@ body {
   color: #b3261e;
 }
 
-/* The in-text bookmark pin (ticket 10 人验 round 3): a pin AFTER the
-   marked paragraph, not a paint-over — the reader stops at a paragraph
-   and the mark must name that exact spot (人验 feedback: the wash read
-   as the whole passage being marked). The ▼ hangs in the inter-block
-   margin gap (absolute — zero layout shift when a pin appears mid-read);
-   the thin left edge keeps the exact paragraph findable when the pin
-   itself sits right at a screen edge. */
+/* The in-text bookmark marker (ticket 10 人验 round 5): a small bookmark
+   RIBBON hanging off the marked paragraph's end — the classic ribbon
+   shape (rectangle, notched underside) drawn by clip-path, in the app's
+   purple, right-aligned under the paragraph's last line. It sits in the
+   inter-block margin gap (absolute — zero layout shift when it appears
+   mid-read), reading as a ribbon slipped into the page at that exact
+   spot. The thin left edge keeps the paragraph findable when the ribbon
+   sits at a screen edge. */
 .block-marked {
   position: relative;
   box-shadow: inset 3px 0 0 #6a4fa3;
 }
 .block-marked::after {
-  content: "\25BC";
+  content: "";
   position: absolute;
-  left: 50%;
-  bottom: -1.15rem;
-  transform: translateX(-50%);
-  color: #6a4fa3;
-  font-size: 0.8rem;
-  line-height: 1;
+  right: 0.45rem;
+  bottom: -1.1rem;
+  width: 0.7rem;
+  height: 1.1rem;
+  background: #6a4fa3;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
   pointer-events: none;
 }
