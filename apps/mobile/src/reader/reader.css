@@ -554,12 +554,3 @@ body {
   line-height: 1;
   pointer-events: none;
 }
-
-/* scrollIntoView on a block anchor stops one head-height short of the
-   viewport top, so the anchored block (a jump target, a restored
-   position) clears the sticky head instead of hiding under it — the same
-   96px clearance READING_ANCHOR_TOP uses (EpubReader.tsx), one fact in
-   two places. */
-[data-block-index] {
-  scroll-margin-top: 96px;
-}

@@ -42,16 +42,22 @@ const TRANSLATION_FAILURE_COPY =
   "翻译失败：无法连接翻译服务，或密钥无效。请检查网络与设置页中的配置，然后重试。";
 
 // The reading-walk anchor the progress save and the bookmark plant share:
-// the last block whose top has crossed under the sticky head. One rule
-// for both callers — a planted mark lands exactly where progress would
-// say the reader is, never a second opinion (ticket 10).
-const READING_ANCHOR_TOP = 96;
+// the last block whose top has crossed under the sticky head's bottom —
+// measured live, not a constant: the head is tall in portrait (the title
+// wraps) and short in landscape, and the fixed landscape-height guess
+// named blocks still hidden behind the portrait head (人验 round 4). One
+// rule for both callers — a planted mark lands exactly where progress
+// would say the reader is, never a second opinion (ticket 10).
+const readingAnchorTop = (): number =>
+  document.querySelector<HTMLElement>(".reader-head")?.getBoundingClientRect()
+    .bottom ?? 96;
 const topmostVisibleBlockIndex = (): number => {
+  const anchorTop = readingAnchorTop();
   let current = 0;
   for (const block of document.querySelectorAll<HTMLElement>(
     "[data-block-index]"
   )) {
-    if (block.getBoundingClientRect().top <= READING_ANCHOR_TOP) {
+    if (block.getBoundingClientRect().top <= anchorTop) {
       current = Number(block.dataset.blockIndex ?? 0);
     }
   }
@@ -223,7 +229,10 @@ export function EpubReader({
       const el = document.querySelector<HTMLElement>(
         `[data-block-index='${restore.blockIndex}']`
       );
-      el?.scrollIntoView?.();
+      // Centered: the anchored block lands mid-viewport, clear of the
+      // sticky head however tall it sits in either orientation (the
+      // top-aligned scroll-margin guess was portrait-wrong).
+      el?.scrollIntoView?.({ block: "center" });
     });
     return () => cancelAnimationFrame(raf);
   }, [readingKey, restoreRef]);
@@ -353,7 +362,9 @@ export function EpubReader({
     const raf = requestAnimationFrame(() => {
       document
         .querySelector<HTMLElement>(`[data-block-index='${jumpTarget.block}']`)
-        ?.scrollIntoView?.();
+        // Centered: the pin and its marked block present themselves
+        // mid-viewport, clear of the sticky head at any height.
+        ?.scrollIntoView?.({ block: "center" });
       setJumpTarget(null);
     });
     return () => cancelAnimationFrame(raf);
