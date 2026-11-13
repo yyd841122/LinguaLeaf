@@ -23,10 +23,12 @@ Blocked by: 02(与 04 并行,双轨)
 
 - PC web 端导出备份,传入手机完成一次真实迁移
 
-## Lane(领票时定,2026-11-10)
+## Lane(领票时定,2026-11-10;2026-11-13 翻 Lane A)
 
-版本化 JSON + PC 全量导出路由以纯 TS 为主,沙箱可实现 → **Lane B**
-(`/cc-suite:implement`),编排侧补全链 verify + 双轴评审;真机迁移人验留编排侧/维护者。
+版本化 JSON + PC 全量导出路由以纯 TS 为主,沙箱可实现 → 领票时定
+**Lane B**(`/cc-suite:implement`)。**2026-11-13 维护者拍板翻 Lane A**
+(Claude 直接实现)——Codex 额度 11-15 10:55 恢复后补独立终审,同票
+10 先例;发现实项按 follow-up 处置。
 
 ## Comments
 
@@ -41,3 +43,37 @@ Blocked by: 02(与 04 并行,双轨)
 本票落地,已翻 ready-for-agent(Lane B);本票领票时书签有实体可备,门原样
 过,勿再走 (b) 分支。跨端书签 id 域冲突(10 用本地自增 id,PC 用服务端 id)
 的合并语义在本票导入侧写清并记档。
+
+### 2026-11-13 领票拍板(Lane A;格式/语义/机制四项)
+
+1. **备份格式 v1**(版本字段向后兼容留门):
+   `{app:"lingualeaf-backup", version:1, exportedAt, books:[{title}],
+   assets:{vocabulary, notes, progress, bookmarks, translations}}`
+   - **跨端 join key = 书名**:手机 docId=`doc:${title}`
+     (ReaderPage.tsx:285),PC 是自增 book_id(schema.ts)——设备本地
+     id 一律不进格式;书签导入按位置重铸本地 id(同位幂等去重),
+     即票 10 移交的合并语义
+   - vocabulary 跨书:lemma→status 扁平 map(两端同形:PC word_states
+     lemma TEXT PRIMARY KEY / 手机 vocabulary namespace record)
+   - notes 行 {bookTitle, chapterIndex, blockIndex, type, text};
+     PC 书级笔记(锚 null)手机无处落,导出跳过并计数
+   - translations 是必含四项之外的加项:DeepSeek 付费产物不可再生,
+     「学习者资产优先」原则涵盖
+   - **PDF 资产(pdf-notes/positions/bytes)本票不含**:PDF 链条票 03
+     未落地;版本门留扩展位
+   - **设置不进备份**:翻译 API Key 是密钥,不落备份文件
+   - 书原文件不含(票面默认):手机重导书,docId 按书名重挂,音标重算
+2. **导入冲突语义(票内拍板:按资产合并,非整库覆盖)**:
+   - 校验先行:payload 结构全过才动库;损坏 → 一条可读错误,零写入
+   - vocabulary 按 lemma upsert(PC 胜);notes 按 (title,chapter,block,
+     type) upsert(store.save 天然);progress 按 title 覆盖(PC 胜,
+     迁移方向 PC→手机);bookmarks 按位置 add(幂等重铸 id);
+     translations 按 (title,chapter,block) 合并(PC 胜)
+   - 每书笔记超手机 100 条上限的尾部跳过并在导入摘要里报数
+3. **导出机制(手机)**:@capacitor/filesystem 写缓存 + @capacitor/share
+   系统分享(票面「存文件/系统分享」);适配器缝注入,jsdom 打 memory
+   twin。导入 = 文件选择器 → text() → 校验 → 落库。
+4. **PC 侧**:GET /api/export/backup(ADR-0008:20 点名的导出路由)组装
+   同格式 JSON(listShelf/getProgress/listBookmarks/listNotes/
+   loadWordStatuses);web 书架页「导出备份」按钮复用 download.ts 的
+   fetch→Blob→anchor。
