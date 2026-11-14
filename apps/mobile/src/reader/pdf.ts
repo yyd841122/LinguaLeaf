@@ -206,30 +206,47 @@ async function renderPdfPageStep(
     clearPdfOverlay(overlay);
     let wordCount = 0;
     let ipaCount = 0;
-    for (const { item: text, lineIndex, lineText, matches } of eligiblePdfLines(
-      content.items
-    )) {
-      const tx = Util.transform(viewport.transform, text.transform);
-      const fontPx = Math.hypot(tx[2], tx[3]);
+    for (const {
+      items: lineItems,
+      lineIndex,
+      lineText,
+      matches,
+    } of eligiblePdfLines(content.items)) {
+      // Merged visual line (pdf-lines): the geometry spans every member
+      // item — the origin is the leftmost x, the end the rightmost item's
+      // right edge, the font the line's largest. One-item lines (the
+      // lucky layout) reduce to the same numbers the per-item math gave.
+      const transforms = lineItems.map((text) =>
+        Util.transform(viewport.transform, text.transform)
+      );
+      const fontPx = Math.max(
+        ...transforms.map((tx) => Math.hypot(tx[2], tx[3]))
+      );
+      const lineX = Math.min(...transforms.map((tx) => tx[4]));
+      const baseline = transforms[0]![5];
+      const lineEnd = Math.max(
+        ...lineItems.map((text, i) => transforms[i]![4] + text.width * scale)
+      );
       // Proportional placement: uniform per-character splitting drifts badly
       // on proportional fonts (the hover box lands off the word). Measure
       // every segment (words AND the gaps between them) with an offscreen
-      // canvas and rescale so the line's total stays exactly item.width —
-      // the one exact fact pdf.js gives us. Residual error is only the
-      // metric difference between the measuring font and the embedded one.
+      // canvas and rescale so the line's total stays exactly the line's
+      // span — the one exact fact pdf.js gives us. Residual error is only
+      // the metric difference between the measuring font and the embedded
+      // one.
       const segments = segmentLine(lineText, matches, fontPx);
       const totalShare = segments.reduce((sum, seg) => sum + seg.share, 0);
-      const k = (text.width * scale) / totalShare;
+      const k = (lineEnd - lineX) / totalShare;
       let offset = 0;
       for (const segment of segments) {
         const width = segment.share * k;
         if (segment.word) {
           const piece = segment.word;
-          const left = tx[4] + offset;
+          const left = lineX + offset;
           const word = document.createElement("span");
           word.className = "pdf-word";
           word.style.left = `${left}px`;
-          word.style.top = `${tx[5] - fontPx}px`;
+          word.style.top = `${baseline - fontPx}px`;
           word.style.fontSize = `${fontPx}px`;
           word.dataset.pdfWord = piece;
           word.dataset.pdfLineIndex = String(lineIndex);
@@ -258,8 +275,8 @@ async function renderPdfPageStep(
       button.className = "pdf-note-button block-note-button";
       button.dataset.pdfNote = String(lineIndex);
       button.dataset.lineText = lineText;
-      button.style.left = `${tx[4] + text.width * scale + 6}px`;
-      button.style.top = `${tx[5] - fontPx}px`;
+      button.style.left = `${lineEnd + 6}px`;
+      button.style.top = `${baseline - fontPx}px`;
       button.style.fontSize = `${fontPx}px`;
       button.setAttribute("aria-label", "写笔记");
       button.disabled = true; // The host enables only after its notes read settles.
