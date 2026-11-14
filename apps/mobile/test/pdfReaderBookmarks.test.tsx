@@ -144,6 +144,8 @@ describe("PDF face bookmarks (ticket 03)", () => {
     expect(await ctx.bookmarks.list(docId)).toEqual([
       expect.objectContaining({ page: 1 }),
     ]);
+    // The face-level marker shows on the planted page (人验 round 3).
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
   });
 
   it("flips pages between plants and lists rows in page order", async () => {
@@ -181,10 +183,14 @@ describe("PDF face bookmarks (ticket 03)", () => {
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     await waitFor(() => expect(at()).toBe("3 / 3"));
+    // Page 3 carries no mark — the strip follows the planted page only.
+    expect(document.querySelector(".pdf-bookmark-mark")).toBeNull();
     await openPanel();
     fireEvent.click(screen.getByRole("button", { name: /^第 1 页/ }));
     await waitFor(() => expect(at()).toBe("1 / 3"));
     expect(screen.queryByRole("dialog", { name: "书签" })).toBeNull();
+    // The marker rides the rows: gone on the unplanted page 3, back on 1.
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
     expect(await ctx.bookmarks.list(await id())).toHaveLength(1);
   });
 
@@ -199,6 +205,8 @@ describe("PDF face bookmarks (ticket 03)", () => {
       await screen.findByText(/还没有书签。点「在当前位置打书签」/)
     ).toBeInTheDocument();
     expect(await ctx.bookmarks.list(await id())).toEqual([]);
+    // The marker retires with the row.
+    expect(document.querySelector(".pdf-bookmark-mark")).toBeNull();
   });
 
   it("rows survive the face being torn down and the book reopened", async () => {

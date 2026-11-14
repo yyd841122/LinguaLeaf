@@ -566,6 +566,32 @@ body {
   pointer-events: none;
 }
 
+/* The PDF face's planted-page marker (ticket 03): the EPUB block-marked
+   facts at page granularity — the purple strip down the page's left edge
+   and the ribbon at its top-right corner, same color, same shapes.
+   Decorative only: pointer-events none keeps the overlay's word layer
+   the only touch target, aria-hidden keeps it out of the a11y tree. */
+.pdf-bookmark-mark {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: #6a4fa3;
+  pointer-events: none;
+}
+.pdf-bookmark-mark::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0.45rem;
+  width: 0.7rem;
+  height: 1.1rem;
+  background: #6a4fa3;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
+  pointer-events: none;
+}
+
 /* The 备份与恢复 block (ticket 05): the landing's export/import station —
    two actions, one status line each way. The import label hides its file
    input; the label itself is the button. */

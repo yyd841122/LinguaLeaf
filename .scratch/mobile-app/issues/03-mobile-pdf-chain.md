@@ -158,3 +158,18 @@ MISSING_SPACE_GAP=0.15:字母对字母且间隙 ≥0.15 字宽补一空格;宁�
 
 **验证**:根 verify EXIT=0(104 文件,**1152 passed | 3 skipped**);
 真书 3 页补回 101 空格,行/笔数不变(15/41/41)。新 APK 已装机。
+
+### 2026-11-14 人验 round 3 返修记档 — PDF 打签无页上标志
+
+**现象(真机)**:PDF 打书签后页上无任何标志——EPUB 面有紫条+飘带
+(票 10 终版),同权缺角。
+
+**修笔**:页粒度镜像同款视觉——PdfPage 增 marked prop(由
+bookmarkRows 派生,plant/delete 面板操作即现/即隐,零重挂),stage 内
+渲染 .pdf-bookmark-mark(左缘 3px 紫条 #6a4fa3 + 右上飘带,同色同形;
+pointer-events:none / aria-hidden,装饰不截交互)。测试钉四面:打签现
+标志、未签页无、跳回现、删除消。
+
+**验证**:根 verify EXIT=0(104 文件,1152 passed | 3 skipped);APK
+重装 Success。同轮机检顺带实证:冷启 1140ms、书架恢复、开书回原位
+(进度恢复)、真书音标叠加与笔钮(dump 取证)。

@@ -206,6 +206,7 @@ export function PdfReader({
         scale={scale}
         lookup={lookup}
         showIpa={showIpa}
+        marked={(bookmarkRows ?? []).some((row) => row.page === page)}
         notes={notes}
         editorRef={editorRef}
         onOpenNote={onOpenNote}
@@ -316,6 +317,7 @@ function PdfPage({
   scale,
   lookup,
   showIpa,
+  marked,
   notes,
   editorRef,
   onOpenNote,
@@ -328,6 +330,10 @@ function PdfPage({
   scale: number;
   lookup: IpaLookup;
   showIpa: boolean;
+  // The page carries a planted mark — the face-level marker fact (the
+  // EPUB face derives the same from its rows). Render-reactive: a plant
+  // or delete through the panel shows/hides the strip without remount.
+  marked: boolean;
   notes: PdfNotesStore;
   editorRef: RefObject<NoteEditorHandle | null>;
   onOpenNote: () => void;
@@ -472,6 +478,11 @@ function PdfPage({
         role="presentation"
       >
         <canvas ref={canvas} />
+        {marked ? (
+          // The planted-page marker: the EPUB face's 紫条+飘带 at page
+          // granularity (ticket 03 人验 round 3).
+          <div className="pdf-bookmark-mark" aria-hidden="true" />
+        ) : null}
       </div>
       {popup ? (
         <NoteEditor
