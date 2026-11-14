@@ -17,6 +17,7 @@ import {
   renderPdfPage,
   invalidatePdfRender,
   clearPdfOverlay,
+  type PdfLineGeo,
   type PdfSession,
 } from "./pdf";
 import type { PdfNote, PdfNotesStore } from "../store/pdf-notes-store";
@@ -33,8 +34,11 @@ import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 // The PDF reading view (ticket 06): one page on canvas at a time — a big
 // book is progressive by shape — with the proven word/IPA overlay. Word
 // units carry data-word, so the popup seam is the EPUB one verbatim.
-// The bookmark face (ticket 03) mirrors the EPUB one (ticket 10): plant
-// at the current page, list, jump, delete — same panel shape, page rows.
+// The bookmark face (ticket 03, 人验 round 4): marks hang on a LINE, not
+// the page — the EPUB face marks blocks, the PDF's unit is the visual
+// line. Plant via the button (the topmost visible line, the EPUB
+// topmost-visible rule) or by long-pressing a word (that line); the
+// panel lists, jumps and deletes.
 export function PdfReader({
   docId,
   notes,
@@ -91,6 +95,12 @@ export function PdfReader({
     null
   );
   const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
+  // The armed jump (ticket 10's same shape): the row's line scrolls into
+  // view once its page's render settles — PdfPage owns the scroll.
+  const [jumpLine, setJumpLine] = useState<{
+    page: number;
+    line: number;
+  } | null>(null);
   const bookmarksOwner = useOwner();
   const bookmarksSettle = useSettle(bookmarksOwner);
   const runBookmarks = bookmarksSettle.run;
@@ -115,10 +125,10 @@ export function PdfReader({
     runBookmarks,
     bookmarksOwner,
   ]);
-  // 打书签: the plant lands on the current page, and the store's
-  // same-position idempotence makes a double click one mark.
-  const plantBookmark = () => {
-    void runBookmarks(bookmarks.add(docId, { page }), {
+  // 打书签: the plant lands on a LINE, and the store's same-position
+  // idempotence makes a replant one mark.
+  const plantBookmarkAt = (line: number, text: string) => {
+    void runBookmarks(bookmarks.add(docId, { page, line, text }), {
       onFresh: (row) =>
         setBookmarkRows((current) => {
           if (!isPdfRow(row)) return current;
@@ -129,6 +139,14 @@ export function PdfReader({
         }),
     });
   };
+  // The button plants where the reader is: the topmost visible line —
+  // the EPUB face's topmost-visible rule at the PDF's own unit. No
+  // settled render yet (rare: the panel needs the read anyway) falls
+  // back to the page top.
+  const plantBookmark = () => {
+    const at = stage.current?.topmostVisibleLine();
+    plantBookmarkAt(at?.line ?? 0, at?.text ?? "");
+  };
   const removeBookmark = (id: number) => {
     void runBookmarks(bookmarks.remove(docId, id), {
       onFresh: () =>
@@ -137,14 +155,13 @@ export function PdfReader({
         ),
     });
   };
-  // 跳回: the jump is a page navigation — the footer's own channel, so
-  // the editor-close guard and the render invalidation ride along — and
-  // the panel closes as part of the jump.
+  // 跳回: flip to the row's page when it differs, then the armed jump
+  // brings the row's line into view (PdfPage, after that render lands).
   const jumpToBookmark = (row: PdfBookmarkRow) => {
-    navigate(() => {
-      setShowBookmarks(false);
-      onPage(row.page);
-    });
+    if (editorRef.current?.requestClose() === false) return;
+    setShowBookmarks(false);
+    setJumpLine({ page: row.page, line: row.line });
+    if (row.page !== page) navigate(() => onPage(row.page));
   };
 
   return (
@@ -206,7 +223,12 @@ export function PdfReader({
         scale={scale}
         lookup={lookup}
         showIpa={showIpa}
-        marked={(bookmarkRows ?? []).some((row) => row.page === page)}
+        marks={(bookmarkRows ?? [])
+          .filter((row) => row.page === page)
+          .map((row) => ({ line: row.line }))}
+        jumpLine={jumpLine}
+        onJumpSettled={() => setJumpLine(null)}
+        onLongPressLine={plantBookmarkAt}
         notes={notes}
         editorRef={editorRef}
         onOpenNote={onOpenNote}
@@ -247,12 +269,12 @@ export function PdfReader({
               <p className="reader-status">读取书签中…</p>
             ) : bookmarkRows.length === 0 ? (
               <p className="reader-status">
-                还没有书签。点「在当前位置打书签」给当前阅读位置留个标记。
+                还没有书签。点「在当前位置打书签」钉住当前视线，或长按任意单词把签钉在那一句。
               </p>
             ) : (
               <ul className="bookmark-list">
                 {bookmarkRows.map((row) => {
-                  const label = `第 ${row.page} 页`;
+                  const label = `第 ${row.page} 页${row.text ? ` · ${row.text.slice(0, 14)}` : ""}`;
                   return (
                     <li key={row.id} className="bookmark-row">
                       <button
@@ -309,7 +331,13 @@ export function PdfReader({
   );
 }
 
-type PdfPageHandle = { invalidate(): void };
+type PdfPageHandle = {
+  invalidate(): void;
+  // The reading-walk anchor — the EPUB topmost-visible rule at the
+  // PDF's line granularity: the visible line closest to the stage's
+  // top is where the reader is.
+  topmostVisibleLine(): { line: number; text: string } | null;
+};
 function PdfPage({
   docId,
   session,
@@ -317,7 +345,10 @@ function PdfPage({
   scale,
   lookup,
   showIpa,
-  marked,
+  marks,
+  jumpLine,
+  onJumpSettled,
+  onLongPressLine,
   notes,
   editorRef,
   onOpenNote,
@@ -330,10 +361,14 @@ function PdfPage({
   scale: number;
   lookup: IpaLookup;
   showIpa: boolean;
-  // The page carries a planted mark — the face-level marker fact (the
-  // EPUB face derives the same from its rows). Render-reactive: a plant
-  // or delete through the panel shows/hides the strip without remount.
-  marked: boolean;
+  // This page's planted lines — the face-level marker facts (the EPUB
+  // face derives the same from its rows). Render-reactive: a plant or
+  // delete through the panel or a long-press shows/hides the strips
+  // without remount.
+  marks: { line: number }[];
+  jumpLine: { page: number; line: number } | null;
+  onJumpSettled: () => void;
+  onLongPressLine: (line: number, text: string) => void;
   notes: PdfNotesStore;
   editorRef: RefObject<NoteEditorHandle | null>;
   onOpenNote: () => void;
@@ -343,6 +378,9 @@ function PdfPage({
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(false);
+  // The render's line geometry (round 4): the facts the per-line
+  // markers, the long-press plant and the jump scroll all read.
+  const [lineGeo, setLineGeo] = useState<PdfLineGeo[]>([]);
   const [saved, setSaved] = useState<PdfNote[] | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [popup, setPopup] = useState<{
@@ -358,16 +396,72 @@ function PdfPage({
   const { run: read, failed } = useSettle(readOwner);
   const markerOwner = useOwner(docId, session, page);
   const { run: patch } = useSettle(markerOwner);
-  const invalidate = () => {
-    renderOwner.invalidate();
-    readOwner.invalidate();
-    markerOwner.invalidate();
-    if (overlay.current) {
-      invalidatePdfRender(overlay.current);
-      clearPdfOverlay(overlay.current);
-    }
+  useImperativeHandle(
+    ref,
+    () => ({
+      invalidate() {
+        renderOwner.invalidate();
+        readOwner.invalidate();
+        markerOwner.invalidate();
+        if (overlay.current) {
+          invalidatePdfRender(overlay.current);
+          clearPdfOverlay(overlay.current);
+        }
+      },
+      topmostVisibleLine() {
+        const el = overlay.current;
+        if (!el || lineGeo.length === 0) return null;
+        const stageTop = el.getBoundingClientRect().top;
+        let best: { top: number; geo: PdfLineGeo } | null = null;
+        for (const geo of lineGeo) {
+          const span = el.querySelector(
+            `[data-pdf-line-index="${geo.lineIndex}"]`
+          );
+          if (!span) continue;
+          const top = span.getBoundingClientRect().top;
+          if (top >= stageTop - 1 && (best === null || top < best.top))
+            best = { top, geo };
+        }
+        return best ? { line: best.geo.lineIndex, text: best.geo.text } : null;
+      },
+    }),
+    [lineGeo, renderOwner, readOwner, markerOwner]
+  );
+  // The armed jump (the EPUB face's same shape): once this page's
+  // overlay exists, bring the row's line into view and disarm. A jump
+  // whose line never renders (a replaced book) sits unarmed until the
+  // next jump replaces it.
+  useEffect(() => {
+    if (!ready || !jumpLine || jumpLine.page !== page) return;
+    const raf = requestAnimationFrame(() => {
+      overlay.current
+        ?.querySelector(`[data-pdf-line-index="${jumpLine.line}"]`)
+        ?.scrollIntoView?.({ block: "center" });
+      onJumpSettled();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ready, jumpLine, page, onJumpSettled]);
+  // 长按打签: pressing a word for the long-press beat plants a mark on
+  // its line — the direct "mark THIS paragraph" gesture — and swallows
+  // the click the release would otherwise turn into a lookup. A scroll
+  // (move past 10px) cancels like any press.
+  const pressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+  const suppressClick = useRef(false);
+  const clearPress = () => {
+    if (pressTimer.current !== null) clearTimeout(pressTimer.current);
+    pressTimer.current = null;
+    pressOrigin.current = null;
   };
-  useImperativeHandle(ref, () => ({ invalidate }));
+  useEffect(() => () => clearPress(), []);
+  const lineAt = (target: EventTarget | null): PdfLineGeo | null => {
+    const el = (target as HTMLElement | null)?.closest?.(
+      "[data-pdf-line-index]"
+    );
+    const index = el?.getAttribute("data-pdf-line-index");
+    if (index === null || index === undefined) return null;
+    return lineGeo.find((geo) => String(geo.lineIndex) === index) ?? null;
+  };
   useEffect(() => {
     const target = overlay.current;
     if (!canvas.current || !target) return;
@@ -381,7 +475,12 @@ function PdfPage({
         lookup,
         showIpa
       ),
-      { onFresh: () => setReady(true) }
+      {
+        onFresh: (result) => {
+          setLineGeo(result.lines);
+          setReady(true);
+        },
+      }
     );
     return () => {
       renderOwner.invalidate();
@@ -474,15 +573,53 @@ function PdfPage({
       <div
         className="pdf-stage"
         ref={overlay}
-        {...createWordHandlers(onWordClick)}
+        {...createWordHandlers((click) => {
+          if (suppressClick.current) {
+            suppressClick.current = false;
+            return;
+          }
+          onWordClick(click);
+        })}
         role="presentation"
+        onPointerDown={(event) => {
+          const geo = lineAt(event.target);
+          if (!geo) return;
+          pressOrigin.current = { x: event.clientX, y: event.clientY };
+          pressTimer.current = setTimeout(() => {
+            suppressClick.current = true;
+            onLongPressLine(geo.lineIndex, geo.text);
+          }, 500);
+        }}
+        onPointerMove={(event) => {
+          const origin = pressOrigin.current;
+          if (
+            pressTimer.current !== null &&
+            origin &&
+            Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10
+          )
+            clearPress();
+        }}
+        onPointerUp={clearPress}
+        onPointerCancel={clearPress}
+        onContextMenu={(event) => {
+          if (lineAt(event.target)) event.preventDefault();
+        }}
       >
         <canvas ref={canvas} />
-        {marked ? (
-          // The planted-page marker: the EPUB face's 紫条+飘带 at page
-          // granularity (ticket 03 人验 round 3).
-          <div className="pdf-bookmark-mark" aria-hidden="true" />
-        ) : null}
+        {marks.map(({ line }) => {
+          const geo = lineGeo.find((entry) => entry.lineIndex === line);
+          if (!geo) return null;
+          return (
+            // The planted-line marker: the EPUB face's 紫条+飘带 at line
+            // granularity (ticket 03 人验 round 4).
+            <div
+              key={line}
+              className="pdf-bookmark-mark"
+              aria-hidden="true"
+              style={{ top: `${geo.top}px`, height: `${geo.height}px` }}
+            />
+          );
+        })}
       </div>
       {popup ? (
         <NoteEditor

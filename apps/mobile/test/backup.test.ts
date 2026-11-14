@@ -155,7 +155,11 @@ describe("buildBackup", () => {
     // A PDF doc with only page marks has no other asset — it must not
     // surface in `books` either, or the payload would list a book the
     // assets cannot describe.
-    await stores.bookmarks.add("fp:Pdf Book", { page: 4 });
+    await stores.bookmarks.add("fp:Pdf Book", {
+      page: 4,
+      line: 2,
+      text: "a line",
+    });
     await stores.bookmarks.add("doc:Title A", { chapter: 0, block: 1 });
     const payload = await buildBackup(stores);
     expect(payload.assets.bookmarks).toEqual([

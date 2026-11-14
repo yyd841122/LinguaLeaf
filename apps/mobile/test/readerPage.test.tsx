@@ -1238,7 +1238,19 @@ describe("ReaderPage — PDF word keyboard lookup", () => {
       ipa.textContent = "woʊk";
       word.appendChild(ipa);
       overlay.appendChild(word);
-      return { wordCount: 1, ipaCount: 1 };
+      return {
+        wordCount: 1,
+        ipaCount: 1,
+        lines: [
+          {
+            lineIndex: 0,
+            top: 0,
+            height: 12,
+            right: 60,
+            text: "Woke",
+          },
+        ],
+      };
     });
   });
   afterEach(() => {

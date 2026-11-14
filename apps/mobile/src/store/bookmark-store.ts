@@ -23,7 +23,9 @@ import {
 // server's cap is server hygiene, and local data has no such need.
 
 export type EpubBookmarkTarget = { chapter: number; block: number };
-export type PdfBookmarkTarget = { page: number };
+// The line's snippet rides the target so the row carries what the mark
+// hangs on (panel display) without the page being open.
+export type PdfBookmarkTarget = { page: number; line: number; text: string };
 export type BookmarkTarget = EpubBookmarkTarget | PdfBookmarkTarget;
 
 export type EpubBookmarkRow = {
@@ -33,9 +35,18 @@ export type EpubBookmarkRow = {
   createdAt: string;
 };
 
+// A PDF row targets the VISUAL LINE the mark hangs on (mobile-app ticket
+// 03, 人验 round 4): page alone loses the paragraph — a mark's whole
+// point. `line` is the page's visual-line index (render-stable), `text`
+// the line's snippet captured at plant time so the panel can show what
+// the mark is on without the page open. Rows planted by the round-3
+// build ({page} only) normalize on read to line 0 / empty text — page
+// top, which is exactly where those marks hung.
 export type PdfBookmarkRow = {
   id: number;
   page: number;
+  line: number;
+  text: string;
   createdAt: string;
 };
 
@@ -75,7 +86,7 @@ export interface BookmarkStore {
 // meets the mixed pair.
 export const byReadingOrder = (a: BookmarkRow, b: BookmarkRow): number =>
   isPdfRow(a) && isPdfRow(b)
-    ? a.page - b.page
+    ? a.page - b.page || a.line - b.line
     : isEpubRow(a) && isEpubRow(b)
       ? a.chapter - b.chapter || a.block - b.block
       : 0;
@@ -86,10 +97,25 @@ const empty = (): StoredRecord => ({ byDoc: {} });
 
 const sameTarget = (row: BookmarkRow, target: BookmarkTarget): boolean =>
   "page" in target
-    ? isPdfRow(row) && row.page === target.page
+    ? isPdfRow(row) && row.page === target.page && row.line === target.line
     : isEpubRow(row) &&
       row.chapter === target.chapter &&
       row.block === target.block;
+
+// Legacy ({page}-only) rows read as page-top marks. The parameter is the
+// raw stored shape — line/text may be absent on legacy JSON, which is
+// the whole point of the defaults in front of the spread.
+const normalizePdfRow = (row: {
+  id: number;
+  page: number;
+  createdAt: string;
+  line?: number;
+  text?: string;
+}): PdfBookmarkRow => ({
+  line: 0,
+  text: "",
+  ...row,
+});
 
 // Mints the row for a target into the doc's record — the idempotence and
 // the reading order live here, so both store twins carry them by
@@ -102,6 +128,8 @@ const plantRow = (record: DocRecord, target: BookmarkTarget): BookmarkRow => {
       ? {
           id: record.nextId++,
           page: target.page,
+          line: target.line,
+          text: target.text,
           createdAt: new Date().toISOString(),
         }
       : {
@@ -160,12 +188,18 @@ export function createBookmarkStore(storage: NamespaceStorage): BookmarkStore {
     list(docId) {
       return record
         .read()
-        .then((r) => (r.byDoc[docId]?.rows ?? []).map((row) => ({ ...row })));
+        .then((r) =>
+          (r.byDoc[docId]?.rows ?? []).map((row) =>
+            isPdfRow(row) ? { ...normalizePdfRow(row) } : { ...row }
+          )
+        );
     },
     async exportAll() {
       const r = await record.read();
       return Object.entries(r.byDoc).flatMap(([docId, doc]) =>
-        doc.rows.map((row) => ({ ...row, docId }))
+        doc.rows.map((row) =>
+          isPdfRow(row) ? { ...normalizePdfRow(row), docId } : { ...row, docId }
+        )
       );
     },
     add(docId, target) {

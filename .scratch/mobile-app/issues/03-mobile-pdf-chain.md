@@ -173,3 +173,28 @@ pointer-events:none / aria-hidden,装饰不截交互)。测试钉四面:打签�
 **验证**:根 verify EXIT=0(104 文件,1152 passed | 3 skipped);APK
 重装 Success。同轮机检顺带实证:冷启 1140ms、书架恢复、开书回原位
 (进度恢复)、真书音标叠加与笔钮(dump 取证)。
+
+### 2026-11-14 人验 round 4 返修记档 — 书签升级行级(页粒度失义)
+
+**现象(维护者拍板)**:书签钉在页上,无法标记具体读到的段落——「失去
+书签的意义了」。
+
+**设计升级(与维护者实时拍板同轮)**:书签目标 `{page}` →
+`{page, line, text}`——EPUB 的单位是段落块,PDF 的单位是视觉行,行
+级即同权:
+
+- **store**:PdfBookmarkRow 增 line(页面视觉行 index,渲染稳定)+
+  text(落签行文本摘要,面板免开书可读);幂等按 (page,line);round 3
+  旧页级行读归一(line 0 / 空 text = 页顶,正是旧标志所挂位置)
+- **plant 双路**:①「在当前位置打书签」= 最顶可见行(EPUB
+  topmost-visible 规则移植到行粒度,经 PdfPage handle 读行 DOM 几何);
+  ②**长按任意单词** = 钉在那一句(500ms 拍,移动 >10px 取消,吞掉
+  松手后的点词 click,contextmenu 抑制 + stage user-select:none)
+- **标志**:紫条 + 飘带从页级改行带级(top/height 来自渲染行几何
+  PdfLineGeo,面板操作即现即隐)
+- **跳回**:翻页(异页时)+ ready 后该行 scrollIntoView 居中(EPUB
+  同形 armed-jump);面板行显示「第 N 页 · 行文本摘要」+ 落签时刻
+- **pdf.ts**:renderPdfPage 返回增 lines 行几何(单 item 行数学不变)
+
+**验证**:根 verify EXIT=0(104 文件,**1154 passed | 3 skipped**);
+新案:长按打签+吞点词、旧行归一、行级断言四面;APK 重装 Success。

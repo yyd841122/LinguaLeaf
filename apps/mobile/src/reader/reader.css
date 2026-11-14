@@ -151,6 +151,10 @@ body {
   display: inline-block;
   max-width: 100%;
   overflow-x: auto;
+  /* The long-press plant (round 4) must not turn into a text-selection
+     drag — the canvas owns the glyphs anyway. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .pdf-stage canvas {
   display: block;
@@ -566,30 +570,37 @@ body {
   pointer-events: none;
 }
 
-/* The PDF face's planted-page marker (ticket 03): the EPUB block-marked
-   facts at page granularity — the purple strip down the page's left edge
-   and the ribbon at its top-right corner, same color, same shapes.
-   Decorative only: pointer-events none keeps the overlay's word layer
-   the only touch target, aria-hidden keeps it out of the a11y tree. */
+/* The PDF face's planted-LINE marker (ticket 03 人验 round 4): the EPUB
+   block-marked facts at line granularity — a purple strip down the
+   page's left edge over the line's band, the ribbon at the page's
+   top-right of that band, same color, same shapes. top/height ride
+   inline style from the render's line geometry. Decorative only:
+   pointer-events none keeps the overlay's word layer the only touch
+   target, aria-hidden keeps it out of the a11y tree. */
 .pdf-bookmark-mark {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+}
+.pdf-bookmark-mark::before {
+  content: "";
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
   width: 3px;
   background: #6a4fa3;
-  pointer-events: none;
 }
 .pdf-bookmark-mark::after {
   content: "";
   position: absolute;
-  top: 0;
   right: 0.45rem;
+  top: -0.12rem;
   width: 0.7rem;
   height: 1.1rem;
   background: #6a4fa3;
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
-  pointer-events: none;
 }
 
 /* The 备份与恢复 block (ticket 05): the landing's export/import station —

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createMemoryPdfBytesBackend,
@@ -74,12 +80,14 @@ beforeEach(() => {
   vi.spyOn(pdf, "sampleTextLengths").mockResolvedValue([120]);
   vi.spyOn(pdf, "renderPdfPage").mockImplementation(async (_, overlay) => {
     pdf.clearPdfOverlay(overlay);
-    // One tappable word per render — the popup-dismissal pin needs a
-    // live anchor; the bookmark tests never click it.
+    // One tappable word per render, hanging on line 0 — the popup pin
+    // and the long-press plant need a live anchor with line geometry;
+    // the bookmark tests never click it except where stated.
     const word = document.createElement("span");
     word.className = "pdf-word";
     word.dataset.pdfWord = "Woke";
     word.dataset.word = "Woke";
+    word.dataset.pdfLineIndex = "0";
     word.setAttribute("role", "button");
     word.tabIndex = 0;
     word.textContent = "Woke";
@@ -87,7 +95,11 @@ beforeEach(() => {
     ipa.className = "pdf-ipa";
     word.appendChild(ipa);
     overlay.appendChild(word);
-    return { wordCount: 1, ipaCount: 1 };
+    return {
+      wordCount: 1,
+      ipaCount: 1,
+      lines: [{ lineIndex: 0, top: 0, height: 12, right: 100, text: "Woke" }],
+    };
   });
 });
 
@@ -140,11 +152,12 @@ describe("PDF face bookmarks (ticket 03)", () => {
     await waitFor(() =>
       expect(ctx.bookmarks.list(docId)).resolves.toHaveLength(1)
     );
-    // The planted page is this face's position fact: page 1.
+    // The planted position is this face's fact: page 1, the topmost
+    // visible line (the mock's only line), its text as the snippet.
     expect(await ctx.bookmarks.list(docId)).toEqual([
-      expect.objectContaining({ page: 1 }),
+      expect.objectContaining({ page: 1, line: 0, text: "Woke" }),
     ]);
-    // The face-level marker shows on the planted page (人验 round 3).
+    // The face-level marker shows on the planted line (round 4).
     expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
   });
 
@@ -200,7 +213,7 @@ describe("PDF face bookmarks (ticket 03)", () => {
     await openPanel();
     fireEvent.click(screen.getByRole("button", { name: "在当前位置打书签" }));
     await screen.findByRole("button", { name: /^第 1 页/ });
-    fireEvent.click(screen.getByRole("button", { name: "删除书签：第 1 页" }));
+    fireEvent.click(screen.getByRole("button", { name: /^删除书签：第 1 页/ }));
     expect(
       await screen.findByText(/还没有书签。点「在当前位置打书签」/)
     ).toBeInTheDocument();
@@ -226,6 +239,34 @@ describe("PDF face bookmarks (ticket 03)", () => {
       await screen.findByRole("button", { name: /^第 1 页/ })
     ).toBeInTheDocument();
     expect(await ctx.bookmarks.list(await id())).toHaveLength(1);
+  });
+
+  it("long-pressing a word plants the mark on its line, lookup swallowed", async () => {
+    const ctx = mount();
+    await pick();
+    const wordAt = () =>
+      document.querySelector<HTMLElement>("[data-word='Woke']");
+    await waitFor(() => expect(wordAt()).not.toBeNull());
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerDown(wordAt()!);
+      act(() => {
+        vi.advanceTimersByTime(520);
+      });
+      fireEvent.pointerUp(wordAt()!);
+    } finally {
+      vi.useRealTimers();
+    }
+    const docId = await id();
+    await waitFor(() =>
+      expect(ctx.bookmarks.list(docId)).resolves.toHaveLength(1)
+    );
+    const rows = await ctx.bookmarks.list(docId);
+    expect(rows[0]).toMatchObject({ page: 1, line: 0, text: "Woke" });
+    // The swallowed click: no lookup popup came up with it.
+    expect(screen.queryByRole("dialog", { name: "词详情：Woke" })).toBeNull();
+    // The marker hangs on the line.
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
   });
 
   it("a page flip or a zoom dismisses the anchored popup (EPUB parity)", async () => {

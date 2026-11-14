@@ -98,7 +98,7 @@ beforeEach(() => {
         button.setAttribute("aria-label", "写笔记");
         overlay.appendChild(button);
       }
-      return { wordCount: 2, ipaCount: showIpa ? 2 : 0 };
+      return { wordCount: 2, ipaCount: showIpa ? 2 : 0, lines: [] };
     }
   );
 });

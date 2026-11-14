@@ -92,7 +92,22 @@ export async function sampleTextLengths(
   return lengths;
 }
 
-export type PdfRender = { wordCount: number; ipaCount: number };
+// One visual line's placed geometry — the facts the bookmark marker and
+// the jump scroll need (ticket 03 人验 round 4): the band the mark hangs
+// on and the line's own text for display, all in overlay px.
+export type PdfLineGeo = {
+  lineIndex: number;
+  top: number;
+  height: number;
+  right: number;
+  text: string;
+};
+
+export type PdfRender = {
+  wordCount: number;
+  ipaCount: number;
+  lines: PdfLineGeo[];
+};
 
 // Render one page onto the canvas and lay the word/IPA overlay over it.
 // Renders serialize on one promise chain — pdf.js rejects a render()
@@ -165,6 +180,8 @@ export function renderPdfPage(
   return run;
 }
 
+const emptyRender = (): PdfRender => ({ wordCount: 0, ipaCount: 0, lines: [] });
+
 async function renderPdfPageStep(
   canvas: HTMLCanvasElement,
   overlay: HTMLElement,
@@ -175,12 +192,10 @@ async function renderPdfPageStep(
   showIpa: boolean,
   ticket: object
 ): Promise<PdfRender> {
-  if (renderTickets.get(overlay) !== ticket)
-    return { wordCount: 0, ipaCount: 0 };
+  if (renderTickets.get(overlay) !== ticket) return emptyRender();
   const page = await doc.getPage(pageNumber);
   try {
-    if (renderTickets.get(overlay) !== ticket)
-      return { wordCount: 0, ipaCount: 0 };
+    if (renderTickets.get(overlay) !== ticket) return emptyRender();
     // HiDPI: the backing store renders at device pixels while the canvas's
     // CSS size stays at the viewport's — otherwise a 125%/150% Windows
     // display scales the 1x bitmap up and the text goes soft (the blur the
@@ -201,11 +216,12 @@ async function renderPdfPageStep(
     }).promise;
     const content = await page.getTextContent();
     if (renderTickets.get(overlay) !== ticket) {
-      return { wordCount: 0, ipaCount: 0 };
+      return emptyRender();
     }
     clearPdfOverlay(overlay);
     let wordCount = 0;
     let ipaCount = 0;
+    const lines: PdfLineGeo[] = [];
     for (const {
       items: lineItems,
       lineIndex,
@@ -234,6 +250,13 @@ async function renderPdfPageStep(
       // span — the one exact fact pdf.js gives us. Residual error is only
       // the metric difference between the measuring font and the embedded
       // one.
+      lines.push({
+        lineIndex,
+        top: baseline - fontPx,
+        height: fontPx,
+        right: lineEnd,
+        text: lineText,
+      });
       const segments = segmentLine(lineText, matches, fontPx);
       const totalShare = segments.reduce((sum, seg) => sum + seg.share, 0);
       const k = (lineEnd - lineX) / totalShare;
@@ -283,7 +306,7 @@ async function renderPdfPageStep(
       button.textContent = "✎";
       overlay.appendChild(button);
     }
-    return { wordCount, ipaCount };
+    return { wordCount, ipaCount, lines };
   } finally {
     page.cleanup();
   }
