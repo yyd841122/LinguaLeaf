@@ -289,7 +289,7 @@ describe("PDF line notes, reattachment and position", () => {
     expect(document.querySelector(".reader-position")).toHaveTextContent(
       "1 / 3"
     );
-    expect(screen.getByRole("button", { name: "100%" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "适宽" })).toHaveAttribute(
       "aria-pressed",
       "true"
     );

@@ -198,3 +198,21 @@ pointer-events:none / aria-hidden,装饰不截交互)。测试钉四面:打签�
 
 **验证**:根 verify EXIT=0(104 文件,**1154 passed | 3 skipped**);
 新案:长按打签+吞点词、旧行归一、行级断言四面;APK 重装 Success。
+
+### 2026-11-14 人验 round 5 返修记档 — 缩放改适宽语义(满屏免平移)
+
+**现象(维护者拍板)**:PDF 无法满屏,读边上内容要手动左右移动——
+scale 1 是 PDF 原始单位(612px)而手机视口 ~400px,连 75%(459px)都
+超宽,每档都要平移。
+
+**修笔**:缩放语义从「PDF 原始倍率」改为「**适宽倍率**」——100% =
+撑满 reader 内容宽(clientWidth − 左右 padding),75%/150% 为适宽的
+相对倍率(150% 恢复放大平移能力);渲染时按当前页 base 宽自动算
+fit(pdf.ts 内 canvas.closest("main") 取容器,jsdom 无 main 回落
+fit=1,契约测试零改动);行几何的 px 换算随 effective scale;缩放钮
+中档标签改「适宽」。页宽不一致的文档逐页各自适宽。旧存档 scale 1
+(默认)重开即适宽,1.5 重开为放大态,语义自洽。
+
+**验证**:根 verify EXIT=0(104 文件,1154 passed | 3 skipped);
+pdfReaderNotes 一处「100%」钮断言随标签更新。APK 重装 Success。
+已知边界:旋转屏幕后到下次重渲染才重新适宽。

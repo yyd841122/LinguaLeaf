@@ -200,7 +200,24 @@ async function renderPdfPageStep(
     // CSS size stays at the viewport's — otherwise a 125%/150% Windows
     // display scales the 1x bitmap up and the text goes soft (the blur the
     // real-Edge acceptance caught once the DOM words went transparent).
-    const viewport = page.getViewport({ scale });
+    //
+    // Fit-width (ticket 03 人验 round 5): scale 1 reads as "fill the
+    // reader's content width" on a real screen — the PDF-unit page (612px
+    // on a ~400px phone) forced horizontal panning at every zoom step.
+    // The stored multiplier applies on top of the fit; jsdom has no main
+    // ancestor and falls back to multiplier-only, keeping the contract
+    // tests' math. Orientation changes re-fit on the next render.
+    const main = canvas.closest("main");
+    let fit = 1;
+    if (main) {
+      const style = window.getComputedStyle(main);
+      const padding =
+        parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+      const width = main.clientWidth - (Number.isNaN(padding) ? 0 : padding);
+      if (width > 0) fit = width / page.getViewport({ scale: 1 }).width;
+    }
+    const effective = fit * scale;
+    const viewport = page.getViewport({ scale: effective });
     const outputScale = Math.max(1, window.devicePixelRatio || 1);
     canvas.width = viewport.width * outputScale;
     canvas.height = viewport.height * outputScale;
@@ -241,7 +258,9 @@ async function renderPdfPageStep(
       const lineX = Math.min(...transforms.map((tx) => tx[4]));
       const baseline = transforms[0]![5];
       const lineEnd = Math.max(
-        ...lineItems.map((text, i) => transforms[i]![4] + text.width * scale)
+        ...lineItems.map(
+          (text, i) => transforms[i]![4] + text.width * effective
+        )
       );
       // Proportional placement: uniform per-character splitting drifts badly
       // on proportional fonts (the hover box lands off the word). Measure

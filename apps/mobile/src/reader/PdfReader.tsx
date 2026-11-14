@@ -187,7 +187,9 @@ export function PdfReader({
                 if (zoom !== scale) navigate(() => onScale(zoom));
               }}
             >
-              {zoom * 100}%
+              {/* 100% is fit-width (round 5): the multiplier reads as a
+                  percentage of the screen's content width. */}
+              {zoom === 1 ? "适宽" : `${zoom * 100}%`}
             </button>
           ))}
           <button
