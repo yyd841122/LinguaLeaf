@@ -100,4 +100,27 @@ describe("canonical PDF visual lines", () => {
     ]);
     expect(lines.map((line) => line.lineIndex)).toEqual([0, 1]);
   });
+
+  it("recovers a dropped space at a wide letter-to-letter gap", () => {
+    // Camille: "Chapter"+"I" rides a bare 0.18-fontPx gap — the
+    // generator dropped the space glyph; the gap is the only trace.
+    const chapter = item("Chapter", 40, 300, 42); // ends at x=82
+    const roman = item("I", 84.16, 300, 6); // gap 2.16 = 0.18 × fontPx 12
+    const lines = eligiblePdfLines([chapter, roman]);
+    expect(lines[0]!.lineText).toBe("Chapter I");
+    expect(lines[0]!.matches.map((m) => m[0])).toEqual(["Chapter", "I"]);
+  });
+
+  it("keeps tracking-distance joints fused and non-letter boundaries untouched", () => {
+    const fused = eligiblePdfLines([
+      item("poss", 40, 300, 24), // ends at x=64
+      item("ible", 64.72, 300, 24), // gap 0.72 = 0.06 × 12 — tracking
+    ]);
+    expect(fused[0]!.lineText).toBe("possible");
+    const punctuated = eligiblePdfLines([
+      item("word", 40, 300, 24),
+      item("[La", 66.16, 300, 12), // wide gap, but "[" is no letter
+    ]);
+    expect(punctuated[0]!.lineText).toBe("word[La");
+  });
 });

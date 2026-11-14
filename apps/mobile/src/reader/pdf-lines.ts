@@ -8,9 +8,13 @@ import { WORD_PATTERN } from "@lingualeaf/reading-model";
 // page 1 across 16 baselines (83 on one line), which turned the old
 // one-pen-per-item rule into a page of pens and shattered word spans.
 // Items sharing a baseline (within a font-relative tolerance) merge into
-// one line, x-ordered, strings joined VERBATIM — whitespace TextItems
-// carry the spaces, so no gap heuristics are involved. The extension copy
-// keeps the per-item rule (D12: 扩展本体不动).
+// one line, x-ordered. Spaces come from two sources: whitespace
+// TextItems join verbatim, and — because some generators drop the space
+// glyph entirely — letter-to-letter joints whose x-gap reaches 0.15 of
+// the font size gain a synthesized space (Camille, 20 pages measured:
+// kerning tops out ≤0.14 with the mass at ≤0.08; dropped spaces sit at
+// 0.16–0.18, a clean valley between). The extension copy keeps the
+// per-item rule (D12: 扩展本体不动).
 //
 // Empty items and marked-content entries participate in nothing;
 // punctuation-only lines consume no index.
@@ -24,11 +28,18 @@ export type PdfLine = {
   matches: RegExpMatchArray[];
 };
 
+// The gap, in font-size units, past which two letter-boundary items are
+// read as a dropped space rather than tracking (measured, see above).
+const MISSING_SPACE_GAP = 0.15;
+
 const fontPxOf = (item: TextItem): number =>
   Math.hypot(item.transform[2], item.transform[3]);
 
 const normalizeItemText = (str: string): string =>
   str.normalize("NFC").replace(/\r\n?/g, "\n");
+
+const isLetter = (ch: string | undefined): boolean =>
+  ch !== undefined && /\p{L}/u.test(ch);
 
 type Cluster = { baseline: number; fontPx: number; items: TextItem[] };
 
@@ -65,9 +76,25 @@ export function eligiblePdfLines(items: TextContent["items"]): PdfLine[] {
     const ordered = [...cluster.items].sort(
       (a, b) => a.transform[4] - b.transform[4]
     );
-    const lineText = ordered
-      .map((item) => normalizeItemText(item.str))
-      .join("");
+    // The join: verbatim per item, plus the gap-recovered space at
+    // letter-to-letter joints (whitespace items need no heuristic).
+    let lineText = "";
+    let previous: TextItem | undefined;
+    for (const item of ordered) {
+      const piece = normalizeItemText(item.str);
+      if (
+        previous !== undefined &&
+        isLetter(lineText.slice(-1)) &&
+        isLetter(piece[0]) &&
+        (item.transform[4] - (previous.transform[4] + previous.width)) /
+          cluster.fontPx >=
+          MISSING_SPACE_GAP
+      ) {
+        lineText += " ";
+      }
+      lineText += piece;
+      previous = item;
+    }
     const matches = [...lineText.matchAll(WORD_PATTERN)];
     if (!matches.length) continue;
     lines.push({
