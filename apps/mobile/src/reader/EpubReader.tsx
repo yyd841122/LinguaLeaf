@@ -36,6 +36,10 @@ import { EpubChapter } from "./EpubChapter";
 import type { NoteEditorHandle } from "./NoteEditor";
 import { WordLookupPopup } from "./WordLookupPopup";
 import { formatPlantedAt } from "./bookmark-view";
+import type {
+  PdfToolbarPosition,
+  UiSettingsStore,
+} from "../store/ui-settings-store";
 
 // The settled-failure copy (ticket 04): a chapter whose every sentence
 // came back null. The Translator contract reports wrong key and network
@@ -89,6 +93,7 @@ export function EpubReader({
   editorRef,
   restoreRef,
   scrollSaveAt,
+  uiSettings,
   onChapter,
   onToggleIpa,
   onOpenSettings,
@@ -114,6 +119,9 @@ export function EpubReader({
   editorRef: RefObject<NoteEditorHandle | null>;
   restoreRef: RefObject<ChapterProgress | null>;
   scrollSaveAt: RefObject<number>;
+  // The reader's global face preferences (toolbar position, round 14) —
+  // the EPUB face shares the PDF face's choice.
+  uiSettings?: UiSettingsStore | undefined;
   onChapter: (index: number) => void;
   onToggleIpa: () => void;
   onOpenSettings: () => void;
@@ -191,6 +199,7 @@ export function EpubReader({
         });
       },
     });
+
     return () => {
       tintOwner.invalidate();
     };
@@ -312,6 +321,26 @@ export function EpubReader({
     };
   }, [settings, settingsRevision, settingsAttempt]);
 
+  // 工具栏位置 (round 14): the EPUB face shares the PDF face's global
+  // choice — top (under the title) or a fixed bar at the viewport's
+  // bottom edge; the toggle rides the row itself (置底/置顶).
+  const [toolbarPosition, setToolbarPosition] =
+    useState<PdfToolbarPosition>("top");
+  const toolbarOwner = useOwner();
+  const { run: runToolbar } = useSettle(toolbarOwner);
+  useEffect(() => {
+    if (!uiSettings) return;
+    void runToolbar(uiSettings.load(), {
+      onFresh: (settings) => setToolbarPosition(settings.pdfToolbar),
+    });
+    return () => toolbarOwner.invalidate();
+  }, [uiSettings, runToolbar, toolbarOwner]);
+  const moveToolbar = () => {
+    const next: PdfToolbarPosition =
+      toolbarPosition === "top" ? "bottom" : "top";
+    setToolbarPosition(next);
+    void uiSettings?.savePdfToolbar(next);
+  };
   const bookmarksOwner = useOwner();
   const bookmarksSettle = useSettle(bookmarksOwner);
   const runBookmarks = bookmarksSettle.run;
@@ -505,77 +534,89 @@ export function EpubReader({
     chapterTranslations === null ||
     settingsValue === null ||
     !isConfigured(settingsValue);
+  const toolsRow = (
+    <div
+      className={`reader-tools${toolbarPosition === "bottom" ? " reader-tools-fixed" : ""}`}
+    >
+      {/* 显示开关 (GLOSSARY): hides the transcription line while the
+          word units stay — clean reading and annotated reading
+          switch instantly. */}
+      <button
+        type="button"
+        className="reader-toggle"
+        aria-pressed={showIpa}
+        onClick={onToggleIpa}
+      >
+        音标
+      </button>
+      {/* The 译文行 显示开关 (GLOSSARY 译文行): same instant
+          show/hide over the settled translations. */}
+      <button
+        type="button"
+        className="reader-toggle"
+        aria-pressed={showTranslation}
+        onClick={() => setShowTranslation((shown) => !shown)}
+      >
+        译文
+      </button>
+      {/* 按需翻译 (GLOSSARY) trigger, one task per chapter (the
+          registry refuses a second); the percent rides the label. */}
+      <button
+        type="button"
+        className="reader-translate"
+        disabled={translateDisabled}
+        onClick={startTranslation}
+      >
+        {translateLabel}
+      </button>
+      <button
+        type="button"
+        className="reader-settings"
+        onClick={() => {
+          if (!closeNote()) return;
+          onOpenSettings();
+        }}
+      >
+        设置
+      </button>
+      {/* 书签 (ticket 10): the panel plants a mark at the current
+          position, lists them in reading order, jumps back, deletes. */}
+      <button
+        type="button"
+        className="reader-bookmarks"
+        onClick={() => {
+          if (!closeNote()) return;
+          setLookup(null);
+          setShowBookmarks(true);
+        }}
+      >
+        书签
+      </button>
+      <button type="button" className="reader-toggle" onClick={moveToolbar}>
+        {toolbarPosition === "top" ? "置底" : "置顶"}
+      </button>
+      <button
+        type="button"
+        className="reader-reopen"
+        onClick={() => {
+          if (!closeNote()) return;
+          setLookup(null);
+          onReopen();
+        }}
+      >
+        打开
+      </button>
+    </div>
+  );
+
   return (
-    <main className="reader" aria-label="扩展阅读页">
+    <main
+      className={`reader${toolbarPosition === "bottom" ? " reader-epub-bottom" : ""}`}
+      aria-label="扩展阅读页"
+    >
       <header className="reader-head">
         <h1 className="reader-title">{book.title}</h1>
-        <div className="reader-tools">
-          {/* 显示开关 (GLOSSARY): hides the transcription line while the
-              word units stay — clean reading and annotated reading
-              switch instantly. */}
-          <button
-            type="button"
-            className="reader-toggle"
-            aria-pressed={showIpa}
-            onClick={onToggleIpa}
-          >
-            音标
-          </button>
-          {/* The 译文行 显示开关 (GLOSSARY 译文行): same instant
-              show/hide over the settled translations. */}
-          <button
-            type="button"
-            className="reader-toggle"
-            aria-pressed={showTranslation}
-            onClick={() => setShowTranslation((shown) => !shown)}
-          >
-            译文
-          </button>
-          {/* 按需翻译 (GLOSSARY) trigger, one task per chapter (the
-              registry refuses a second); the percent rides the label. */}
-          <button
-            type="button"
-            className="reader-translate"
-            disabled={translateDisabled}
-            onClick={startTranslation}
-          >
-            {translateLabel}
-          </button>
-          <button
-            type="button"
-            className="reader-settings"
-            onClick={() => {
-              if (!closeNote()) return;
-              onOpenSettings();
-            }}
-          >
-            设置
-          </button>
-          {/* 书签 (ticket 10): the panel plants a mark at the current
-              position, lists them in reading order, jumps back, deletes. */}
-          <button
-            type="button"
-            className="reader-bookmarks"
-            onClick={() => {
-              if (!closeNote()) return;
-              setLookup(null);
-              setShowBookmarks(true);
-            }}
-          >
-            书签
-          </button>
-          <button
-            type="button"
-            className="reader-reopen"
-            onClick={() => {
-              if (!closeNote()) return;
-              setLookup(null);
-              onReopen();
-            }}
-          >
-            打开其他文件
-          </button>
-        </div>
+        {toolbarPosition === "top" ? toolsRow : null}
       </header>
       {settingsLoadFailed ? (
         <p className="reader-error" role="alert">
@@ -743,6 +784,7 @@ export function EpubReader({
           下一章
         </button>
       </footer>
+      {toolbarPosition === "bottom" ? toolsRow : null}
     </main>
   );
 }

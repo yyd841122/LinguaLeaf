@@ -33,6 +33,11 @@ type ReflowLine = {
   // Word tokens with the text between them — rendered in order, spaces
   // riding the text parts.
   segments: (string | { word: string })[];
+  // The line's text-space baseline — the paragraph-grouping fact
+  // (round 15): the PDF's own leading tells where paragraphs break.
+  baseline: number;
+  // True when the next line starts a new paragraph (or none follows).
+  paraEnd: boolean;
 };
 
 const lineSegments = (
@@ -58,11 +63,29 @@ async function extractLines(
   const target = await doc.getPage(page);
   try {
     const content = await target.getTextContent();
-    return eligiblePdfLines(content.items).map((line) => ({
+    const lines = eligiblePdfLines(content.items).map((line) => ({
       lineIndex: line.lineIndex,
       lineText: line.lineText,
       segments: lineSegments(line.lineText, line.matches),
+      baseline: line.items[0]!.transform[5],
+      paraEnd: true,
     }));
+    // Paragraph grouping: the body text's own leading is the tightest
+    // baseline step on the page; a step past 1.3× it is the PDF's
+    // paragraph break (or a heading's space). Within a paragraph the
+    // lines render tight — the 整段连贯 the fit-width canvas never had.
+    const deltas: number[] = [];
+    for (let i = 1; i < lines.length; i++) {
+      const d = lines[i - 1]!.baseline - lines[i]!.baseline;
+      if (d > 0) deltas.push(d);
+    }
+    const leading = deltas.length ? Math.min(...deltas) : 0;
+    for (let i = 0; i < lines.length; i++) {
+      const next = lines[i + 1];
+      const d = next ? lines[i]!.baseline - next.baseline : Infinity;
+      lines[i]!.paraEnd = !(d > 0) || d > leading * 1.3;
+    }
+    return lines;
   } finally {
     target.cleanup();
   }
@@ -286,7 +309,7 @@ export function PdfReflow({
                 key={line.lineIndex}
                 data-pdf-line-index={line.lineIndex}
                 data-pdf-line-text={line.lineText}
-                className={`sentence-block${marked ? " block-marked" : ""}`}
+                className={`sentence-block${marked ? " block-marked" : ""}${line.paraEnd ? " para-end" : ""}`}
               >
                 <p className="original-line">
                   {line.segments.map((segment, index) =>

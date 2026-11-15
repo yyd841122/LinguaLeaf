@@ -820,7 +820,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     // Read on into the second chapter, then leave to the picker.
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
 
     // The landing lists the document with its position.
     const recent = await screen.findByRole("button", { name: "Journey Book" });
@@ -840,7 +840,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await screen.findByText("First");
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
 
     const other = await buildEpub({
       title: "Other Book",
@@ -851,7 +851,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await pickFile(await fixtureFile("b.epub", other));
     await screen.findByText("Other");
 
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     // Both recents listed; each shows its own chapter.
     expect(
       await screen.findByRole("button", { name: "Journey Book" })
@@ -861,7 +861,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     expect(await screen.findByText("Other")).toBeInTheDocument();
 
     // And the first book still restores to its own chapter.
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
     );
@@ -888,7 +888,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     // Both documents on the recents list.
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     const other = await buildEpub({
       title: "Other Book",
       docs: [
@@ -897,7 +897,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     });
     await pickFile(await fixtureFile("b.epub", other));
     await screen.findByText("Other");
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
 
     // Journey's open hangs; the reader picks Other while it is in flight.
     fireEvent.click(
@@ -938,7 +938,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     renderWithSeams({ library });
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
     );

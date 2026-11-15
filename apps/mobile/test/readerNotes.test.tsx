@@ -200,7 +200,7 @@ describe("EPUB sentence-block notes", () => {
     "关闭",
     "Escape",
     "下一章",
-    "打开其他文件",
+    "打开",
     "另一句子块",
     "同一句子块",
     "浮层外",
@@ -252,7 +252,7 @@ describe("EPUB sentence-block notes", () => {
           "aria-current",
           "true"
         );
-      if (action === "打开其他文件")
+      if (action === "打开")
         expect(
           screen.getByLabelText("选择 EPUB 或 PDF 文件")
         ).toBeInTheDocument();
@@ -565,11 +565,11 @@ describe("same-title import protection in the reader", () => {
     await screen.findByRole("heading", { name: BOOK.title });
     const original = await library.openDocument(ANCHOR.docId);
     await notes.save({ ...ANCHOR, blockIndex: 0 }, "Existing note");
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     await pick("<p>Original words.</p>");
     await screen.findByRole("heading", { name: BOOK.title });
     expect(window.confirm).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     await pick("<p>Different content.</p>");
     await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(1));
     expect(vi.mocked(window.confirm).mock.calls[0]?.[0]).toContain(

@@ -525,6 +525,7 @@ export function ReaderPage({
           onToggleIpa={() => setShowIpa((shown) => !shown)}
           onOpenSettings={() => setSettingsOpen(true)}
           onReopen={() => setState({ phase: "empty" })}
+          uiSettings={uiSettings}
         />
       ) : null}
     </>

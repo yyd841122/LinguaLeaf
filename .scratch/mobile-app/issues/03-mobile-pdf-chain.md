@@ -381,3 +381,27 @@ Success。
 插曲:round 14 整块重写曾切丢「打开」钮(pdfReaderNotes 14 案当场
 红),调试打印定位后补回——一次性字符串手术的风险面,后续此类改动
 先小步后验证。
+
+### 2026-11-15 人验 round 15 记档 — EPUB 面同款工具栏 + 重排分段连贯
+
+**维护者两需求**:①EPUB 面同款(返回钮/打开更名/工具栏位置可选);
+②PDF 重排分段优化——没到分段处也被截断,整段不连贯。
+
+**修笔**:
+- **EPUB 面**:返回 钮行首、打开其他文件 → 打开、tools 行抽
+  toolsRow 单元素双家 + 置底/置顶 切换 + uiSettings 共享全局偏好——
+  EPUB 是 body 滚动布局,底部形态为 fixed 钉屏底栏(z-index 30 +
+  canvas 底),chapter 区让位 5.5rem;选择与 PDF 面互通(一处选择两
+  面生效,真机实证:PDF 点的置底,EPUB 打开即底栏)。
+- **PDF 重排分段**:每行携带文本空间基线;页内行距最小值 = 正文行距,
+  行距 > 1.3× 行距判段落断点(段尾行 para-end 类,段间距 0.85rem,
+  段内紧 0.12rem)——段落按 PDF 自己的排版分组,整段连贯。
+
+**测试**:pdfReflow 分段断言 1 案、uiSettingsStore 3 案、EPUB 面
+文案四处随更;readerPage/readerNotes 注入面零影响(不注入 uiSettings
+时真 store 读失败降级默认顶)。中途插曲:字符串手术两度切错
+(header 重复/打开钮丢失/置底钮漏搬),均以调试打印定位后手工修复。
+
+**验证**:根 verify EXIT=0(106 文件,1166 passed | 3 skipped);真机
+双面截图:EPUB 底栏七钮钉屏底、PDF 重排段内紧凑/段间清晰。APK 重装
+Success。

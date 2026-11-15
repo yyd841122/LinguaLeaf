@@ -180,6 +180,11 @@ describe("PDF reflow face (round 7)", () => {
     expect(
       document.querySelectorAll(".pdf-reflow .sentence-block")
     ).toHaveLength(2);
+    // Paragraph grouping (round 15): the fixture's two lines ride the
+    // same body leading, so only the page's last line closes a para.
+    const blocks = document.querySelectorAll(".pdf-reflow .sentence-block");
+    expect(blocks[0]).not.toHaveClass("para-end");
+    expect(blocks[1]).toHaveClass("para-end");
     // Tapping a word opens the same lookup popup seam.
     fireEvent.click(screen.getByText("Woke"));
     await screen.findByRole("dialog", { name: "词详情：Woke" });

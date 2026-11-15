@@ -679,8 +679,13 @@ body {
 .pdf-reflow {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  /* Tight within a paragraph; the paragraph break is the .para-end
+     margin, from the PDF's own leading (round 15) — 整段连贯. */
+  gap: 0.12rem;
   padding-bottom: 2rem;
+}
+.pdf-reflow .sentence-block.para-end {
+  margin-bottom: 0.85rem;
 }
 .pdf-reflow .sentence-block {
   position: relative;
@@ -763,4 +768,22 @@ body {
 /* The toolbar's bottom home (round 14): right under the page number. */
 .reader-shell .reader-tools-bottom {
   margin: 0.5rem 0 0;
+}
+
+/* The EPUB face's bottom toolbar (round 14): the body-scroll layout
+   pins it as a fixed bar at the viewport's bottom edge (the shell's
+   in-flow trick belongs to the PDF face only), and the chapter region
+   yields the bar's height. */
+.reader-epub-bottom {
+  padding-bottom: 5.5rem;
+}
+.reader-tools-fixed {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  background: canvas;
+  border-top: 1px solid gray;
+  padding: 0.5rem 1rem;
 }
