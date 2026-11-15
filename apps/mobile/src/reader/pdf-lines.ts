@@ -106,3 +106,84 @@ export function eligiblePdfLines(items: TextContent["items"]): PdfLine[] {
   }
   return lines;
 }
+
+// Paragraph grouping (mobile-app ticket 03, round 16): where does one
+// paragraph end? The classic multi-signal answer (MuPDF's stext blocks
+// and k2pdfopt's text-wrap both build it from these) — never one
+// threshold alone:
+//   1. the VERTICAL GAP: body leading is the MODE of the page's baseline
+//      steps (clustered — a tightly-set footnote block must not drag the
+//      estimate down and chop every body line, the min-based defect the
+//      fit-width report caught);
+//   2. the SHORT LINE: a line whose right edge sits clearly inside the
+//      column's right margin;
+//   3. the INDENT: the next line starts clearly right of the column's
+//      left margin.
+// A break fires on a clear gap, or on a short/indented joint with even a
+// slightly-raised gap — dialogue pages without paragraph spacing read
+// correctly too.
+
+export type ParagraphLine = {
+  baseline: number;
+  left: number;
+  right: number;
+  fontPx: number;
+  paraEnd: boolean;
+};
+
+const clusterValue = (sorted: number[], tolerance: number): number => {
+  // The dominant cluster's center: walk the sorted values, extend the
+  // current cluster while members sit within tolerance of its head, and
+  // keep the head of the largest cluster.
+  let bestHead = sorted[0]!;
+  let bestCount = 1;
+  let head = sorted[0]!;
+  let count = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i]! - head <= tolerance) {
+      count++;
+      if (count > bestCount) {
+        bestCount = count;
+        bestHead = head;
+      }
+    } else {
+      head = sorted[i]!;
+      count = 1;
+    }
+  }
+  return bestHead;
+};
+
+export function markParagraphBreaks(lines: ParagraphLine[]): void {
+  const deltas: number[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const d = lines[i - 1]!.baseline - lines[i]!.baseline;
+    if (d > 0) deltas.push(d);
+  }
+  const leading = clusterValue(
+    [...deltas].sort((a, b) => a - b),
+    deltas.length ? deltas[0]! * 0.12 + Number.EPSILON : 0
+  );
+  const lefts = lines.map((line) => line.left).sort((a, b) => a - b);
+  const rights = lines.map((line) => line.right).sort((a, b) => a - b);
+  const fontPx = Math.max(...lines.map((line) => line.fontPx), 1);
+  const columnLeft = lefts.length > 0 ? clusterValue(lefts, fontPx * 0.5) : 0;
+  const columnRight =
+    rights.length > 0 ? clusterValue(rights, fontPx * 0.5) : 0;
+  for (let i = 0; i < lines.length; i++) {
+    const next = lines[i + 1];
+    if (!next) {
+      lines[i]!.paraEnd = true;
+      continue;
+    }
+    const d = lines[i]!.baseline - next.baseline;
+    if (!(d > 0)) {
+      lines[i]!.paraEnd = false;
+      continue;
+    }
+    const shortLine = lines[i]!.right < columnRight - lines[i]!.fontPx * 0.35;
+    const indented = next.left > columnLeft + next.fontPx * 0.6;
+    lines[i]!.paraEnd =
+      d > leading * 1.4 || (d > leading * 1.12 && (shortLine || indented));
+  }
+}

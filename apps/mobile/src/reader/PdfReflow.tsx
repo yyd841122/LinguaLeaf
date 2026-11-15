@@ -14,7 +14,7 @@ import {
   type RefObject,
 } from "react";
 import type { IpaLookup } from "@lingualeaf/import-core";
-import { eligiblePdfLines } from "./pdf-lines";
+import { eligiblePdfLines, markParagraphBreaks } from "./pdf-lines";
 import type { PdfSession } from "./pdf";
 import type { PdfNote, PdfNotesStore } from "../store/pdf-notes-store";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
@@ -63,28 +63,30 @@ async function extractLines(
   const target = await doc.getPage(page);
   try {
     const content = await target.getTextContent();
-    const lines = eligiblePdfLines(content.items).map((line) => ({
-      lineIndex: line.lineIndex,
-      lineText: line.lineText,
-      segments: lineSegments(line.lineText, line.matches),
-      baseline: line.items[0]!.transform[5],
-      paraEnd: true,
-    }));
-    // Paragraph grouping: the body text's own leading is the tightest
-    // baseline step on the page; a step past 1.3× it is the PDF's
-    // paragraph break (or a heading's space). Within a paragraph the
-    // lines render tight — the 整段连贯 the fit-width canvas never had.
-    const deltas: number[] = [];
-    for (let i = 1; i < lines.length; i++) {
-      const d = lines[i - 1]!.baseline - lines[i]!.baseline;
-      if (d > 0) deltas.push(d);
-    }
-    const leading = deltas.length ? Math.min(...deltas) : 0;
-    for (let i = 0; i < lines.length; i++) {
-      const next = lines[i + 1];
-      const d = next ? lines[i]!.baseline - next.baseline : Infinity;
-      lines[i]!.paraEnd = !(d > 0) || d > leading * 1.3;
-    }
+    const lines = eligiblePdfLines(content.items).map((line) => {
+      const left = Math.min(...line.items.map((item) => item.transform[4]));
+      const right = Math.max(
+        ...line.items.map((item) => item.transform[4] + item.width)
+      );
+      const fontPx = Math.max(
+        ...line.items.map((item) =>
+          Math.hypot(item.transform[2], item.transform[3])
+        )
+      );
+      return {
+        lineIndex: line.lineIndex,
+        lineText: line.lineText,
+        segments: lineSegments(line.lineText, line.matches),
+        baseline: line.items[0]!.transform[5],
+        left,
+        right,
+        fontPx,
+        paraEnd: true,
+      };
+    });
+    // Paragraph grouping (round 16): markParagraphBreaks reads the PDF's
+    // own leading/indent/margin geometry — the 整段连贯 pass.
+    markParagraphBreaks(lines);
     return lines;
   } finally {
     target.cleanup();

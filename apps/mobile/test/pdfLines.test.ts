@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
-import { eligiblePdfLines } from "../src/reader/pdf-lines";
+import { eligiblePdfLines, markParagraphBreaks } from "../src/reader/pdf-lines";
 
 // The visual-line contract (mobile-app ticket 03): items sharing a
 // baseline merge into one line — glyph-per-item streams (Camille: 922
@@ -122,5 +122,63 @@ describe("canonical PDF visual lines", () => {
       item("[La", 66.16, 300, 12), // wide gap, but "[" is no letter
     ]);
     expect(punctuated[0]!.lineText).toBe("word[La");
+  });
+});
+
+// Paragraph grouping (round 16): the multi-signal rule — clustered
+// leading (mode, not min), short lines, indents.
+
+const para = (baseline: number, left: number, right: number, fontPx = 12) => ({
+  baseline,
+  left,
+  right,
+  fontPx,
+  paraEnd: false,
+});
+
+describe("markParagraphBreaks", () => {
+  it("keeps body lines coherent when a tighter-set block drags the min down", () => {
+    // The min-based defect: a footnote pair at leading 12 under body
+    // leading 30 made every body joint fire. The clustered mode reads 30.
+    const lines = [
+      para(300, 40, 260),
+      para(270, 40, 260),
+      para(240, 40, 260),
+      para(210, 40, 260),
+      para(180, 40, 260),
+      para(96, 40, 260, 8),
+      para(84, 40, 260, 8),
+    ];
+    markParagraphBreaks(lines);
+    expect(lines.slice(0, 5).map((l) => l.paraEnd)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
+    expect(lines[5]!.paraEnd).toBe(false);
+    expect(lines[6]!.paraEnd).toBe(true);
+  });
+
+  it("breaks on a raised gap when the line ends short (dialogue page)", () => {
+    const lines = [para(300, 40, 260), para(270, 40, 150), para(234, 40, 260)];
+    markParagraphBreaks(lines);
+    expect(lines[0]!.paraEnd).toBe(false);
+    expect(lines[1]!.paraEnd).toBe(true);
+    expect(lines[2]!.paraEnd).toBe(true);
+  });
+
+  it("breaks on a raised gap when the next line is indented", () => {
+    const lines = [para(300, 40, 260), para(270, 40, 150), para(234, 52, 260)];
+    markParagraphBreaks(lines);
+    expect(lines[1]!.paraEnd).toBe(true);
+    expect(lines[2]!.paraEnd).toBe(true);
+  });
+
+  it("uniform leading without signals keeps the whole run one paragraph", () => {
+    const lines = [para(300, 40, 260), para(270, 40, 260), para(240, 40, 260)];
+    markParagraphBreaks(lines);
+    expect(lines.map((l) => l.paraEnd)).toEqual([false, false, true]);
   });
 });
