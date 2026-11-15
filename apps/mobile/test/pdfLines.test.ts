@@ -128,57 +128,101 @@ describe("canonical PDF visual lines", () => {
 // Paragraph grouping (round 16): the multi-signal rule — clustered
 // leading (mode, not min), short lines, indents.
 
-const para = (baseline: number, left: number, right: number, fontPx = 12) => ({
+const para = (
+  baseline: number,
+  left: number,
+  right: number,
+  text: string,
+  fontPx = 12
+) => ({
   baseline,
   left,
   right,
   fontPx,
+  text,
   paraEnd: false,
 });
 
 describe("markParagraphBreaks", () => {
   it("keeps body lines coherent when a tighter-set block drags the min down", () => {
     // The min-based defect: a footnote pair at leading 12 under body
-    // leading 30 made every body joint fire. The clustered mode reads 30.
+    // leading 30 made every body joint fire. The clustered mode reads 30;
+    // no body line ends a sentence, so nothing fires but the real ends.
     const lines = [
-      para(300, 40, 260),
-      para(270, 40, 260),
-      para(240, 40, 260),
-      para(210, 40, 260),
-      para(180, 40, 260),
-      para(96, 40, 260, 8),
-      para(84, 40, 260, 8),
+      para(300, 40, 260, "body line one of the"),
+      para(270, 40, 260, "body line two of the"),
+      para(240, 40, 260, "body line three of"),
+      para(210, 40, 260, "body line four of the"),
+      para(180, 40, 260, "body line five ends here."),
+      para(96, 40, 260, "footnote line one of", 8),
+      para(84, 40, 260, "footnote line two.", 8),
     ];
     markParagraphBreaks(lines);
-    expect(lines.slice(0, 5).map((l) => l.paraEnd)).toEqual([
+    expect(lines.slice(0, 4).map((l) => l.paraEnd)).toEqual([
       false,
       false,
       false,
       false,
-      true,
     ]);
-    expect(lines[5]!.paraEnd).toBe(false);
+    // Body-final ends a sentence (and the footnote's own end does too).
+    expect(lines[4]!.paraEnd).toBe(true);
     expect(lines[6]!.paraEnd).toBe(true);
   });
 
-  it("breaks on a raised gap when the line ends short (dialogue page)", () => {
-    const lines = [para(300, 40, 260), para(270, 40, 150), para(234, 40, 260)];
+  it("breaks where a short line ends a sentence (dialogue page)", () => {
+    const lines = [
+      para(300, 40, 260, "body line running to the margin,"),
+      para(270, 40, 150, '"Yes."'),
+      para(234, 40, 260, "the next paragraph starts here,"),
+    ];
     markParagraphBreaks(lines);
     expect(lines[0]!.paraEnd).toBe(false);
     expect(lines[1]!.paraEnd).toBe(true);
     expect(lines[2]!.paraEnd).toBe(true);
   });
 
-  it("breaks on a raised gap when the next line is indented", () => {
-    const lines = [para(300, 40, 260), para(270, 40, 150), para(234, 52, 260)];
+  it("breaks where the next line is indented with a raised gap", () => {
+    const lines = [
+      para(300, 40, 260, "body line running to the margin,"),
+      para(270, 40, 150, "a body line ends here"),
+      para(234, 52, 260, "an indented new paragraph,"),
+    ];
     markParagraphBreaks(lines);
     expect(lines[1]!.paraEnd).toBe(true);
     expect(lines[2]!.paraEnd).toBe(true);
   });
 
-  it("uniform leading without signals keeps the whole run one paragraph", () => {
-    const lines = [para(300, 40, 260), para(270, 40, 260), para(240, 40, 260)];
+  it("baseline jitter alone never fires (the Camille page)", () => {
+    // Camille p21's real steps: 14.9-19.7 around leading ~16.6 — the old
+    // fixed thresholds fired every third joint on these.
+    const baselines = [739.0, 722.4, 707.5, 692.4, 675.8, 657.8, 639.1, 619.7];
+    const rights = [537.3, 524.0, 522.8, 509.9, 178.4, 495.0, 317.1, 366.3];
+    const texts = [
+      '"Have no fear; I shall be',
+      "to carry out a resolution",
+      "myself again until I have",
+      "dream, a moment's delirium",
+      'having seen, I will see."',
+      '"I understand," I said to',
+      '"Yes, I saw her the day',
+      '"Did she give you the pap',
+    ];
+    const lines = baselines.map((baseline, i) =>
+      para(baseline, 63.4, rights[i]!, texts[i]!)
+    );
     markParagraphBreaks(lines);
-    expect(lines.map((l) => l.paraEnd)).toEqual([false, false, true]);
+    // The speech is ONE paragraph of five lines (ragged-right: body
+    // joints end in words, never firing); it closes at the short,
+    // sentence-final "having seen, I will see.\"". The page's last line
+    // closes the final dialogue.
+    expect(lines.slice(0, 4).map((l) => l.paraEnd)).toEqual([
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(lines[4]!.paraEnd).toBe(true);
+    expect(lines.slice(5, 7).map((l) => l.paraEnd)).toEqual([false, false]);
+    expect(lines[7]!.paraEnd).toBe(true);
   });
 });

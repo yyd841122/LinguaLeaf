@@ -81,6 +81,7 @@ async function extractLines(
         left,
         right,
         fontPx,
+        text: line.lineText,
         paraEnd: true,
       };
     });
