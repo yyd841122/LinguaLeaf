@@ -153,7 +153,7 @@ function mount(
 }
 
 async function pick() {
-  fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+  fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
     target: { files: [new File([source()], "same.pdf")] },
   });
   await screen.findByRole("heading", { name: "Same title" });
@@ -235,7 +235,7 @@ describe("PDF reflow face (round 7)", () => {
     await reflow();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(
-      await screen.findByLabelText("选择 EPUB 或 PDF 文件")
+      await screen.findByLabelText("选择 EPUB、PDF 或 Markdown 文件")
     ).toBeInTheDocument();
   });
 

@@ -129,7 +129,7 @@ function mount(
   return { view: render(tree()), tree, notes, positions, library, bytes };
 }
 async function pick(tail = "A") {
-  fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+  fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
     target: { files: [new File([source(tail)], "same.pdf")] },
   });
   await screen.findByRole("heading", { name: "Same title" });
@@ -681,9 +681,12 @@ describe("PDF ownership", () => {
           stage === "position" ? position.promise : Promise.resolve(null)
         );
       const { view } = mount(undefined, positions);
-      fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
-        target: { files: [new File([source()], "book.pdf")] },
-      });
+      fireEvent.change(
+        screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"),
+        {
+          target: { files: [new File([source()], "book.pdf")] },
+        }
+      );
       await waitFor(() =>
         expect(
           stage === "position"
@@ -717,9 +720,12 @@ describe("PDF ownership", () => {
       .mockResolvedValue([120]);
     mount();
     const choose = () =>
-      fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
-        target: { files: [new File([source()], "book.pdf")] },
-      });
+      fireEvent.change(
+        screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"),
+        {
+          target: { files: [new File([source()], "book.pdf")] },
+        }
+      );
     choose();
     expect(await screen.findByRole("alert")).toHaveTextContent("扫描版");
     expect(candidates[0]!.doc.destroy).toHaveBeenCalledTimes(1);
@@ -752,14 +758,14 @@ describe("PDF shelf admission and byte ownership", () => {
   it("never shelves scanned or superseded candidates", async () => {
     const ctx = mount();
     vi.mocked(pdf.sampleTextLengths).mockResolvedValueOnce([0]);
-    fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+    fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
       target: { files: [new File([source()], "same.pdf")] },
     });
     await screen.findByText(/扫描版 PDF 不支持/);
     expect(await ctx.bytes.list()).toEqual([]);
     const sample = deferred<number[]>();
     vi.mocked(pdf.sampleTextLengths).mockReturnValueOnce(sample.promise);
-    fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+    fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
       target: { files: [new File([source()], "same.pdf")] },
     });
     await waitFor(() => expect(pdf.sampleTextLengths).toHaveBeenCalledTimes(2));
@@ -897,7 +903,9 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
       "PDF 书架读取失败"
     );
     expect(screen.queryByText("书架暂无 PDF。")).toBeNull();
-    expect(screen.getByLabelText("选择 EPUB 或 PDF 文件")).toBeEnabled();
+    expect(
+      screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件")
+    ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "重试读取 PDF 书架" }));
     await screen.findByRole("button", { name: "Cached" });
     vi.spyOn(bytes, "get").mockRejectedValueOnce(new Error("missing bytes"));
@@ -905,7 +913,9 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     expect(
       await screen.findByText("PDF 书架读取失败，请重试打开或选择同一个文件。")
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("选择 EPUB 或 PDF 文件")).toBeEnabled();
+    expect(
+      screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件")
+    ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Cached" }));
     await screen.findByRole("heading", { name: "Same title" });
   });

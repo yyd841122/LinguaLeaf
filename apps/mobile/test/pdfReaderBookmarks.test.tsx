@@ -133,7 +133,7 @@ function mount(bookmarks: BookmarkStore = createMemoryBookmarkStore()) {
 }
 
 async function pick() {
-  fireEvent.change(screen.getByLabelText("选择 EPUB 或 PDF 文件"), {
+  fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
     target: { files: [new File([source()], "same.pdf")] },
   });
   await screen.findByRole("heading", { name: "Same title" });

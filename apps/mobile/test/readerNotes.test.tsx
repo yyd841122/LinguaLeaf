@@ -254,7 +254,7 @@ describe("EPUB sentence-block notes", () => {
         );
       if (action === "打开")
         expect(
-          screen.getByLabelText("选择 EPUB 或 PDF 文件")
+          screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件")
         ).toBeInTheDocument();
     }
   );
@@ -541,7 +541,7 @@ describe("same-title import protection in the reader", () => {
       title: BOOK.title,
       docs: [{ href: "one.xhtml", body }],
     });
-    const input = screen.getByLabelText("选择 EPUB 或 PDF 文件");
+    const input = screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件");
     fireEvent.change(input, {
       target: { files: [new File([bytes as BlobPart], "book.epub")] },
     });

@@ -266,11 +266,11 @@ export function ReaderLanding({
         </p>
       ) : null}
       <label className="reader-picker">
-        <span>选择一个 EPUB 或 PDF 文件，或把它拖进本页。</span>
+        <span>选择一个 EPUB、PDF 或 Markdown 文件，或把它拖进本页。</span>
         <input
           type="file"
-          accept=".epub,.pdf"
-          aria-label="选择 EPUB 或 PDF 文件"
+          accept=".epub,.pdf,.md,.markdown"
+          aria-label="选择 EPUB、PDF 或 Markdown 文件"
           onChange={onPick}
         />
       </label>

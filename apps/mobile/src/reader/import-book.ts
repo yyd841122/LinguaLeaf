@@ -1,6 +1,8 @@
 import {
   isEpubFilename,
+  isMarkdownFilename,
   readEpubBook,
+  readMarkdownBook,
   walkChapterBlocks,
   UploadRejected,
   type ImportErrorCode,
@@ -34,7 +36,8 @@ export type ExtBook = { title: string; chapters: ExtChapter[] };
 // upload cap and HTTP statuses are server facts — the extension reads the
 // user's own file, so its copy differs where the reasons are server-shaped.
 export const IMPORT_ERROR_COPY: Record<ImportErrorCode, string> = {
-  "unsupported-format": "暂不支持这种文件——扩展阅读页当前支持 EPUB 与 PDF。",
+  "unsupported-format":
+    "暂不支持这种文件——手机阅读器当前支持 EPUB、PDF 与 Markdown。",
   "invalid-epub": "导入失败：文件无法解析，可能已损坏。",
   "invalid-pdf": "导入失败：PDF 无法解析，可能已损坏。",
   "encrypted-pdf": "导入失败：加密 PDF 暂不支持。",
@@ -70,10 +73,17 @@ export async function importBook(
   filename: string,
   lookup: IpaLookup
 ): Promise<ExtBook> {
+  // Markdown books decode as utf8 text and ride the same assembly as EPUB
+  // (mobile-md-import 02: the phone face inherits the web md semantics —
+  // html:false inert HTML, headings as chapters, shared annotation dispatch).
+  if (isMarkdownFilename(filename)) {
+    const text = new TextDecoder("utf8").decode(content);
+    return assembleBook(readMarkdownBook(filename, text), lookup);
+  }
   if (!isEpubFilename(filename)) {
     throw new UploadRejected(
       "unsupported-format",
-      "the extension reader accepts EPUB files"
+      "the reader accepts EPUB and Markdown files"
     );
   }
   return assembleBook(await readEpubBook(content, filename), lookup);

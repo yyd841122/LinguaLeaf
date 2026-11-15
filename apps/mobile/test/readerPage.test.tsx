@@ -152,12 +152,12 @@ describe("ReaderPage — the EPUB skeleton", () => {
         bookmarks={createMemoryBookmarkStore()}
       />
     );
-    const doc = await fixtureFile("paper.docx", new Uint8Array([1, 2, 3]));
+    const doc = await fixtureFile("notes.txt", new Uint8Array([1, 2, 3]));
     await pickFile(doc);
 
     expect(
       await screen.findByText(
-        "暂不支持这种文件——扩展阅读页当前支持 EPUB 与 PDF。"
+        "暂不支持这种文件——手机阅读器当前支持 EPUB、PDF 与 Markdown。"
       )
     ).toBeInTheDocument();
   });
@@ -1677,5 +1677,93 @@ describe("ReaderPage — shared settled-hover CSS wiring", () => {
     expect(section.querySelectorAll(".lookup-word.word-settled")).toHaveLength(
       1
     );
+  });
+});
+
+// ─── mobile-md-import 02: markdown books ride the EPUB face ───
+
+describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
+  beforeEach(() => {
+    stubDictionaryFetch(FIXTURE_DICT);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const TIDE_MD = (body: string): Promise<File> => {
+    const md = new TextEncoder().encode(`# Same Tide\n\n${body}\n`);
+    return fixtureFile("tide.md", md);
+  };
+
+  it("imports a markdown file into the same face: chapters, IPA slots, shelf entry", async () => {
+    const library = createMemoryLibraryStore();
+    renderWithSeams({ library });
+    const md = new TextEncoder().encode(
+      "# Deep Waters\n\nWoke early today. The quiet sea runs.\n\n## Shallows\n\nMore words live here.\n"
+    );
+    await pickFile(await fixtureFile("deep-waters.md", md));
+
+    // The book opens on its own first heading as its title; ## opens the
+    // second chapter (标题分章, same semantics as the web md face). The
+    // chapter heading repeats the title (md's title ladder), so the query
+    // pins the level-1 reader title.
+    expect(
+      await screen.findByRole("heading", { name: "Deep Waters", level: 1 })
+    ).toBeInTheDocument();
+    // Sentence blocks carry the import-time IPA line — hits and the lemma
+    // fallback (runs → run) in word order, misses stay plain.
+    await screen.findByText("Woke");
+    expect(ipaValues()).toEqual(["woʊk", "təˈdeɪ", "ˈkwaɪət", "rʌn"]);
+    fireEvent.click(screen.getByRole("button", { name: "Shallows" }));
+    expect(await screen.findByText("More")).toBeInTheDocument();
+
+    // The shelf lists the md book like any other, with its position.
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    expect(
+      await screen.findByRole("button", { name: "Deep Waters" })
+    ).toBeInTheDocument();
+    expect(screen.getByText("第 2 章")).toBeInTheDocument();
+  });
+
+  it("gates a same-title markdown re-import behind the replacement confirm and replaces on accept", async () => {
+    const library = createMemoryLibraryStore();
+    renderWithSeams({ library });
+    await pickFile(await TIDE_MD("Woke early today."));
+    await screen.findByText("Woke");
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    await pickFile(await TIDE_MD("The quiet sea runs."));
+    // Await the replaced face first — the confirm fires mid-chain, and the
+    // spy read must follow the settled state, not race it.
+    expect(await screen.findByText("quiet")).toBeInTheDocument();
+    // DocumentReplacementRequired for md books too: the dialog names the
+    // note-misalignment cost, then the new content replaces in place.
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("条已有笔记错位")
+    );
+    expect(screen.queryByText("Woke")).not.toBeInTheDocument();
+  });
+
+  it("keeps the original book when the same-title markdown re-import is declined", async () => {
+    const library = createMemoryLibraryStore();
+    renderWithSeams({ library });
+    await pickFile(await TIDE_MD("Woke early today."));
+    await screen.findByText("Woke");
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await pickFile(await TIDE_MD("The quiet sea runs."));
+    // The 导入中 status lights the importing phase — the phase that guards
+    // reopenDocument — so the click waits for it to leave (lit → gone),
+    // landing on the settled empty phase the decline produces.
+    expect(await screen.findByRole("status")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.queryByRole("status")).not.toBeInTheDocument()
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Same Tide" }));
+    expect(await screen.findByText("Woke")).toBeInTheDocument();
+    expect(screen.queryByText("quiet")).not.toBeInTheDocument();
+    expect(confirm).toHaveBeenCalledTimes(1);
   });
 });
