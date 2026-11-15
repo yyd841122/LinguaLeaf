@@ -690,6 +690,13 @@ body {
   margin: 0;
   font-size: 1.05rem;
   line-height: 1.7;
+  /* The long-press plant (round 4) must not open Android text
+     selection — the selection UI pans the VISUAL viewport (view-level,
+     invisible to the DOM), which is what shoved the header off-screen
+     after bookmarking (round 9's report). Same discipline as the
+     canvas face's .pdf-stage. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .pdf-reflow .block-note-button {
   position: absolute;
@@ -697,26 +704,25 @@ body {
   top: 0.15rem;
 }
 
-/* The reflow face's fixed shell (round 8): position:sticky proved
-   unreliable in the WebView under deep scroll (the head scrolled away,
-   taking the bookmark button with it), so the shell drops sticky
-   semantics entirely — header and pager are pinned flex rows, and the
-   line list is the only scroller. 100vh is exact here: the Capacitor
-   WebView is fullscreen, no browser chrome to subtract. */
-.reader-reflow {
+/* The PDF face's fixed shell (rounds 8-9): position:sticky proved
+   unreliable in the WebView under deep scroll, and a 100vh shell on the
+   ICB-less layout viewport left body scroll slack that shoved the whole
+   shell up. The shell drops sticky semantics entirely — header and
+   pager are pinned flex rows, each face scrolls in its own region, and
+   the root scroller is locked (body overflow hidden from PdfReader).
+   --shell-h is pinned by PdfReader to documentElement.clientHeight. */
+.reader-shell {
   display: flex;
   flex-direction: column;
-  /* Pinned by PdfReader to documentElement.clientHeight — 100vh here
-     followed innerHeight while the ICB sat 66px shorter, and the gap
-     became body scroll range that shoved the whole shell up. */
   height: var(--shell-h, 100vh);
+  padding-bottom: 1rem;
   box-sizing: border-box;
 }
-.reader-reflow .reader-head {
+.reader-shell .reader-head {
   position: static;
   flex: none;
 }
-.reader-reflow .pdf-reflow {
+.reader-shell .pdf-reflow {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
@@ -724,10 +730,12 @@ body {
      nowrap must not reopen a horizontal pan. */
   overflow-x: hidden;
 }
-.reader-reflow {
-  padding-bottom: 1rem;
+.reader-shell .pdf-stage {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
-.reader-reflow .reader-pager {
+.reader-shell .reader-pager {
   flex: none;
   margin: 0.5rem 0 0;
 }

@@ -302,3 +302,24 @@ ReaderFaceHandle(两 face 同形:invalidate + topmostVisibleLine),
 闭环:翻页+深滑三屏量尺恒成立、CDP 面板读数「第 8 页 · credit,
 How wi」(行级+摘要)。APK 重装 Success。面板中「第 4 页」裸行为
 round 7 前历史页级签(读归一 line 0),非缺陷。
+
+### 2026-11-15 人验 round 10 返修记档 — 视觉视口层病灶(pin/选择)
+
+**现象(维护者复测)**:翻页后头部又被顶出,round 9 修复未愈。
+
+**根因(机检排障链锁定)**:round 9 修的是**布局视口层**(docScroll/
+mainRectTop 量尺全程健康仍复现)——病灶在**视觉视口层**(Android View
+级平移/缩放,DOM 不可见):①系统 pinch 缩放(bookmark 阅读习惯动作)
+产生 vvOffset 残留,跨翻页不清;②长按打签触发 Android 文字选择态
+(选择 UI 自动平移视图),重排面此前未设 user-select:none(canvas 面
+round 4 已设)。两支都推的是 View 层,DOM 量尺全绿而画面被顶——
+round 9 量尺健康的真因。
+
+**修笔**:①index.html viewport 加 `maximum-scale=1.0, user-scalable=no`
+——阅读缩放是应用自己的 75/适宽/150% 控件,系统 pinch 只剩害处;
+②重排面 original-line 补 user-select/-webkit-user-select none(长按
+pointer 事件不受影响,只是不进选择态)。
+
+**验证**:机检按维护者姿势闭环:冷启→开书→**长按 800ms**→翻页→
+头部完整(headRectTop=24)、翻页器钉底、docScroll=0、**vvOffsetTop=0
+/vvScale=1**(round 9 时的 66px 残留偏移一并清零)。APK 重装 Success。

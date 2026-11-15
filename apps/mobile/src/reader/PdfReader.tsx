@@ -101,7 +101,6 @@ export function PdfReader({
   // whole shell up under the header). clientHeight never leaves a
   // scrollable remainder; resize keeps it honest.
   useEffect(() => {
-    if (view !== "reflow") return;
     const apply = () =>
       document.documentElement.style.setProperty(
         "--shell-h",
@@ -109,8 +108,14 @@ export function PdfReader({
       );
     apply();
     window.addEventListener("resize", apply);
-    return () => window.removeEventListener("resize", apply);
-  }, [view]);
+    // The root scroller has no job while the face is up — lock it so no
+    // gesture or scroll chain can ever push the shell.
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("resize", apply);
+      document.body.style.overflow = "";
+    };
+  }, []);
 
   // The bookmark seam (ticket 03): planted page marks for this document.
   // Same channel discipline as the EPUB face — one owner carries the
@@ -194,14 +199,13 @@ export function PdfReader({
     .map((row) => ({ line: row.line }));
 
   return (
-    // The reflow face reads in a fixed-height shell (round 8): sticky
-    // heads proved unreliable in the WebView under deep scroll — the
-    // shell pins the header and the pager instead, the line list is the
-    // only scroller. Canvas mode keeps the shared sticky layout.
-    <main
-      className={view === "reflow" ? "reader reader-reflow" : "reader"}
-      aria-label="扩展阅读页"
-    >
+    // Both faces read in a fixed-height shell (rounds 8-9): sticky
+    // heads proved unreliable in the WebView under deep scroll, and a
+    // 100vh shell on the ICB-less layout viewport left body scroll
+    // slack that shoved the whole shell up. The shell pins the header
+    // and the pager, locks the root scroller, and each face scrolls in
+    // its own region — the header cannot move under any gesture.
+    <main className="reader reader-shell" aria-label="扩展阅读页">
       <header className="reader-head">
         <h1 className="reader-title">{title}</h1>
         <div className="reader-tools">
