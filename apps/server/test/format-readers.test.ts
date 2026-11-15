@@ -52,4 +52,20 @@ describe("readUpload (the upload front half's interface)", () => {
       readUpload("broken.pdf", Buffer.from("this is not a pdf"))
     ).rejects.toMatchObject({ reason: "invalid-pdf" });
   });
+
+  it("routes a markdown upload through the import-core reader (mobile-md-import 01)", async () => {
+    // Delegation shape only — the reader's element semantics are pinned in
+    // import-core's own suite; the registry just proves the bytes reach it
+    // with the utf8 text adapter and the markdown format rides out.
+    const book = await readUpload(
+      "notes.md",
+      Buffer.from(
+        "# Deep Waters\n\nFirst paragraph. Second sentence.\n",
+        "utf8"
+      )
+    );
+    expect(book.format).toBe("markdown");
+    expect(book.title).toBe("Deep Waters");
+    expect(book.chapters).toHaveLength(1);
+  });
 });

@@ -1,6 +1,10 @@
 import type { ImportRejection, PreparedBook } from "@lingualeaf/import-core";
-import { isEpubFilename, readEpubBook } from "@lingualeaf/import-core";
-import { isMarkdownFilename, readMarkdownBook } from "./markdown.js";
+import {
+  isEpubFilename,
+  isMarkdownFilename,
+  readEpubBook,
+  readMarkdownBook,
+} from "@lingualeaf/import-core";
 import { isPdfFilename, readPdfBook } from "./pdf.js";
 import { UploadRejected } from "./upload-rejection.js";
 

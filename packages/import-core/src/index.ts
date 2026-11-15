@@ -5,6 +5,13 @@
 // lives here; the dictionary binding stays host-side (SQLite server-side,
 // baked offline extension-side) through the IpaLookup the hosts pass in.
 export { readEpubBook, isEpubFilename, EPUB_EXTENSION } from "./epub.js";
+// The Markdown reader (mobile-md-import 01): sunk here from the server so
+// both hosts share one md chain, like the EPUB half above.
+export {
+  readMarkdownBook,
+  isMarkdownFilename,
+  MARKDOWN_EXTENSION,
+} from "./markdown.js";
 export {
   extractChaptersFromHtml,
   deriveBookTitle,
