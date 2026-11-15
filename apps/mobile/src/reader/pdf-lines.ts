@@ -107,27 +107,25 @@ export function eligiblePdfLines(items: TextContent["items"]): PdfLine[] {
   return lines;
 }
 
-// Paragraph grouping (mobile-app ticket 03, rounds 16-18): where does
-// one paragraph end? After live book forensics (Camille: ragged right,
-// no paragraph spacing, no indent — baselines jitter 14.9-19.7 with NO
-// paragraph gaps, the print itself is continuous), the honest rule is
-// minimal-harm: break ONLY on unambiguous geometric evidence.
-//   1. RAISED GAP: a baseline step past 1.45× the body leading — the
-//      body leading being the MODE of the page's baseline steps
-//      (clustered; a tightly-set footnote block must not drag the
-//      estimate down and chop every body line).
-//   2. INDENT: the next line starts clearly right of the column's left
-//      margin with even a slightly-raised step — indent-marked books.
-// Everything else reads continuous — exactly like the book's own print.
-// Sentence-final short lines are NOT a signal: multi-sentence paragraphs
-// carry sentence ends mid-paragraph (round 17's SHORT+SENT chopped
-// Camille every three lines on them).
+// Paragraph grouping (mobile-app ticket 03, rounds 16-19): where does
+// one paragraph end? Live book forensics over three revisions settled
+// the signal set. Camille-class books (ragged right, no paragraph
+// spacing, no indent) mark paragraphs ONLY by the dialogue-turn
+// convention: the turn's last line is sentence-final AND clearly short
+// of the right margin — so that pair is the main signal, and with the
+// round-18 flow rendering it renders as a paragraph gap, never as a
+// hard chop. Indent-marked books break on the indent with even a
+// slightly-raised step. Spaced books break on the real gap. Baseline
+// jitter (Camille's steps swing 14.9-19.7 = ±15%) is deliberately
+// ignored without the sentence-end companion — the old fixed thresholds
+// fired on its peaks and chopped paragraphs every third line.
 
 export type ParagraphLine = {
   baseline: number;
   left: number;
   right: number;
   fontPx: number;
+  text: string;
   paraEnd: boolean;
 };
 
@@ -164,12 +162,18 @@ export function markParagraphBreaks(lines: ParagraphLine[]): void {
     [...deltas].sort((a, b) => a - b),
     deltas.length ? deltas[0]! * 0.12 + Number.EPSILON : 0
   );
-  // The column's left margin is the EXTREME, not a mode — a ragged-left
-  // page would collapse a mode onto an indented line and blind the
-  // indent signal.
+  // The column's margins are the EXTREMES, not modes — a ragged-right
+  // page's body lines end wherever the word ends, and a right-edge mode
+  // would collapse onto a short line and blind the turn-end signal.
   const columnLeft = lines.length
     ? Math.min(...lines.map((line) => line.left))
     : 0;
+  const columnRight = lines.length
+    ? Math.max(...lines.map((line) => line.right))
+    : 0;
+  const turnShortAt = columnRight - (columnRight - columnLeft) * 0.08;
+  const endsSentence = (text: string): boolean =>
+    /[.?!…"”'’]["”'’]?\s*$/u.test(text.trimEnd());
   for (let i = 0; i < lines.length; i++) {
     const next = lines[i + 1];
     if (!next) {
@@ -181,7 +185,10 @@ export function markParagraphBreaks(lines: ParagraphLine[]): void {
       lines[i]!.paraEnd = false;
       continue;
     }
+    const turnEnd =
+      lines[i]!.right < turnShortAt && endsSentence(lines[i]!.text);
     const indented = next.left > columnLeft + next.fontPx * 0.6;
-    lines[i]!.paraEnd = d > leading * 1.45 || (indented && d > leading * 1.05);
+    lines[i]!.paraEnd =
+      d > leading * 1.45 || turnEnd || (indented && d > leading * 1.05);
   }
 }

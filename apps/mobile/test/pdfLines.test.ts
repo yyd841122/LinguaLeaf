@@ -169,11 +169,11 @@ describe("markParagraphBreaks", () => {
     expect(lines[6]!.paraEnd).toBe(true);
   });
 
-  it("reads a uniform page continuous even when lines end sentence-final (the Camille class)", () => {
-    // Ragged right, no paragraph spacing, no indent — the print itself
-    // is continuous; sentence-final short lines are sentence ends, not
-    // paragraph ends (round 17's SHORT+SENT chopped this every third
-    // line). Minimal-harm: no unambiguous signal, no break.
+  it("a turn-end (short + sentence-final) closes its dialogue paragraph", () => {
+    // The Camille-class convention: dialogue turns start on new print
+    // lines and end short of the right margin with sentence punctuation
+    // — no spacing, no indent. With the round-18 flow rendering this
+    // fires as a paragraph gap, never as a hard chop.
     const lines = [
       para(300, 40, 260, "body line running to the margin,"),
       para(270, 40, 150, '"Yes."'),
@@ -181,7 +181,7 @@ describe("markParagraphBreaks", () => {
     ];
     markParagraphBreaks(lines);
     expect(lines[0]!.paraEnd).toBe(false);
-    expect(lines[1]!.paraEnd).toBe(false);
+    expect(lines[1]!.paraEnd).toBe(true);
     expect(lines[2]!.paraEnd).toBe(true);
   });
 
@@ -215,14 +215,16 @@ describe("markParagraphBreaks", () => {
       para(baseline, 63.4, rights[i]!, texts[i]!)
     );
     markParagraphBreaks(lines);
-    // The Camille page: jitter 14.9-19.7 carries no paragraph signal —
-    // the whole page reads continuous, only its true last line closes.
+    // The Camille page: jitter 14.9-19.7 alone never fires (the old
+    // fixed thresholds fired on its peaks every third joint); only the
+    // turn-end (short + sentence-final "having seen, I will see.\"")
+    // and the page's last line close paragraphs.
     expect(lines.map((l) => l.paraEnd)).toEqual([
       false,
       false,
       false,
       false,
-      false,
+      true,
       false,
       false,
       true,
