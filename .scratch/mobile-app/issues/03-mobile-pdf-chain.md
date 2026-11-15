@@ -264,3 +264,19 @@ APK 重装 Success。已知边界:tight 片仍部分遮自己词的上半字形�
 **验证**:根 verify EXIT=0(105 文件,**1161 passed | 3 skipped**);
 APK 重装 Success。已知边界:重排态丢失原版面(图/公式不显示)——
 切「原版」看;扫描件本就被导入边界拒。
+
+### 2026-11-15 人验 round 8 返修记档 — 重排态固定壳(head 不钉)
+
+**现象(真机,机检复现)**:重排态上滑两三屏后头部整条滚出视口,书签
+钮够不着——position:sticky 在该 WebView 深滚动下不可靠(机检 swipe×2
++ 截图复现;浅滚可见钉住、深滚失效,引擎行为非样式错误)。
+
+**修笔**:重排态弃 sticky,换确定性固定壳——main 加 reader-reflow
+修饰类(100vh flex column):头部 static 钉顶、pdf-reflow 行列表为唯一
+滚动区(flex:1 + overflow-y:auto)、翻页器钉底(**翻页钮随壳常驻,
+顺带解决深滚后翻页够不着**);画布态保持共享 sticky 布局不动。
+
+**验证**:根 verify EXIT=0(105 文件,1161 passed | 3 skipped);机检
+闭环:冷启→书架→开书**直接恢复重排态**(view 持久化实证)→深滑三屏
+截图:头部/翻页器常驻、行列表边界裁切正常、书签飘带在位。APK 重装
+Success。

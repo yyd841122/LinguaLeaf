@@ -232,7 +232,10 @@ describe("PDF line notes, reattachment and position", () => {
       expect(first.classList.contains("has-note")).toBe(lit);
       expect(first.hasAttribute("disabled")).toBe(disabled);
       if (drift)
-        expect(screen.getByRole("alert")).toHaveTextContent(
+        // findBy: the drift flag lands one state update after the
+        // pen-enable gate — a sync getBy races it under full-suite load
+        // (mobile copy hardened the same way, stub ticket 13).
+        expect(await screen.findByRole("alert")).toHaveTextContent(
           "已保留原笔记，未回挂不符条目"
         );
       else expect(screen.queryByRole("alert")).toBeNull();

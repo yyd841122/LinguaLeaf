@@ -384,8 +384,12 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     // Open (read #2 gated), close before it lands, reopen (read #3 lands).
     await openPanel();
     // findBy, not getBy: under full-suite load the loading commit and the
-    // dialog commit can land a tick apart (2026-11-13 pre-commit flake).
-    expect(await screen.findByText(/读取书签中/)).toBeInTheDocument();
+    // dialog commit can land a tick apart (2026-11-13 pre-commit flake;
+    // 11-15 the window itself needed 3s — the effect+commit lagged a
+    // full second behind the dialog under a saturated worker, stub 13).
+    expect(
+      await screen.findByText(/读取书签中/, {}, { timeout: 3000 })
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     const dialog = await openPanel();
     expect(await within(dialog).findByText("Chapter One")).toBeInTheDocument();

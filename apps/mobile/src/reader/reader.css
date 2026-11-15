@@ -696,3 +696,32 @@ body {
   right: 0.2rem;
   top: 0.15rem;
 }
+
+/* The reflow face's fixed shell (round 8): position:sticky proved
+   unreliable in the WebView under deep scroll (the head scrolled away,
+   taking the bookmark button with it), so the shell drops sticky
+   semantics entirely — header and pager are pinned flex rows, and the
+   line list is the only scroller. 100vh is exact here: the Capacitor
+   WebView is fullscreen, no browser chrome to subtract. */
+.reader-reflow {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  box-sizing: border-box;
+}
+.reader-reflow .reader-head {
+  position: static;
+  flex: none;
+}
+.reader-reflow .pdf-reflow {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.reader-reflow {
+  padding-bottom: 1rem;
+}
+.reader-reflow .reader-pager {
+  flex: none;
+  margin: 0.5rem 0 0;
+}

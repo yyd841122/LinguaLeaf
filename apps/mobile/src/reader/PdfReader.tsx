@@ -178,7 +178,14 @@ export function PdfReader({
     .map((row) => ({ line: row.line }));
 
   return (
-    <main className="reader" aria-label="扩展阅读页">
+    // The reflow face reads in a fixed-height shell (round 8): sticky
+    // heads proved unreliable in the WebView under deep scroll — the
+    // shell pins the header and the pager instead, the line list is the
+    // only scroller. Canvas mode keeps the shared sticky layout.
+    <main
+      className={view === "reflow" ? "reader reader-reflow" : "reader"}
+      aria-label="扩展阅读页"
+    >
       <header className="reader-head">
         <h1 className="reader-title">{title}</h1>
         <div className="reader-tools">
