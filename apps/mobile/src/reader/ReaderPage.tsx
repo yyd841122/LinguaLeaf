@@ -72,6 +72,10 @@ import {
   type BackupManager,
 } from "../backup/backup-manager";
 import { createCapacitorBackupFileAdapter } from "../backup/backup-file";
+import {
+  createUiSettingsStore,
+  type UiSettingsStore,
+} from "../store/ui-settings-store";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -122,6 +126,7 @@ export function ReaderPage({
   bookmarks: injectedBookmarks,
   registry: injectedRegistry,
   backup: injectedBackup,
+  uiSettings: injectedUiSettings,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
@@ -134,6 +139,7 @@ export function ReaderPage({
   bookmarks?: BookmarkStore;
   registry?: ChapterTaskRegistry;
   backup?: BackupManager;
+  uiSettings?: UiSettingsStore;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
@@ -196,6 +202,10 @@ export function ReaderPage({
   const bookmarks = useMemo(
     () => injectedBookmarks ?? createBookmarkStore(idbStorage),
     [injectedBookmarks, idbStorage]
+  );
+  const uiSettings = useMemo(
+    () => injectedUiSettings ?? createUiSettingsStore(idbStorage),
+    [injectedUiSettings, idbStorage]
   );
   const registry = injectedRegistry ?? chapterTasks;
   const persistencePromise = useRef<Promise<PersistenceResult> | null>(null);
@@ -471,6 +481,7 @@ export function ReaderPage({
             lookup={state.lookup}
             showIpa={showIpa}
             initialView={state.view ?? "canvas"}
+            uiSettings={uiSettings}
             // A page flip or a zoom is itself a position fact — the
             // anchored popup's coordinates died with the old view (the
             // EPUB chapter switch clears its lookup the same way).

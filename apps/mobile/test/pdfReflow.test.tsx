@@ -26,6 +26,10 @@ import {
   type BookmarkStore,
 } from "../src/store/bookmark-store";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
+import {
+  createMemoryUiSettingsStore,
+  type UiSettingsStore,
+} from "../src/store/ui-settings-store";
 import { createMemoryLibraryStore } from "../src/store/library-store";
 import type { VocabularyStore } from "../src/store/vocabulary-store";
 
@@ -127,7 +131,8 @@ afterEach(() => {
 
 function mount(
   bookmarks: BookmarkStore = createMemoryBookmarkStore(),
-  positions: PdfPositionStore = createMemoryPdfPositionStore()
+  positions: PdfPositionStore = createMemoryPdfPositionStore(),
+  uiSettings: UiSettingsStore = createMemoryUiSettingsStore()
 ) {
   const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
   const tree = () => (
@@ -141,9 +146,10 @@ function mount(
       translations={createMemoryTranslationStore()}
       settings={createMemoryTranslateSettingsStore()}
       bookmarks={bookmarks}
+      uiSettings={uiSettings}
     />
   );
-  return { view: render(tree()), tree, bookmarks, positions };
+  return { view: render(tree()), tree, bookmarks, positions, uiSettings };
 }
 
 async function pick() {
@@ -178,6 +184,42 @@ describe("PDF reflow face (round 7)", () => {
     fireEvent.click(screen.getByText("Woke"));
     await screen.findByRole("dialog", { name: "词详情：Woke" });
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+  });
+
+  it("moves the toolbar below the pager and remembers the choice (round 14)", async () => {
+    const ui = createMemoryUiSettingsStore();
+    const ctx = mount(
+      createMemoryBookmarkStore(),
+      createMemoryPdfPositionStore(),
+      ui
+    );
+    await pick();
+    await reflow();
+    // Top by default: the row lives inside the header, no bottom marker.
+    expect(document.querySelector(".reader-tools-bottom")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "置底" }));
+    const tools = document.querySelector(".reader-tools-bottom");
+    expect(tools).not.toBeNull();
+    const pager = document.querySelector(".reader-pager")!;
+    expect(
+      pager.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(ui.load()).resolves.toMatchObject({ pdfToolbar: "bottom" })
+    );
+    // A fresh tree over the same settings opens with the row at the bottom.
+    ctx.view.unmount();
+    render(ctx.tree());
+    await pick();
+    // The persisted choice lands with the async settings read — wait for
+    // it, the first paint legitimately shows the default.
+    await waitFor(() =>
+      expect(document.querySelector(".reader-tools-bottom")).not.toBeNull()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "置顶" }));
+    await waitFor(() =>
+      expect(document.querySelector(".reader-tools-bottom")).toBeNull()
+    );
   });
 
   it("返回 goes back to the shelf (round 12)", async () => {

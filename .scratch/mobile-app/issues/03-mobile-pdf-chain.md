@@ -362,3 +362,22 @@ pdfReaderNotes 四处文案随更;pdfReflow 新案钉 返回→书架。
 **验证**:根 verify EXIT=0(105 文件,**1162 passed | 3 skipped**);
 真机截图:第二行 返回/音标/原版/书签/打开 五钮一行铺满。APK 重装
 Success。
+
+### 2026-11-15 人验 round 14 返修记档 — 工具栏位置可选(顶部/页码下方)
+
+**需求(维护者拍板)**:工具栏(第二行按钮)可由用户选择放顶部或
+页码下方。
+
+**修笔**:①新 ui-settings-store(全局偏好 namespace record,读失败
+降级默认顶;memory twin 测试注入);②tools 行抽成单元素双家——顶部
+嵌 header(标题同行下)、底部渲染在翻页器之后;行尾自带
+置底/置顶 切换钮,选择持久化;③ReaderPage 注入 uiSettings(测试不
+注入时真 store 读失败降级,既有套件零影响)。
+
+**验证**:根 verify EXIT=0(106 文件,**1166 passed | 3 skipped**);
+新案:uiSettingsStore 3 案(默认/翻转/坏记录降级)、pdfReflow 置底
+案(DOM 序在翻页器后 + 持久化 + 重挂恢复 + 置顶回切);真机截图置底
+态:头部只剩标题、工具栏贴页码下、开关钮变置顶。APK 重装 Success。
+插曲:round 14 整块重写曾切丢「打开」钮(pdfReaderNotes 14 案当场
+红),调试打印定位后补回——一次性字符串手术的风险面,后续此类改动
+先小步后验证。

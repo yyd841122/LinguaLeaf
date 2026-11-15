@@ -760,3 +760,7 @@ body {
   flex: none;
   margin: 0.5rem 0 0;
 }
+/* The toolbar's bottom home (round 14): right under the page number. */
+.reader-shell .reader-tools-bottom {
+  margin: 0.5rem 0 0;
+}

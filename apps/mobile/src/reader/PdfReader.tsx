@@ -32,6 +32,10 @@ import { formatPlantedAt } from "./bookmark-view";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 import { PdfReflow } from "./PdfReflow";
 import type { PdfViewMode } from "../store/pdf-position-store";
+import type {
+  PdfToolbarPosition,
+  UiSettingsStore,
+} from "../store/ui-settings-store";
 
 // The PDF reading view (ticket 06): one page on canvas at a time — a big
 // book is progressive by shape — with the proven word/IPA overlay. Word
@@ -55,6 +59,7 @@ export function PdfReader({
   lookup,
   showIpa,
   initialView = "canvas",
+  uiSettings,
   onPage,
   onScale,
   onToggleIpa,
@@ -76,6 +81,8 @@ export function PdfReader({
   // The face the doc reopens into (persisted per doc in the position
   // store; canvas — the coordinate-overlay gate's form — is the default).
   initialView?: PdfViewMode;
+  // The reader's global face preferences (toolbar position, round 14).
+  uiSettings?: UiSettingsStore | undefined;
   onPage: (page: number) => void;
   onScale: (scale: number) => void;
   onToggleIpa: () => void;
@@ -116,6 +123,107 @@ export function PdfReader({
       document.body.style.overflow = "";
     };
   }, []);
+  // 工具栏位置 (round 14): under the title, or below the page number —
+  // a global preference, the toggle riding the row itself (置底/置顶).
+  const [toolbarPosition, setToolbarPosition] =
+    useState<PdfToolbarPosition>("top");
+  const toolbarOwner = useOwner();
+  const { run: runToolbar } = useSettle(toolbarOwner);
+  useEffect(() => {
+    if (!uiSettings) return;
+    void runToolbar(uiSettings.load(), {
+      onFresh: (settings) => setToolbarPosition(settings.pdfToolbar),
+    });
+    return () => toolbarOwner.invalidate();
+  }, [uiSettings, runToolbar, toolbarOwner]);
+  const moveToolbar = () => {
+    const next: PdfToolbarPosition =
+      toolbarPosition === "top" ? "bottom" : "top";
+    setToolbarPosition(next);
+    void uiSettings?.savePdfToolbar(next);
+  };
+
+  // The tools row renders under the title (top) or below the page
+  // number (bottom) — one element, two homes (round 14).
+  const toolsRow = (
+    <div
+      className={`reader-tools${toolbarPosition === "bottom" ? " reader-tools-bottom" : ""}`}
+    >
+      {/* 返回: the shelf is the face's only previous page — the same
+          reopen channel as 打开, under the navigation-shaped name. */}
+      <button
+        type="button"
+        className="reader-toggle"
+        onClick={() => navigate(onReopen)}
+      >
+        返回
+      </button>
+      <button
+        type="button"
+        className="reader-toggle"
+        aria-pressed={showIpa}
+        onClick={() => navigate(onToggleIpa)}
+      >
+        音标
+      </button>
+      {/* The zoom ladder is the canvas face's fit-width control —
+          the reflow text has no scale geometry to step (round 11:
+          hidden there, the header gives the room back to reading). */}
+      {view === "canvas" &&
+        [0.75, 1, 1.5].map((zoom) => (
+          <button
+            key={zoom}
+            type="button"
+            className="reader-toggle"
+            aria-pressed={scale === zoom}
+            onClick={() => {
+              if (zoom !== scale) navigate(() => onScale(zoom));
+            }}
+          >
+            {/* 100% is fit-width (round 5): the multiplier reads as
+                a percentage of the screen's content width. */}
+            {zoom === 1 ? "适宽" : `${zoom * 100}%`}
+          </button>
+        ))}
+      <button
+        type="button"
+        className="reader-toggle"
+        aria-pressed={view === "reflow"}
+        onClick={() =>
+          navigate(() =>
+            setView((mode) => (mode === "reflow" ? "canvas" : "reflow"))
+          )
+        }
+      >
+        {view === "reflow" ? "原版" : "重排"}
+      </button>
+      <button
+        type="button"
+        className="reader-bookmarks"
+        onClick={() => {
+          if (editorRef.current?.requestClose() === false) return;
+          // The note channel doubles as the dismissal channel: its
+          // host handler clears the anchored popup, exactly what the
+          // EPUB twin's button does to its own lookup before the
+          // veil goes up.
+          onOpenNote();
+          setShowBookmarks(true);
+        }}
+      >
+        书签
+      </button>
+      <button type="button" className="reader-toggle" onClick={moveToolbar}>
+        {toolbarPosition === "top" ? "置底" : "置顶"}
+      </button>
+      <button
+        type="button"
+        className="reader-reopen"
+        onClick={() => navigate(onReopen)}
+      >
+        打开
+      </button>
+    </div>
+  );
 
   // The bookmark seam (ticket 03): planted page marks for this document.
   // Same channel discipline as the EPUB face — one owner carries the
@@ -208,78 +316,7 @@ export function PdfReader({
     <main className="reader reader-shell" aria-label="扩展阅读页">
       <header className="reader-head">
         <h1 className="reader-title">{title}</h1>
-        <div className="reader-tools">
-          {/* 返回: the shelf is the face's only previous page — the same
-              reopen channel as 打开, under the navigation-shaped name. */}
-          <button
-            type="button"
-            className="reader-toggle"
-            onClick={() => navigate(onReopen)}
-          >
-            返回
-          </button>
-          <button
-            type="button"
-            className="reader-toggle"
-            aria-pressed={showIpa}
-            onClick={() => navigate(onToggleIpa)}
-          >
-            音标
-          </button>
-          {/* The zoom ladder is the canvas face's fit-width control —
-              the reflow text has no scale geometry to step (round 11:
-              hidden there, the header gives the room back to reading). */}
-          {view === "canvas" &&
-            [0.75, 1, 1.5].map((zoom) => (
-              <button
-                key={zoom}
-                type="button"
-                className="reader-toggle"
-                aria-pressed={scale === zoom}
-                onClick={() => {
-                  if (zoom !== scale) navigate(() => onScale(zoom));
-                }}
-              >
-                {/* 100% is fit-width (round 5): the multiplier reads as
-                    a percentage of the screen's content width. */}
-                {zoom === 1 ? "适宽" : `${zoom * 100}%`}
-              </button>
-            ))}
-          <button
-            type="button"
-            className="reader-toggle"
-            aria-pressed={view === "reflow"}
-            onClick={() =>
-              navigate(() =>
-                setView((mode) => (mode === "reflow" ? "canvas" : "reflow"))
-              )
-            }
-          >
-            {view === "reflow" ? "原版" : "重排"}
-          </button>
-          <button
-            type="button"
-            className="reader-bookmarks"
-            onClick={() => {
-              if (editorRef.current?.requestClose() === false) return;
-              // The note channel doubles as the dismissal channel: its
-              // host handler clears the anchored popup, exactly what the
-              // EPUB twin's button does to its own lookup before the
-              // veil goes up.
-              onOpenNote();
-              setShowBookmarks(true);
-            }}
-          >
-            书签
-          </button>
-          <button
-            type="button"
-            className="reader-reopen"
-            onClick={() => navigate(onReopen)}
-          >
-            打开
-          </button>
-        </div>
+        {toolbarPosition === "top" ? toolsRow : null}
       </header>
       {/* Both faces read the same rows, armed jump and plant channel —
           the marks made in one face read true in the other. */}
@@ -414,6 +451,7 @@ export function PdfReader({
           下一页
         </button>
       </footer>
+      {toolbarPosition === "bottom" ? toolsRow : null}
     </main>
   );
 }

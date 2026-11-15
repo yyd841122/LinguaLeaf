@@ -159,6 +159,8 @@ async function save(value: string) {
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 }
 function reopen() {
+  if (!screen.queryByRole("button", { name: "打开" }))
+    console.log("DEBUG-MAIN-HTML:", document.body.innerHTML.slice(0, 2500));
   fireEvent.click(screen.getByRole("button", { name: "打开" }));
 }
 
