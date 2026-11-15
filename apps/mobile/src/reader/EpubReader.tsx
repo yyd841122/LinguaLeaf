@@ -471,6 +471,17 @@ export function EpubReader({
       // The chapter switch is itself a position fact — written straight
       // to the seam (scroll writes cover the within-chapter drift).
       void library.setProgress(docId, { chapterIndex: index, blockIndex: 0 });
+      // The seam says block 0; the viewport must agree. Window scroll
+      // persists across the chapter swap (the EPUB face scrolls the
+      // window), so without this reset the reader lands mid-chapter at
+      // the inherited offset — invisible while the new chapter is
+      // shorter than the offset (the clamp fakes a reset), glaring once
+      // a book ships a tall chapter after a tall one (mobile-md-import
+      // 真机 round 1; regression: scripts/browser-e2e/mobile-md-chapter-scroll.mjs).
+      // The scroll event lands after React commits, so the throttled
+      // save re-arms with the NEW chapter closure and rewrites the same
+      // {index, 0} — the write ordering is benign.
+      window.scrollTo(0, 0);
     }
   };
   // 打书签: the plant lands on the position progress would report — the
