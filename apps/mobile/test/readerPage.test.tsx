@@ -28,11 +28,15 @@ import * as pdf from "../src/reader/pdf";
 
 // The page meets real files, so the tests drive real bytes: the shared
 // deterministic builder (import-core/testing) assembles the EPUB, planted
-// on the file input the way a user's picker would.
-async function fixtureFile(name: string, bytes: Uint8Array): Promise<File> {
-  return new File([bytes as BlobPart], name, {
-    type: "application/epub+zip",
-  });
+// on the file input the way a user's picker would. The MIME follows the
+// name — md books carry a text type, not the EPUB one (routing is
+// filename-based, the type is what a real picker hands over).
+async function fixtureFile(
+  name: string,
+  bytes: Uint8Array,
+  type = "application/epub+zip"
+): Promise<File> {
+  return new File([bytes as BlobPart], name, { type });
 }
 
 const SAMPLE_EPUB = () =>
@@ -1690,9 +1694,9 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     vi.unstubAllGlobals();
   });
 
-  const TIDE_MD = (body: string): Promise<File> => {
+  const tideMdFile = (body: string): Promise<File> => {
     const md = new TextEncoder().encode(`# Same Tide\n\n${body}\n`);
-    return fixtureFile("tide.md", md);
+    return fixtureFile("tide.md", md, "text/markdown");
   };
 
   it("imports a markdown file into the same face: chapters, IPA slots, shelf entry", async () => {
@@ -1701,7 +1705,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     const md = new TextEncoder().encode(
       "# Deep Waters\n\nWoke early today. The quiet sea runs.\n\n## Shallows\n\nMore quiet words live here.\n"
     );
-    await pickFile(await fixtureFile("deep-waters.md", md));
+    await pickFile(await fixtureFile("deep-waters.md", md, "text/markdown"));
 
     // The book opens on its own first heading as its title; ## opens the
     // second chapter (标题分章, same semantics as the web md face). The
@@ -1742,12 +1746,12 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
   it("gates a same-title markdown re-import behind the replacement confirm and replaces on accept", async () => {
     const library = createMemoryLibraryStore();
     renderWithSeams({ library });
-    await pickFile(await TIDE_MD("Woke early today."));
+    await pickFile(await tideMdFile("Woke early today."));
     await screen.findByText("Woke");
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
-    await pickFile(await TIDE_MD("The quiet sea runs."));
+    await pickFile(await tideMdFile("The quiet sea runs."));
     // Await the replaced face first — the confirm fires mid-chain, and the
     // spy read must follow the settled state, not race it.
     expect(await screen.findByText("quiet")).toBeInTheDocument();
@@ -1762,12 +1766,12 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
   it("keeps the original book when the same-title markdown re-import is declined", async () => {
     const library = createMemoryLibraryStore();
     renderWithSeams({ library });
-    await pickFile(await TIDE_MD("Woke early today."));
+    await pickFile(await tideMdFile("Woke early today."));
     await screen.findByText("Woke");
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    await pickFile(await TIDE_MD("The quiet sea runs."));
+    await pickFile(await tideMdFile("The quiet sea runs."));
     // The 导入中 status lights the importing phase — the phase that guards
     // reopenDocument — so the click waits for it to leave (lit → gone),
     // landing on the settled empty phase the decline produces.
