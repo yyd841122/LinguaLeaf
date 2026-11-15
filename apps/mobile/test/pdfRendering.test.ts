@@ -110,6 +110,29 @@ describe("real PDF render overlay contract", () => {
     expect(f.overlay.firstChild).toBe(f.canvas);
   });
 
+  it("hangs tight-leading lines' IPA chips over their own band, not the next line's", async () => {
+    const f = fixture();
+    const content = f.page.getTextContent.bind(f.page);
+    f.page.getTextContent = vi.fn(async () => {
+      const base = await content();
+      return {
+        ...base,
+        items: [
+          item("Hello—world", 300),
+          item("Cramped", 292),
+          item("Next line", 260),
+        ],
+      };
+    });
+    await f.render();
+    // Line 300's gap to line 292 is -4px: its two words carry tight
+    // chips over their own band; the roomier lines keep the below band.
+    expect(f.overlay.querySelectorAll(".pdf-ipa-tight")).toHaveLength(2);
+    const tight = f.overlay.querySelector<HTMLElement>(".pdf-ipa-tight")!;
+    expect(tight.parentElement!.style.top).toBe("88px");
+    expect(tight.style.top).toBe("1.44px"); // 0.12 × fontPx 12
+  });
+
   it("invalidates an in-flight extraction before it can apply word or note overlays", async () => {
     const f = fixture();
     let release!: () => void;

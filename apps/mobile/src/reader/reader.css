@@ -200,6 +200,13 @@ body {
   pointer-events: none;
   user-select: none;
 }
+/* Tight-leading lines (round 6): the band below belongs to the next
+   line, so the IPA sits over the word's own upper band as a translucent
+   chip — smaller and see-through, the glyphs stay legible underneath. */
+.pdf-ipa-tight {
+  font-size: 0.5em;
+  background: rgba(255, 255, 255, 0.45);
+}
 .reader-toc ol {
   list-style: none;
   margin: 0.75rem 0;

@@ -236,20 +236,15 @@ async function renderPdfPageStep(
       return emptyRender();
     }
     clearPdfOverlay(overlay);
-    let wordCount = 0;
-    let ipaCount = 0;
-    const lines: PdfLineGeo[] = [];
-    for (const {
-      items: lineItems,
-      lineIndex,
-      lineText,
-      matches,
-    } of eligiblePdfLines(content.items)) {
+    // Pass 1 — geometry for every eligible line. Where each line's IPA
+    // goes needs the NEXT line's top, so all geometry settles before any
+    // span is built.
+    const measured = [...eligiblePdfLines(content.items)].map((line) => {
       // Merged visual line (pdf-lines): the geometry spans every member
       // item — the origin is the leftmost x, the end the rightmost item's
       // right edge, the font the line's largest. One-item lines (the
       // lucky layout) reduce to the same numbers the per-item math gave.
-      const transforms = lineItems.map((text) =>
+      const transforms = line.items.map((text) =>
         Util.transform(viewport.transform, text.transform)
       );
       const fontPx = Math.max(
@@ -258,10 +253,39 @@ async function renderPdfPageStep(
       const lineX = Math.min(...transforms.map((tx) => tx[4]));
       const baseline = transforms[0]![5];
       const lineEnd = Math.max(
-        ...lineItems.map(
+        ...line.items.map(
           (text, i) => transforms[i]![4] + text.width * effective
         )
       );
+      return {
+        line,
+        fontPx,
+        lineX,
+        baseline,
+        lineEnd,
+        top: baseline - fontPx,
+      };
+    });
+    // IPA placement (ticket 03 人验 round 6): the band below a word
+    // belongs to the NEXT line on a fixed page — an IPA hung there with
+    // its near-opaque chip crushes the neighbor's glyphs (the fit-width
+    // defect). Where the measured gap to the next line leaves room the
+    // IPA keeps its below band; where it doesn't, it shrinks to a
+    // translucent chip over the word's own upper band and never touches
+    // the neighbor. The page's last line always has room below.
+    const ipaBelow = new Map<number, boolean>();
+    for (const [i, entry] of measured.entries()) {
+      const nextTop = measured[i + 1]?.top;
+      const gap =
+        nextTop === undefined ? Infinity : nextTop - (entry.top + entry.fontPx);
+      ipaBelow.set(entry.line.lineIndex, gap >= entry.fontPx * 0.62 + 3);
+    }
+    let wordCount = 0;
+    let ipaCount = 0;
+    const lines: PdfLineGeo[] = [];
+    for (const { line, fontPx, lineX, baseline, lineEnd, top } of measured) {
+      const { lineIndex, lineText, matches } = line;
+      const below = ipaBelow.get(lineIndex) ?? true;
       // Proportional placement: uniform per-character splitting drifts badly
       // on proportional fonts (the hover box lands off the word). Measure
       // every segment (words AND the gaps between them) with an offscreen
@@ -271,7 +295,7 @@ async function renderPdfPageStep(
       // one.
       lines.push({
         lineIndex,
-        top: baseline - fontPx,
+        top,
         height: fontPx,
         right: lineEnd,
         text: lineText,
@@ -288,7 +312,7 @@ async function renderPdfPageStep(
           const word = document.createElement("span");
           word.className = "pdf-word";
           word.style.left = `${left}px`;
-          word.style.top = `${baseline - fontPx}px`;
+          word.style.top = `${top}px`;
           word.style.fontSize = `${fontPx}px`;
           word.dataset.pdfWord = piece;
           word.dataset.pdfLineIndex = String(lineIndex);
@@ -299,10 +323,10 @@ async function renderPdfPageStep(
           if (showIpa) {
             const ipa = lookup(piece);
             const ipaEl = document.createElement("span");
-            ipaEl.className = "pdf-ipa";
+            ipaEl.className = below ? "pdf-ipa" : "pdf-ipa pdf-ipa-tight";
             ipaEl.dataset.ipa = ipa ?? "";
             ipaEl.style.left = `${width / 2}px`;
-            ipaEl.style.top = `${fontPx + 2}px`;
+            ipaEl.style.top = below ? `${fontPx + 2}px` : `${fontPx * 0.12}px`;
             ipaEl.textContent = ipa ?? "";
             if (ipa) ipaCount += 1;
             word.appendChild(ipaEl);
