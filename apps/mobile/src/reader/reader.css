@@ -721,6 +721,21 @@ body {
 .reader-shell .reader-head {
   position: static;
   flex: none;
+  /* Compact reading head (round 11): single-line ellipsized title,
+     tight paddings — the room goes to the reading region. The zoom
+     ladder only exists in canvas mode; reflow's four controls fit one
+     row beside it. */
+  padding-bottom: 0.5rem;
+}
+.reader-shell .reader-title {
+  font-size: 1.1rem;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.reader-shell {
+  padding-top: 0.5rem;
 }
 .reader-shell .pdf-reflow {
   flex: 1;

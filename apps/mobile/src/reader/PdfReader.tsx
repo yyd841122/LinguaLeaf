@@ -217,21 +217,25 @@ export function PdfReader({
           >
             音标
           </button>
-          {[0.75, 1, 1.5].map((zoom) => (
-            <button
-              key={zoom}
-              type="button"
-              className="reader-toggle"
-              aria-pressed={scale === zoom}
-              onClick={() => {
-                if (zoom !== scale) navigate(() => onScale(zoom));
-              }}
-            >
-              {/* 100% is fit-width (round 5): the multiplier reads as a
-                  percentage of the screen's content width. */}
-              {zoom === 1 ? "适宽" : `${zoom * 100}%`}
-            </button>
-          ))}
+          {/* The zoom ladder is the canvas face's fit-width control —
+              the reflow text has no scale geometry to step (round 11:
+              hidden there, the header gives the room back to reading). */}
+          {view === "canvas" &&
+            [0.75, 1, 1.5].map((zoom) => (
+              <button
+                key={zoom}
+                type="button"
+                className="reader-toggle"
+                aria-pressed={scale === zoom}
+                onClick={() => {
+                  if (zoom !== scale) navigate(() => onScale(zoom));
+                }}
+              >
+                {/* 100% is fit-width (round 5): the multiplier reads as
+                    a percentage of the screen's content width. */}
+                {zoom === 1 ? "适宽" : `${zoom * 100}%`}
+              </button>
+            ))}
           <button
             type="button"
             className="reader-toggle"
