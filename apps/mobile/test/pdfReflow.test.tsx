@@ -180,6 +180,16 @@ describe("PDF reflow face (round 7)", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
   });
 
+  it("返回 goes back to the shelf (round 12)", async () => {
+    mount();
+    await pick();
+    await reflow();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    expect(
+      await screen.findByLabelText("选择 EPUB 或 PDF 文件")
+    ).toBeInTheDocument();
+  });
+
   it("long-pressing a word plants the mark on its line, marked block shows", async () => {
     const ctx = mount();
     await pick();

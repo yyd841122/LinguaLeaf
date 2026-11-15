@@ -209,6 +209,15 @@ export function PdfReader({
       <header className="reader-head">
         <h1 className="reader-title">{title}</h1>
         <div className="reader-tools">
+          {/* 返回: the shelf is the face's only previous page — the same
+              reopen channel as 打开, under the navigation-shaped name. */}
+          <button
+            type="button"
+            className="reader-toggle"
+            onClick={() => navigate(onReopen)}
+          >
+            返回
+          </button>
           <button
             type="button"
             className="reader-toggle"
@@ -268,7 +277,7 @@ export function PdfReader({
             className="reader-reopen"
             onClick={() => navigate(onReopen)}
           >
-            打开其他文件
+            打开
           </button>
         </div>
       </header>

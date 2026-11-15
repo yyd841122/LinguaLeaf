@@ -159,7 +159,7 @@ async function save(value: string) {
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 }
 function reopen() {
-  fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+  fireEvent.click(screen.getByRole("button", { name: "打开" }));
 }
 
 describe("PDF line notes, reattachment and position", () => {
@@ -415,7 +415,7 @@ describe("PDF line notes, reattachment and position", () => {
     "下一页",
     "150%",
     "音标",
-    "打开其他文件",
+    "打开",
     "关闭",
     "Escape",
     "另一行",
@@ -791,7 +791,7 @@ describe("PDF shelf admission and byte ownership", () => {
     });
     const ctx = mount();
     await pick();
-    fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+    fireEvent.click(screen.getByRole("button", { name: "打开" }));
     ctx.view.rerender(ctx.tree());
     expect(persist).toHaveBeenCalledTimes(1);
     expect(
@@ -807,7 +807,7 @@ function shelfRow(docId: string) {
   ].find((node) => node.getAttribute("data-pdf-doc-id") === docId);
 }
 async function land() {
-  fireEvent.click(screen.getByRole("button", { name: "打开其他文件" }));
+  fireEvent.click(screen.getByRole("button", { name: "打开" }));
   await screen.findByLabelText("PDF 书架");
 }
 
