@@ -236,9 +236,11 @@ describe("EPUB sentence-block notes", () => {
       expect(
         screen.getByRole("heading", { name: BOOK.title })
       ).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "One" })).toHaveAttribute(
-        "aria-current",
-        "true"
+      // The chapter list lives behind 目录 (真机 md round 3) and this
+      // draft is dirty — opening it would trip the abandon confirm — so
+      // the current-chapter readout here is the pager's position.
+      expect(document.querySelector(".reader-position")?.textContent).toBe(
+        "1 / 2"
       );
       vi.mocked(window.confirm).mockReturnValue(true);
       perform();

@@ -201,19 +201,21 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     plantHere();
     expect(await within(first).findByText("Chapter One")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
 
     // Jump back from the panel: the panel closes, chapter one is current
-    // again (its TOC entry carries aria-current).
+    // again (the pager's position is the current-chapter readout — the
+    // chapter list itself lives behind 目录, 真机 md round 3).
     const second = await openPanel();
     jumpToRow(second, "Chapter One");
     expect(screen.queryByRole("dialog", { name: "书签" })).toBeNull();
     expect(await screen.findByText("Words")).toBeInTheDocument();
-    const current = screen
-      .getAllByRole("button", { name: "Chapter One" })
-      .find((button) => button.getAttribute("aria-current") === "true");
-    expect(current).toBeDefined();
+    expect(document.querySelector(".reader-position")?.textContent).toBe(
+      "1 / 2"
+    );
 
     // A same-chapter jump is the same flow minus the switch: no crash,
     // panel closes (jsdom has no scrollIntoView — the block anchor rides

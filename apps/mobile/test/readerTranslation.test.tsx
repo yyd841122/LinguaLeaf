@@ -191,6 +191,8 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
     expect(screen.getByRole("button", { name: "已翻译" })).toBeDisabled();
 
     // The store persists the chapter's lines: away and back, still there.
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
     expect(translationLines()).toEqual([]);
@@ -283,6 +285,8 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
 
     // Away to chapter two, where the task is not running; the trigger
     // there is a fresh, armed 翻译.
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByRole("button", { name: "翻译" })).toBeEnabled();
     // Back to chapter one via the pager (the chapter list rides the

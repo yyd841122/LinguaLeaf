@@ -159,6 +159,7 @@ export function EpubReader({
   // read lands), the read's retry counter, and the pending jump a row
   // click arms.
   const [showBookmarks, setShowBookmarks] = useState(false);
+  const [showToc, setShowToc] = useState(false);
   const [bookmarkRows, setBookmarkRows] = useState<BookmarkRow[] | null>(null);
   const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
   const [jumpTarget, setJumpTarget] = useState<EpubBookmarkTarget | null>(null);
@@ -590,6 +591,21 @@ export function EpubReader({
       >
         设置
       </button>
+      {/* The chapter list lives behind the 目录 button in an overlay
+          (真机 md round 3): the inline nav was a screen-tall strip above
+          every page for a many-chapter book. One entry, every chapter;
+          the jump inherits goChapter's dirty-note guard. */}
+      <button
+        type="button"
+        className="reader-toggle"
+        onClick={() => {
+          if (!closeNote()) return;
+          setLookup(null);
+          setShowToc(true);
+        }}
+      >
+        目录
+      </button>
       {/* 书签 (ticket 10): the panel plants a mark at the current
           position, lists them in reading order, jumps back, deletes. */}
       <button
@@ -655,27 +671,6 @@ export function EpubReader({
             重试读取译文
           </button>
         </p>
-      ) : null}
-      {/* The chapter list rides the entry chapter only: a 35-chapter
-          book turned this inline nav into a screen-tall strip above
-          every page (真机 md round 2); later chapters navigate with the
-          pager buttons and come back to chapter 1 for the list. */}
-      {chapterIndex === 0 ? (
-        <nav className="reader-toc" aria-label="目录">
-          <ol>
-            {book.chapters.map((entry, index) => (
-              <li key={index}>
-                <button
-                  type="button"
-                  aria-current={index === chapterIndex ? "true" : undefined}
-                  onClick={() => goChapter(index)}
-                >
-                  {entry.title}
-                </button>
-              </li>
-            ))}
-          </ol>
-        </nav>
       ) : null}
       {chapter ? (
         <EpubChapter
@@ -776,6 +771,36 @@ export function EpubReader({
             )}
             <div className="overlay-actions">
               <button type="button" onClick={() => setShowBookmarks(false)}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {showToc ? (
+        <div className="overlay-veil" role="dialog" aria-label="目录">
+          <div className="overlay-card">
+            <h2 className="overlay-title">目录</h2>
+            <nav className="reader-toc" aria-label="章节列表">
+              <ol>
+                {book.chapters.map((entry, index) => (
+                  <li key={index}>
+                    <button
+                      type="button"
+                      aria-current={index === chapterIndex ? "true" : undefined}
+                      onClick={() => {
+                        setShowToc(false);
+                        goChapter(index);
+                      }}
+                    >
+                      {entry.title}
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </nav>
+            <div className="overlay-actions">
+              <button type="button" onClick={() => setShowToc(false)}>
                 关闭
               </button>
             </div>

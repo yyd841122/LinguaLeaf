@@ -10,6 +10,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { createMemoryPdfNotesStore } from "../src/store/pdf-notes-store";
 import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
@@ -113,12 +114,14 @@ describe("ReaderPage — the EPUB skeleton", () => {
     expect(screen.getByText("arrive")).toBeInTheDocument();
     expect(screen.getByText("follows")).toBeInTheDocument();
     // The TOC knows both chapters; switching shows the other one.
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
     expect(screen.queryByText("Words")).not.toBeInTheDocument();
   });
 
-  it("shows the chapter list on the entry chapter only (真机 md round 2)", async () => {
+  it("reaches the chapter list through the 目录 overlay on any chapter (真机 md round 3)", async () => {
     render(
       <ReaderPage
         pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
@@ -131,23 +134,33 @@ describe("ReaderPage — the EPUB skeleton", () => {
     );
     await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
     await screen.findByText("Words");
-    // Entry chapter: the inline chapter list is up.
+    // No inline list anywhere: the chapters live behind the 目录 button
+    // (the positive counterpart of this absence is the dialog below).
     expect(
-      screen.getByRole("navigation", { name: "目录" })
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
-    // The lit state distinguishes: chapter 2 is rendered AND the list is
-    // gone (later chapters navigate with the pager, not a repeated list).
+      screen.queryByRole("navigation", { name: "章节列表" })
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    const dialog = screen.getByRole("dialog", { name: "目录" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Chapter Two" })
+    );
+    // The jump closes the overlay and lands the chapter.
     expect(await screen.findByText("More")).toBeInTheDocument();
     expect(
-      screen.queryByRole("navigation", { name: "目录" })
+      screen.queryByRole("dialog", { name: "目录" })
     ).not.toBeInTheDocument();
-    // The way back is the pager, and the list returns with chapter 1.
-    fireEvent.click(screen.getByRole("button", { name: "上一章" }));
-    await screen.findByText("Words");
+    // From a later chapter the overlay is still the one list surface —
+    // the round-2 pain point — and marks the chapter being read.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    const again = screen.getByRole("dialog", { name: "目录" });
     expect(
-      screen.getByRole("navigation", { name: "目录" })
-    ).toBeInTheDocument();
+      within(again).getByRole("button", { name: "Chapter Two" })
+    ).toHaveAttribute("aria-current", "true");
+    fireEvent.click(within(again).getByRole("button", { name: "Chapter One" }));
+    expect(await screen.findByText("Words")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "目录" })
+    ).not.toBeInTheDocument();
   });
 
   it("reports a broken archive with the invalid-epub copy and keeps the entry usable", async () => {
@@ -854,6 +867,8 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await screen.findByText("First");
 
     // Read on into the second chapter, then leave to the picker.
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
@@ -874,6 +889,8 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
 
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
     fireEvent.click(screen.getByRole("button", { name: "打开" }));
@@ -1127,6 +1144,8 @@ describe("ReaderPage — the tint bulk read's races (settle-channel 02)", () => 
 
     // Chapter 1's bulk read hangs; the reader moves on to chapter 2,
     // whose own read hangs behind it.
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
 
@@ -1750,6 +1769,8 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     // fallback (runs → run) in word order, misses stay plain.
     await screen.findByText("Woke");
     expect(ipaValues()).toEqual(["woʊk", "təˈdeɪ", "ˈkwaɪət", "rʌn"]);
+    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Shallows" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
 
