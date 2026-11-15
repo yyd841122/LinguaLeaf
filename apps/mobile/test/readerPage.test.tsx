@@ -118,6 +118,38 @@ describe("ReaderPage — the EPUB skeleton", () => {
     expect(screen.queryByText("Words")).not.toBeInTheDocument();
   });
 
+  it("shows the chapter list on the entry chapter only (真机 md round 2)", async () => {
+    render(
+      <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+        translations={createMemoryTranslationStore()}
+        settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
+      />
+    );
+    await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
+    await screen.findByText("Words");
+    // Entry chapter: the inline chapter list is up.
+    expect(
+      screen.getByRole("navigation", { name: "目录" })
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
+    // The lit state distinguishes: chapter 2 is rendered AND the list is
+    // gone (later chapters navigate with the pager, not a repeated list).
+    expect(await screen.findByText("More")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("navigation", { name: "目录" })
+    ).not.toBeInTheDocument();
+    // The way back is the pager, and the list returns with chapter 1.
+    fireEvent.click(screen.getByRole("button", { name: "上一章" }));
+    await screen.findByText("Words");
+    expect(
+      screen.getByRole("navigation", { name: "目录" })
+    ).toBeInTheDocument();
+  });
+
   it("reports a broken archive with the invalid-epub copy and keeps the entry usable", async () => {
     render(
       <ReaderPage

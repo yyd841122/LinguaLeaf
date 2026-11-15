@@ -248,9 +248,11 @@ describe("EPUB sentence-block notes", () => {
       else
         expect(screen.queryByRole("dialog", { name: "句子块笔记" })).toBeNull();
       if (action === "下一章")
-        expect(screen.getByRole("button", { name: "Two" })).toHaveAttribute(
-          "aria-current",
-          "true"
+        // The chapter list rides the entry chapter only (真机 md round
+        // 2), so chapter 2's current-chapter readout is the pager's
+        // position, not a highlighted list entry.
+        expect(document.querySelector(".reader-position")?.textContent).toBe(
+          "2 / 2"
         );
       if (action === "打开")
         expect(

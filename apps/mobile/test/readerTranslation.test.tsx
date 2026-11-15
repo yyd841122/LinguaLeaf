@@ -194,7 +194,9 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
     expect(translationLines()).toEqual([]);
-    fireEvent.click(screen.getByRole("button", { name: "Chapter One" }));
+    // The pager carries the way back (the chapter list rides the entry
+    // chapter only, 真机 md round 2).
+    fireEvent.click(screen.getByRole("button", { name: "上一章" }));
     expect(await screen.findByText("第一句的译文。")).toBeInTheDocument();
     expect(translationLines()).toEqual(["第一句的译文。", "第二句的译文。"]);
   });
@@ -283,9 +285,11 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
     // there is a fresh, armed 翻译.
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByRole("button", { name: "翻译" })).toBeEnabled();
-    // Back to chapter one: the running task is visible again (the
-    // registry replays its percent to the re-armed subscription).
-    fireEvent.click(screen.getByRole("button", { name: "Chapter One" }));
+    // Back to chapter one via the pager (the chapter list rides the
+    // entry chapter only, 真机 md round 2): the running task is visible
+    // again (the registry replays its percent to the re-armed
+    // subscription).
+    fireEvent.click(screen.getByRole("button", { name: "上一章" }));
     expect(
       await screen.findByRole("button", { name: "翻译中 0%" })
     ).toBeDisabled();

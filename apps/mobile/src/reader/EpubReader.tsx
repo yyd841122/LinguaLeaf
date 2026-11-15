@@ -656,21 +656,27 @@ export function EpubReader({
           </button>
         </p>
       ) : null}
-      <nav className="reader-toc" aria-label="目录">
-        <ol>
-          {book.chapters.map((entry, index) => (
-            <li key={index}>
-              <button
-                type="button"
-                aria-current={index === chapterIndex ? "true" : undefined}
-                onClick={() => goChapter(index)}
-              >
-                {entry.title}
-              </button>
-            </li>
-          ))}
-        </ol>
-      </nav>
+      {/* The chapter list rides the entry chapter only: a 35-chapter
+          book turned this inline nav into a screen-tall strip above
+          every page (真机 md round 2); later chapters navigate with the
+          pager buttons and come back to chapter 1 for the list. */}
+      {chapterIndex === 0 ? (
+        <nav className="reader-toc" aria-label="目录">
+          <ol>
+            {book.chapters.map((entry, index) => (
+              <li key={index}>
+                <button
+                  type="button"
+                  aria-current={index === chapterIndex ? "true" : undefined}
+                  onClick={() => goChapter(index)}
+                >
+                  {entry.title}
+                </button>
+              </li>
+            ))}
+          </ol>
+        </nav>
+      ) : null}
       {chapter ? (
         <EpubChapter
           key={`${docId}:${chapterIndex}`}
