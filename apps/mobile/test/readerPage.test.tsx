@@ -1699,7 +1699,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     const library = createMemoryLibraryStore();
     renderWithSeams({ library });
     const md = new TextEncoder().encode(
-      "# Deep Waters\n\nWoke early today. The quiet sea runs.\n\n## Shallows\n\nMore words live here.\n"
+      "# Deep Waters\n\nWoke early today. The quiet sea runs.\n\n## Shallows\n\nMore quiet words live here.\n"
     );
     await pickFile(await fixtureFile("deep-waters.md", md));
 
@@ -1723,6 +1723,20 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
       await screen.findByRole("button", { name: "Deep Waters" })
     ).toBeInTheDocument();
     expect(screen.getByText("第 2 章")).toBeInTheDocument();
+    // The gate's full arc: opening FROM the shelf restores the saved
+    // chapter (第 2 章) with the same face — a sentence block carrying its
+    // IPA slot (quiet is the fixture dict's hit in this chapter).
+    fireEvent.click(screen.getByRole("button", { name: "Deep Waters" }));
+    await screen.findByText("quiet");
+    expect(ipaValues()).toEqual(["ˈkwaɪət"]);
+  });
+
+  it("offers Markdown in the picker accept list", () => {
+    renderWithSeams();
+    const input = screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件");
+    // Exact value through getAttribute — jsdom's selector engine matches
+    // attribute values case-insensitively (CODING_STANDARDS).
+    expect(input.getAttribute("accept")).toBe(".epub,.pdf,.md,.markdown");
   });
 
   it("gates a same-title markdown re-import behind the replacement confirm and replaces on accept", async () => {
