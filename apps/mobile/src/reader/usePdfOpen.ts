@@ -4,7 +4,10 @@ import type { IpaLookup } from "@lingualeaf/import-core";
 import { UploadRejected } from "@lingualeaf/import-core";
 import type { OfflineDictionary } from "../dict/offline-dictionary";
 import { readPdfBlob, type PdfBytesStore } from "../store/idb-bytes-store";
-import type { PdfPositionStore } from "../store/pdf-position-store";
+import type {
+  PdfPositionStore,
+  PdfViewMode,
+} from "../store/pdf-position-store";
 import { pdfFingerprint } from "../store/pdf-fingerprint";
 import {
   classifyPdfError,
@@ -22,6 +25,8 @@ export type OpenedPdf = {
   page: number;
   scale: number;
   lookup: IpaLookup;
+  // The face the doc last read in (round 7); absent on first open.
+  view?: PdfViewMode | undefined;
 };
 
 // Own the open channel and every candidate session, including the interval
@@ -110,6 +115,7 @@ export function usePdfOpen({
             page: Math.min(session.pageCount, Math.max(1, position?.page ?? 1)),
             scale: position?.scale ?? 1,
             lookup: offline.ipaLookup(),
+            view: position?.view,
           });
         },
       });

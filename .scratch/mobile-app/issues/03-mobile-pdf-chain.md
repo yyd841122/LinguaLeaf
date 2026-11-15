@@ -237,3 +237,30 @@ top=0.12×fontPx、宽继行保持挂下。
 **验证**:根 verify EXIT=0(104 文件,**1155 passed | 3 skipped**);
 APK 重装 Success。已知边界:tight 片仍部分遮自己词的上半字形——
 固定版面的物理代价,放大(150%)后多数行会回到挂下形态。
+
+### 2026-11-15 人验 round 7 返修记档 — PDF 重排阅读态(画布满屏形态到头)
+
+**现象(真机截图取证)**:tight 片已生效但整页 ~7px 原字 + 满页半透明
+片 = 紫色糊墙,无法阅读。固定版面整页塞手机宽,字必然这么小——
+画布满屏形态对小说类 PDF 无解,样式修不完。
+
+**设计升级(维护者拍板方向)**:PDF 加**重排阅读态**——页面视觉行
+(round 2 修好的阅读序)直接渲染为内核 EPUB 同形 DOM(ipa-word 音标
+带、sentence-block,样式经 annotated-shared.css 白得),字号舒适、
+纵向滚动、免平移。画布态保留为「原版」(坐标叠加门形态,看版式/图表
+用),头部「重排/原版」一键切换,**选择随进度持久化**(pdf-position
+增可选 view 字段,缺省 canvas)。
+
+- **共享锚**:查词(WordLookupPopup 同缝)、笔记(page/lineIndex/
+  lineText 同键)、书签(page/line 同行级锚)两面互认;长按打签、
+  armed-jump、书签面板全部两面共用;行标志 = EPUB block-marked 原类
+- **词形**:ipa-word(ipa 带)/lookup-word(无词典词),showIpa 开关
+  语义同 EPUB;行文本段 = round 2 的逐字拼接 + 间隙补空格产物
+- **测试**:新 pdfReflow 5 案(词形/长按打签+标志块/行笔记同锚/
+  切换持久化+翻回画布/面板跳回);pdfPositionStore 1 案(view 随
+  位置持久、旧行缺 view);加固 pdfReaderBookmarks 长按案的 ready 门
+  (笔钮 enabled = lineGeo 落地,全量负载竞态第 3 例,签名同前)
+
+**验证**:根 verify EXIT=0(105 文件,**1161 passed | 3 skipped**);
+APK 重装 Success。已知边界:重排态丢失原版面(图/公式不显示)——
+切「原版」看;扫描件本就被导入边界拒。

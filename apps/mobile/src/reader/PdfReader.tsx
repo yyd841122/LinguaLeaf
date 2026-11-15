@@ -30,6 +30,8 @@ import {
 } from "../store/bookmark-store";
 import { formatPlantedAt } from "./bookmark-view";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
+import { PdfReflow } from "./PdfReflow";
+import type { PdfViewMode } from "../store/pdf-position-store";
 
 // The PDF reading view (ticket 06): one page on canvas at a time — a big
 // book is progressive by shape — with the proven word/IPA overlay. Word
@@ -52,6 +54,7 @@ export function PdfReader({
   scale,
   lookup,
   showIpa,
+  initialView = "canvas",
   onPage,
   onScale,
   onToggleIpa,
@@ -70,6 +73,9 @@ export function PdfReader({
   scale: number;
   lookup: IpaLookup;
   showIpa: boolean;
+  // The face the doc reopens into (persisted per doc in the position
+  // store; canvas — the coordinate-overlay gate's form — is the default).
+  initialView?: PdfViewMode;
   onPage: (page: number) => void;
   onScale: (scale: number) => void;
   onToggleIpa: () => void;
@@ -82,9 +88,13 @@ export function PdfReader({
     stage.current?.invalidate();
     apply();
   };
+  // The reading face (round 7): reflow (EPUB-shaped lines) or the
+  // original canvas. Persisted with the position so a doc reopens into
+  // the face its reader chose.
+  const [view, setView] = useState<PdfViewMode>(initialView);
   useEffect(() => {
-    void positions.setPosition({ docId, title, page, scale });
-  }, [positions, docId, title, page, scale]);
+    void positions.setPosition({ docId, title, page, scale, view });
+  }, [positions, docId, title, page, scale, view]);
 
   // The bookmark seam (ticket 03): planted page marks for this document.
   // Same channel discipline as the EPUB face — one owner carries the
@@ -156,13 +166,16 @@ export function PdfReader({
     });
   };
   // 跳回: flip to the row's page when it differs, then the armed jump
-  // brings the row's line into view (PdfPage, after that render lands).
+  // brings the row's line into view (either face, after its read lands).
   const jumpToBookmark = (row: PdfBookmarkRow) => {
     if (editorRef.current?.requestClose() === false) return;
     setShowBookmarks(false);
     setJumpLine({ page: row.page, line: row.line });
     if (row.page !== page) navigate(() => onPage(row.page));
   };
+  const pageMarks = (bookmarkRows ?? [])
+    .filter((row) => row.page === page)
+    .map((row) => ({ line: row.line }));
 
   return (
     <main className="reader" aria-label="扩展阅读页">
@@ -194,6 +207,18 @@ export function PdfReader({
           ))}
           <button
             type="button"
+            className="reader-toggle"
+            aria-pressed={view === "reflow"}
+            onClick={() =>
+              navigate(() =>
+                setView((mode) => (mode === "reflow" ? "canvas" : "reflow"))
+              )
+            }
+          >
+            {view === "reflow" ? "原版" : "重排"}
+          </button>
+          <button
+            type="button"
             className="reader-bookmarks"
             onClick={() => {
               if (editorRef.current?.requestClose() === false) return;
@@ -216,26 +241,45 @@ export function PdfReader({
           </button>
         </div>
       </header>
-      <PdfPage
-        key={`${page}:${scale}:${showIpa}`}
-        ref={stage}
-        docId={docId}
-        session={session}
-        page={page}
-        scale={scale}
-        lookup={lookup}
-        showIpa={showIpa}
-        marks={(bookmarkRows ?? [])
-          .filter((row) => row.page === page)
-          .map((row) => ({ line: row.line }))}
-        jumpLine={jumpLine}
-        onJumpSettled={() => setJumpLine(null)}
-        onLongPressLine={plantBookmarkAt}
-        notes={notes}
-        editorRef={editorRef}
-        onOpenNote={onOpenNote}
-        onWordClick={onWordClick}
-      />
+      {/* Both faces read the same rows, armed jump and plant channel —
+          the marks made in one face read true in the other. */}
+      {view === "reflow" ? (
+        <PdfReflow
+          key={`${page}:reflow`}
+          docId={docId}
+          session={session}
+          page={page}
+          lookup={lookup}
+          showIpa={showIpa}
+          notes={notes}
+          marks={pageMarks}
+          jumpLine={jumpLine}
+          onJumpSettled={() => setJumpLine(null)}
+          onLongPressLine={plantBookmarkAt}
+          editorRef={editorRef}
+          onOpenNote={onOpenNote}
+          onWordClick={onWordClick}
+        />
+      ) : (
+        <PdfPage
+          key={`${page}:${scale}:${showIpa}`}
+          ref={stage}
+          docId={docId}
+          session={session}
+          page={page}
+          scale={scale}
+          lookup={lookup}
+          showIpa={showIpa}
+          marks={pageMarks}
+          jumpLine={jumpLine}
+          onJumpSettled={() => setJumpLine(null)}
+          onLongPressLine={plantBookmarkAt}
+          notes={notes}
+          editorRef={editorRef}
+          onOpenNote={onOpenNote}
+          onWordClick={onWordClick}
+        />
+      )}
       {showBookmarks ? (
         <div className="overlay-veil" role="dialog" aria-label="书签">
           <div className="overlay-card bookmark-card">

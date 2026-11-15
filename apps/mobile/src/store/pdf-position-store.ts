@@ -3,7 +3,16 @@ import {
   type NamespaceStorage,
 } from "./namespace-record";
 
-export type PdfPosition = { docId: string; page: number; scale: number };
+// The reading face the doc reopens into (ticket 03 人验 round 7): the
+// reflow face (EPUB-shaped lines) or the original canvas face. Absent on
+// legacy rows — canvas, the coordinate-overlay gate's own form.
+export type PdfViewMode = "canvas" | "reflow";
+export type PdfPosition = {
+  docId: string;
+  page: number;
+  scale: number;
+  view?: PdfViewMode | undefined;
+};
 export type PdfRecent = PdfPosition & { title: string };
 export interface PdfPositionStore {
   getPosition(docId: string): Promise<PdfPosition | null>;
@@ -37,7 +46,8 @@ function validPosition(value: unknown): value is PdfPosition {
     value.page >= 1 &&
     "scale" in value &&
     typeof value.scale === "number" &&
-    [0.75, 1, 1.5].includes(value.scale)
+    [0.75, 1, 1.5].includes(value.scale) &&
+    (!("view" in value) || value.view === "canvas" || value.view === "reflow")
   );
 }
 function validRecent(value: unknown): value is PdfRecent {
@@ -69,6 +79,7 @@ function decode(raw: unknown): PositionRecord {
             page: raw.recent.page,
             scale: raw.recent.scale,
             title: raw.recent.title,
+            ...(raw.recent.view === undefined ? {} : { view: raw.recent.view }),
           },
   };
 }
@@ -133,8 +144,12 @@ export function createPdfPositionStore(
           data.positions = data.positions.filter(
             (entry) => entry.docId !== position.docId
           );
-          const { docId, page, scale } = position;
-          data.positions.push({ docId, page, scale });
+          const { docId, page, scale, view } = position;
+          data.positions.push(
+            view === undefined
+              ? { docId, page, scale }
+              : { docId, page, scale, view }
+          );
           data.recent = position;
           await write(data);
         })

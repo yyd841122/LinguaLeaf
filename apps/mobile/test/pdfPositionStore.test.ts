@@ -14,6 +14,34 @@ const b = {
   scale: 0.75,
 };
 describe("PDF positions and latest-session convenience data", () => {
+  it("carries the reading face with the position and defaults legacy rows to absent view", async () => {
+    const bag: Record<string, unknown> = {};
+    const storage = {
+      async get() {
+        return structuredClone(bag);
+      },
+      async set(next: Record<string, unknown>) {
+        Object.assign(bag, structuredClone(next));
+      },
+    };
+    const store = createPdfPositionStore(storage);
+    await store.setPosition({ ...a, view: "reflow" });
+    expect(await store.getPosition(a.docId)).toMatchObject({
+      page: 2,
+      scale: 1.5,
+      view: "reflow",
+    });
+    // A legacy row (pre-view schema) reads back without a view — the
+    // face defaults to canvas at the consumer.
+    await store.setPosition(a);
+    expect(await store.getPosition(a.docId)).toEqual({
+      docId: a.docId,
+      page: 2,
+      scale: 1.5,
+    });
+    expect((await store.getRecent())?.view).toBeUndefined();
+  });
+
   it("keeps each identity's position and only the most recent hint, independently of notes", async () => {
     const bag: Record<string, unknown> = {};
     const storage = {

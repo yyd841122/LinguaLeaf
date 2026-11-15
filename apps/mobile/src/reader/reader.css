@@ -671,3 +671,28 @@ body {
 .backup-busy {
   color: gray;
 }
+
+/* The reflow reading face (round 7): kernel word styles apply as-is
+   (ipa-word bands, sentence-block rhythm); the wrapper only tames the
+   spacing for novel pages and pins the per-line note button at the
+   line's right edge, clear of the text. */
+.pdf-reflow {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding-bottom: 2rem;
+}
+.pdf-reflow .sentence-block {
+  position: relative;
+  padding-right: 2.4rem;
+}
+.pdf-reflow .original-line {
+  margin: 0;
+  font-size: 1.05rem;
+  line-height: 1.7;
+}
+.pdf-reflow .block-note-button {
+  position: absolute;
+  right: 0.2rem;
+  top: 0.15rem;
+}

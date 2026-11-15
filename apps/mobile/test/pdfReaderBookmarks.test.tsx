@@ -95,6 +95,17 @@ beforeEach(() => {
     ipa.className = "pdf-ipa";
     word.appendChild(ipa);
     overlay.appendChild(word);
+    // The note pen's enable is the settle signal (marker effect runs
+    // only after the render AND the read land) — the long-press tests
+    // gate on it, the same discipline as the notes suite.
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.pdfNote = "0";
+    button.dataset.lineText = "Woke";
+    button.className = "pdf-note-button";
+    button.disabled = true;
+    button.textContent = "✎";
+    overlay.appendChild(button);
     return {
       wordCount: 1,
       ipaCount: 1,
@@ -247,6 +258,11 @@ describe("PDF face bookmarks (ticket 03)", () => {
     const wordAt = () =>
       document.querySelector<HTMLElement>("[data-word='Woke']");
     await waitFor(() => expect(wordAt()).not.toBeNull());
+    // The pen going enabled proves lineGeo landed — a press before that
+    // races empty geometry and never plants (full-suite load flake).
+    await waitFor(() =>
+      expect(document.querySelector("[data-pdf-note]")).toBeEnabled()
+    );
     vi.useFakeTimers();
     try {
       fireEvent.pointerDown(wordAt()!);

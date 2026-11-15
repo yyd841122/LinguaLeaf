@@ -470,6 +470,7 @@ export function ReaderPage({
             scale={state.scale}
             lookup={state.lookup}
             showIpa={showIpa}
+            initialView={state.view ?? "canvas"}
             // A page flip or a zoom is itself a position fact — the
             // anchored popup's coordinates died with the old view (the
             // EPUB chapter switch clears its lookup the same way).
