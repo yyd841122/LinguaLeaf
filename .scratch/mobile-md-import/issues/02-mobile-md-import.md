@@ -54,5 +54,11 @@ spec 的 6 步白话清单走通即为完成。
   真机书《韭菜的自我修养》预检:35 章/1209 句块,两个预期怪相(章 1 头部 TOC
   raw 块挤成一行;「Appendix」空章)均为 web 同款语义。③web 面同型洞立候选票
   .scratch/web-reading-chapter-scroll-reset/spec.md(needs-triage)。
+- 2026-11-15 真机 round 2+3:35 章书把内联 reader-toc 变成每页一屏高的条。
+  round 2 先按维护者指令改「只在第一章渲染」;round 3 维护者改拍板为「页头
+  目录按钮 + 浮层选章」(commits 3479aea、3c5a7bb)——章列表收进浮层壳(照
+  书签浮层),所有章统一入口,当前章 aria-current,跳章继承脏草稿守卫;内联
+  nav 移除。8 处既有测试点击前置开浮层,3 处 aria-current 断言改读页码
+  span(脏草稿场景开浮层会误触放弃确认)。5 套件 97 绿,浏览器滚动场景全绿。
 - 状态维持 ready-for-human:剩余人检点不变——caller `npm run verify` + 真机
-  6 步(切章断言按本 round 修复后行为:落章首)。
+  6 步(切章断言按 round 1 修复后行为:落章首;章导航按 round 3:目录浮层)。
