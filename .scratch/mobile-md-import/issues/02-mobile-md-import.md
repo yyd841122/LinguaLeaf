@@ -44,6 +44,15 @@ spec 的 6 步白话清单走通即为完成。
   是 spec 决策 4 的有意形状(「分发收在 import-book.ts 内」),扩展补 md 与
   孪生去重仍按 spec Out of scope 另票。手机阅读器措辞非 glossary 违规
   (spec 指定文案;GLOSSARY 手机应用 为最近正名,无 Avoid 冲突)。
-- 状态翻 ready-for-human:剩两个人工检查点——(1)caller 显式补跑
-  `npm run verify`;(2)真机 6 步清单(spec「真机人验清单」,清单第 6 步
-  预期文案已是手机语)。两项过后收官 docs commit 翻 done。
+- 2026-11-15 真机 round 1 记录:①APK 未部署即测——picker 不认 .md;按 README
+  出包流程(vite build → cap:sync → gradlew assembleDebug → adb install -r,
+  数据保留)后可选中。②新书切章落章中段/末尾、顶部疑「与第 1 页重复」——诊断
+  (playwright 双臂环,回归场景 scripts/browser-e2e/mobile-md-chapter-scroll.mjs
+  npm run browser-e2e:mobile):goChapter 未重置 window 滚动(面级洞,非 md 专属;
+  短章钳制掩盖),已修(commit 见 git log fix(mobile) 章切换重置);「重复」实为
+  原书第 1 章导语与第 2 章开头同有的韭菜定义段,存储书零跨章重复,数据忠实。
+  真机书《韭菜的自我修养》预检:35 章/1209 句块,两个预期怪相(章 1 头部 TOC
+  raw 块挤成一行;「Appendix」空章)均为 web 同款语义。③web 面同型洞立候选票
+  .scratch/web-reading-chapter-scroll-reset/spec.md(needs-triage)。
+- 状态维持 ready-for-human:剩余人检点不变——caller `npm run verify` + 真机
+  6 步(切章断言按本 round 修复后行为:落章首)。
