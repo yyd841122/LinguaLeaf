@@ -6,9 +6,11 @@ import {
 } from "@lingualeaf/reading-model/react";
 import {
   useEffect,
+  useImperativeHandle,
   useRef,
   useState,
   type ReactNode,
+  type Ref,
   type RefObject,
 } from "react";
 import type { IpaLookup } from "@lingualeaf/import-core";
@@ -66,6 +68,13 @@ async function extractLines(
   }
 }
 
+// The shared face handle — structurally identical to PdfReader's
+// ReaderFaceHandle (one type by shape, the canvas face keeps its own).
+export type ReaderFaceHandle = {
+  invalidate(): void;
+  topmostVisibleLine(): { line: number; text: string } | null;
+};
+
 export function PdfReflow({
   docId,
   session,
@@ -80,6 +89,7 @@ export function PdfReflow({
   editorRef,
   onOpenNote,
   onWordClick,
+  ref,
 }: {
   docId: string;
   session: PdfSession;
@@ -87,6 +97,9 @@ export function PdfReflow({
   lookup: IpaLookup;
   showIpa: boolean;
   notes: PdfNotesStore;
+  // Both faces carry the shared handle (the button plant reads the
+  // topmost visible line whichever face the reader is in).
+  ref?: Ref<ReaderFaceHandle>;
   // This page's planted lines — the face-level marker fact, shared with
   // the canvas face through the same rows.
   marks: { line: number }[];
@@ -114,6 +127,31 @@ export function PdfReflow({
     void runNotes(notes.list(docId), { onFresh: setSaved });
     return () => notesOwner.invalidate();
   }, [docId, notes, runNotes, notesOwner]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      invalidate() {
+        /* Nothing in flight to revoke: the line read settles under its
+           owner and the DOM is React's. */
+      },
+      topmostVisibleLine() {
+        const el = container.current;
+        if (!el || !lines) return null;
+        const top = el.getBoundingClientRect().top;
+        for (const block of el.querySelectorAll<HTMLElement>(
+          "[data-pdf-line-index]"
+        )) {
+          if (block.getBoundingClientRect().top >= top - 1)
+            return {
+              line: Number(block.dataset.pdfLineIndex),
+              text: block.dataset.pdfLineText ?? "",
+            };
+        }
+        return null;
+      },
+    }),
+    [lines]
+  );
   // The armed jump (both faces' same shape): once this page's lines
   // exist, bring the row's line into view and disarm.
   useEffect(() => {

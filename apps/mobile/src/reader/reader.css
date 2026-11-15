@@ -706,7 +706,10 @@ body {
 .reader-reflow {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* Pinned by PdfReader to documentElement.clientHeight — 100vh here
+     followed innerHeight while the ICB sat 66px shorter, and the gap
+     became body scroll range that shoved the whole shell up. */
+  height: var(--shell-h, 100vh);
   box-sizing: border-box;
 }
 .reader-reflow .reader-head {
@@ -717,6 +720,9 @@ body {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* The wrapped lines never overflow horizontally; a stray IPA chip's
+     nowrap must not reopen a horizontal pan. */
+  overflow-x: hidden;
 }
 .reader-reflow {
   padding-bottom: 1rem;

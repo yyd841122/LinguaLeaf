@@ -82,7 +82,7 @@ export function PdfReader({
   onWordClick: (click: WordClick) => void;
   onReopen: () => void;
 }) {
-  const stage = useRef<PdfPageHandle>(null);
+  const stage = useRef<ReaderFaceHandle>(null);
   const navigate = (apply: () => void) => {
     if (editorRef.current?.requestClose() === false) return;
     stage.current?.invalidate();
@@ -95,6 +95,22 @@ export function PdfReader({
   useEffect(() => {
     void positions.setPosition({ docId, title, page, scale, view });
   }, [positions, docId, title, page, scale, view]);
+  // The shell's height pins to the layout viewport's client height (round
+  // 8's defect: 100vh followed innerHeight while the ICB sat 66px
+  // shorter — the gap became body scroll range, and any push shifted the
+  // whole shell up under the header). clientHeight never leaves a
+  // scrollable remainder; resize keeps it honest.
+  useEffect(() => {
+    if (view !== "reflow") return;
+    const apply = () =>
+      document.documentElement.style.setProperty(
+        "--shell-h",
+        `${document.documentElement.clientHeight}px`
+      );
+    apply();
+    window.addEventListener("resize", apply);
+    return () => window.removeEventListener("resize", apply);
+  }, [view]);
 
   // The bookmark seam (ticket 03): planted page marks for this document.
   // Same channel discipline as the EPUB face — one owner carries the
@@ -253,6 +269,7 @@ export function PdfReader({
       {view === "reflow" ? (
         <PdfReflow
           key={`${page}:reflow`}
+          ref={stage}
           docId={docId}
           session={session}
           page={page}
@@ -384,11 +401,12 @@ export function PdfReader({
   );
 }
 
-type PdfPageHandle = {
+// Both faces carry the same handle: the canvas render's invalidation
+// and the reading-walk anchor — the EPUB topmost-visible rule at the
+// PDF's line granularity: the visible line closest to the face's top
+// is where the reader is.
+type ReaderFaceHandle = {
   invalidate(): void;
-  // The reading-walk anchor — the EPUB topmost-visible rule at the
-  // PDF's line granularity: the visible line closest to the stage's
-  // top is where the reader is.
   topmostVisibleLine(): { line: number; text: string } | null;
 };
 function PdfPage({
@@ -426,7 +444,7 @@ function PdfPage({
   editorRef: RefObject<NoteEditorHandle | null>;
   onOpenNote: () => void;
   onWordClick: (click: WordClick) => void;
-  ref: Ref<PdfPageHandle>;
+  ref: Ref<ReaderFaceHandle>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const overlay = useRef<HTMLDivElement>(null);

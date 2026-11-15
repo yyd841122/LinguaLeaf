@@ -280,3 +280,25 @@ APK 重装 Success。已知边界:重排态丢失原版面(图/公式不显示)�
 闭环:冷启→书架→开书**直接恢复重排态**(view 持久化实证)→深滑三屏
 截图:头部/翻页器常驻、行列表边界裁切正常、书签飘带在位。APK 重装
 Success。
+
+### 2026-11-15 人验 round 9 返修记档 — 壳高钉 ICB + 横滑禁用 + 按钮签行级
+
+**现象(真机机检 + CDP 取证)**:①翻页后壳又被上推 ~90px;②重排态可
+左右平移;③「在当前位置打书签」钉不到段——按钮走 stage 句柄,重排态
+句柄为空,恒落兜底 line 0(页顶)。
+
+**根因(CDP 量尺)**:WebView 布局视口(ICB)748px ≠ innerHeight 814px
+——`100vh` 随 innerHeight 走,差值 66px 恰成 body 可滚余量,翻页链路
+一推整壳上移;旧面板第 4 页裸行即③的历史产物。
+
+**修笔**:①壳高 JS 钉 `documentElement.clientHeight`(--shell-h,
+resize 跟随)——body 永零滚动余量,机检量尺 mainRectTop=0/docScroll=0
+/mainH=docClientH=748 翻页深滑后恒成立;②`.pdf-reflow` overflow-x
+hidden(换行文本本无横向溢出,防 IPA nowrap 撕开缝);③重排面接共享
+ReaderFaceHandle(两 face 同形:invalidate + topmostVisibleLine),
+按钮打签两面都钉**当前视线行**。
+
+**验证**:根 verify EXIT=0(105 文件,1161 passed | 3 skipped);机检
+闭环:翻页+深滑三屏量尺恒成立、CDP 面板读数「第 8 页 · credit,
+How wi」(行级+摘要)。APK 重装 Success。面板中「第 4 页」裸行为
+round 7 前历史页级签(读归一 line 0),非缺陷。
