@@ -137,13 +137,33 @@ export function PdfReflow({
   onWordClick: (click: WordClick) => void;
 }) {
   const container = useRef<HTMLDivElement>(null);
-  const [lines, setLines] = useState<ReflowLine[] | null>(null);
+  // The face renders PARAGRAPHS (round 18): consecutive lines of one
+  // paragraph flow together as inline spans and the browser wraps them
+  // at the container's width — the PDF's hard line ends must never
+  // become display breaks (the choppy read the fit-width report's
+  // rounds kept fighting). Line identity rides data attributes on the
+  // spans, so notes, bookmarks and jumps stay line-addressed.
+  const [paragraphs, setParagraphs] = useState<ReflowLine[][] | null>(null);
   const [attempt, setAttempt] = useState(0);
   const readOwner = useOwner(docId, session, page, attempt);
   const { run, failed } = useSettle(readOwner);
   useEffect(() => {
-    setLines(null);
-    void run(extractLines(session.doc, page), { onFresh: setLines });
+    setParagraphs(null);
+    void run(extractLines(session.doc, page), {
+      onFresh: (lines) => {
+        const paragraphs: ReflowLine[][] = [];
+        let current: ReflowLine[] = [];
+        for (const line of lines) {
+          current.push(line);
+          if (line.paraEnd) {
+            paragraphs.push(current);
+            current = [];
+          }
+        }
+        if (current.length) paragraphs.push(current);
+        setParagraphs(paragraphs);
+      },
+    });
     return () => readOwner.invalidate();
   }, [session, page, run, readOwner]);
   const notesOwner = useOwner(docId, session, page, notes);
@@ -162,7 +182,7 @@ export function PdfReflow({
       },
       topmostVisibleLine() {
         const el = container.current;
-        if (!el || !lines) return null;
+        if (!el || !paragraphs) return null;
         const top = el.getBoundingClientRect().top;
         for (const block of el.querySelectorAll<HTMLElement>(
           "[data-pdf-line-index]"
@@ -176,12 +196,12 @@ export function PdfReflow({
         return null;
       },
     }),
-    [lines]
+    [paragraphs]
   );
   // The armed jump (both faces' same shape): once this page's lines
   // exist, bring the row's line into view and disarm.
   useEffect(() => {
-    if (!lines || !jumpLine || jumpLine.page !== page) return;
+    if (!paragraphs || !jumpLine || jumpLine.page !== page) return;
     const raf = requestAnimationFrame(() => {
       container.current
         ?.querySelector(`[data-pdf-line-index="${jumpLine.line}"]`)
@@ -189,7 +209,7 @@ export function PdfReflow({
       onJumpSettled();
     });
     return () => cancelAnimationFrame(raf);
-  }, [lines, jumpLine, page, onJumpSettled]);
+  }, [paragraphs, jumpLine, page, onJumpSettled]);
   // 长按打签: the canvas face's same gesture — 500ms beat on a word
   // plants on its line, a scroll cancels, the release's click is
   // swallowed. Line facts ride data attributes here (no geometry map).
@@ -220,7 +240,7 @@ export function PdfReflow({
     op: number;
   } | null>(null);
   const nextOp = useRef(0);
-  const wordView = (word: string, key: number): ReactNode => {
+  const wordView = (word: string, key: string | number): ReactNode => {
     const ipa = showIpa ? lookup(word) : undefined;
     return ipa ? (
       <span
@@ -291,49 +311,66 @@ export function PdfReflow({
           if (lineAt(event.target)) event.preventDefault();
         }}
       >
-        {lines === null ? (
+        {paragraphs === null ? (
           <p className="reader-status">读取页面文本…</p>
-        ) : lines.length === 0 ? (
+        ) : paragraphs.length === 0 ? (
           <p className="reader-status">本页没有可读文本，请切「原版」查看。</p>
         ) : (
-          lines.map((line) => {
-            const marked = marks.some((entry) => entry.line === line.lineIndex);
-            const lineNotes = (saved ?? []).filter(
-              (note) => note.page === page && note.lineIndex === line.lineIndex
+          paragraphs.map((paraLines) => {
+            const first = paraLines[0]!;
+            const marked = paraLines.some((line) =>
+              marks.some((entry) => entry.line === line.lineIndex)
             );
-            const hasNote = lineNotes.some(
-              (note) => note.lineText === line.lineText
+            const paraNotes = (saved ?? []).filter((note) =>
+              paraLines.some(
+                (line) =>
+                  note.page === page && note.lineIndex === line.lineIndex
+              )
             );
-            const mismatch = lineNotes.some(
-              (note) => note.lineText !== line.lineText
+            const hasNote = paraNotes.some((note) =>
+              paraLines.some(
+                (line) =>
+                  note.lineText === line.lineText &&
+                  note.lineIndex === line.lineIndex
+              )
             );
             return (
               <div
-                key={line.lineIndex}
-                data-pdf-line-index={line.lineIndex}
-                data-pdf-line-text={line.lineText}
-                className={`sentence-block${marked ? " block-marked" : ""}${line.paraEnd ? " para-end" : ""}`}
+                key={first.lineIndex}
+                className={`sentence-block${marked ? " block-marked" : ""}${
+                  paraLines[paraLines.length - 1]!.paraEnd ? " para-end" : ""
+                }`}
               >
                 <p className="original-line">
-                  {line.segments.map((segment, index) =>
-                    typeof segment === "string" ? (
-                      <span key={index}>{segment}</span>
-                    ) : (
-                      wordView(segment.word, index)
-                    )
-                  )}
+                  {paraLines.map((line, lineAt) => (
+                    <span
+                      key={line.lineIndex}
+                      data-pdf-line-index={line.lineIndex}
+                      data-pdf-line-text={line.lineText}
+                      className="pdf-reflow-line"
+                    >
+                      {line.segments.map((segment, index) =>
+                        typeof segment === "string" ? (
+                          <span key={index}>{segment}</span>
+                        ) : (
+                          wordView(segment.word, `${line.lineIndex}:${index}`)
+                        )
+                      )}
+                      {lineAt < paraLines.length - 1 ? " " : null}
+                    </span>
+                  ))}
                 </p>
                 <button
                   type="button"
-                  className={`block-note-button${hasNote && !mismatch ? " has-note" : ""}`}
-                  aria-label={hasNote && !mismatch ? "编辑笔记" : "写笔记"}
-                  disabled={saved === null || mismatch}
+                  className={`block-note-button${hasNote ? " has-note" : ""}`}
+                  aria-label={hasNote ? "编辑笔记" : "写笔记"}
+                  disabled={saved === null}
                   onClick={(event) => {
                     if (editorRef.current?.requestClose() === false) return;
                     onOpenNote();
                     setPopup({
-                      lineIndex: line.lineIndex,
-                      lineText: line.lineText,
+                      lineIndex: first.lineIndex,
+                      lineText: first.lineText,
                       button: event.currentTarget,
                       op: ++nextOp.current,
                     });

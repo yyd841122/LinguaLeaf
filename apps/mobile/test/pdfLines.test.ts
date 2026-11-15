@@ -169,7 +169,11 @@ describe("markParagraphBreaks", () => {
     expect(lines[6]!.paraEnd).toBe(true);
   });
 
-  it("breaks where a short line ends a sentence (dialogue page)", () => {
+  it("reads a uniform page continuous even when lines end sentence-final (the Camille class)", () => {
+    // Ragged right, no paragraph spacing, no indent — the print itself
+    // is continuous; sentence-final short lines are sentence ends, not
+    // paragraph ends (round 17's SHORT+SENT chopped this every third
+    // line). Minimal-harm: no unambiguous signal, no break.
     const lines = [
       para(300, 40, 260, "body line running to the margin,"),
       para(270, 40, 150, '"Yes."'),
@@ -177,7 +181,7 @@ describe("markParagraphBreaks", () => {
     ];
     markParagraphBreaks(lines);
     expect(lines[0]!.paraEnd).toBe(false);
-    expect(lines[1]!.paraEnd).toBe(true);
+    expect(lines[1]!.paraEnd).toBe(false);
     expect(lines[2]!.paraEnd).toBe(true);
   });
 
@@ -211,18 +215,17 @@ describe("markParagraphBreaks", () => {
       para(baseline, 63.4, rights[i]!, texts[i]!)
     );
     markParagraphBreaks(lines);
-    // The speech is ONE paragraph of five lines (ragged-right: body
-    // joints end in words, never firing); it closes at the short,
-    // sentence-final "having seen, I will see.\"". The page's last line
-    // closes the final dialogue.
-    expect(lines.slice(0, 4).map((l) => l.paraEnd)).toEqual([
+    // The Camille page: jitter 14.9-19.7 carries no paragraph signal —
+    // the whole page reads continuous, only its true last line closes.
+    expect(lines.map((l) => l.paraEnd)).toEqual([
       false,
       false,
       false,
       false,
+      false,
+      false,
+      false,
+      true,
     ]);
-    expect(lines[4]!.paraEnd).toBe(true);
-    expect(lines.slice(5, 7).map((l) => l.paraEnd)).toEqual([false, false]);
-    expect(lines[7]!.paraEnd).toBe(true);
   });
 });

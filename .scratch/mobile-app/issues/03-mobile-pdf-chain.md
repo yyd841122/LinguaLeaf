@@ -454,3 +454,21 @@ markParagraphBreaks 纯函数(pdf-lines.ts):
 一例 readerBookmarks 已知竞态(单跑复绿,第 7 例,stub 13 记账)。
 **验证**:根 verify EXIT=0(106 文件,1170 passed | 3 skipped);APK
 重装 Success。真机复核交维护者(第 21 页对照截图)。
+
+### 2026-11-15 人验 round 18 记档 — 重排改段落连续流(真病根:行即块)
+
+**现象(维护者复测 + CDP 运行态取证)**:分段算法三改仍"截断"——
+CDP 量运行 DOM:original-line 块高 57/85px 交替 = **每条 PDF 视觉行
+被渲染成独立块,浏览器再把每行二次折行**,锯齿割裂感与分段算法无关,
+是渲染形态本身:PDF 的硬换行不该成为显示换行。
+
+**修笔(形态重构)**:重排面渲染改为**段落连续流**——markParagraph
+Breaks 的段落分组(连续行直到 paraEnd)拼成一个块,行降级为块内
+inline span(data-pdf-line-index/text 仍挂在行 span 上,查词/长按
+打签/书签跳回/笔记锚全部保持行寻址),浏览器按容器宽自然换行;
+段间 para-end 间距保留;笔按段落一枚(锚定段首行)。
+
+**验证**:根 verify EXIT=0(106 文件,1170 passed | 3 skipped);
+pdfReflow 断言随形态更新(单段块/行 span/para-end);真机第 23 页
+截图:整页连续行文无任何中间截断,音标随词,与该书印刷排版一致。
+APK 重装 Success。

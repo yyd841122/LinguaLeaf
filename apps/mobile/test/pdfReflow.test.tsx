@@ -176,15 +176,17 @@ describe("PDF reflow face (round 7)", () => {
       "data-ipa",
       "woʊk"
     );
-    // The kernel line/block shape, one block per visual line.
+    // Paragraph-flow shape (round 18): one block per PARAGRAPH, its
+    // lines flowing as inline spans — the browser wraps them naturally
+    // instead of hard-breaking at the PDF's line ends.
     expect(
       document.querySelectorAll(".pdf-reflow .sentence-block")
-    ).toHaveLength(2);
-    // Paragraph grouping (round 15): the fixture's two lines ride the
-    // same body leading, so only the page's last line closes a para.
-    const blocks = document.querySelectorAll(".pdf-reflow .sentence-block");
-    expect(blocks[0]).not.toHaveClass("para-end");
-    expect(blocks[1]).toHaveClass("para-end");
+    ).toHaveLength(1);
+    expect(document.querySelectorAll(".pdf-reflow-line")).toHaveLength(2);
+    // The fixture's two lines ride the same body leading — one
+    // paragraph, closed by its last line's para-end.
+    const block = document.querySelector(".pdf-reflow .sentence-block")!;
+    expect(block).toHaveClass("para-end");
     // Tapping a word opens the same lookup popup seam.
     fireEvent.click(screen.getByText("Woke"));
     await screen.findByRole("dialog", { name: "词详情：Woke" });

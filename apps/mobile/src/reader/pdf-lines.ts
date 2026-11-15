@@ -107,29 +107,27 @@ export function eligiblePdfLines(items: TextContent["items"]): PdfLine[] {
   return lines;
 }
 
-// Paragraph grouping (mobile-app ticket 03, round 16, rev 3): where
-// does one paragraph end? No single geometric threshold survives real
-// typesetting — justified/ragged margins, paragraph spacing on or off,
-// baseline jitter of ±15% — so the rule is a signal set:
-//   1. SENTENCE-END + SHORT LINE: a paragraph's last line ends with
-//      sentence punctuation and clearly inside the column's right
-//      margin. This is the ONLY signal a ragged-right, no-para-spacing
-//      book (Camille) carries at all.
-//   2. RAISED GAP: a baseline step past 1.45× the body leading — body
-//      leading being the MODE of the page's steps (clustered; a
-//      tightly-set footnote block must not drag the estimate down).
-//   3. SENTENCE-END + SOMEWHAT RAISED GAP (1.25×) — spaced books whose
-//      paragraph gap is modest.
-//   4. INDENT + barely-raised gap — indent-marked books.
-// Body joints end in words or commas, never satisfying 1 — the jitter
-// that fired the old fixed thresholds passes harmlessly.
+// Paragraph grouping (mobile-app ticket 03, rounds 16-18): where does
+// one paragraph end? After live book forensics (Camille: ragged right,
+// no paragraph spacing, no indent — baselines jitter 14.9-19.7 with NO
+// paragraph gaps, the print itself is continuous), the honest rule is
+// minimal-harm: break ONLY on unambiguous geometric evidence.
+//   1. RAISED GAP: a baseline step past 1.45× the body leading — the
+//      body leading being the MODE of the page's baseline steps
+//      (clustered; a tightly-set footnote block must not drag the
+//      estimate down and chop every body line).
+//   2. INDENT: the next line starts clearly right of the column's left
+//      margin with even a slightly-raised step — indent-marked books.
+// Everything else reads continuous — exactly like the book's own print.
+// Sentence-final short lines are NOT a signal: multi-sentence paragraphs
+// carry sentence ends mid-paragraph (round 17's SHORT+SENT chopped
+// Camille every three lines on them).
 
 export type ParagraphLine = {
   baseline: number;
   left: number;
   right: number;
   fontPx: number;
-  text: string;
   paraEnd: boolean;
 };
 
@@ -166,18 +164,12 @@ export function markParagraphBreaks(lines: ParagraphLine[]): void {
     [...deltas].sort((a, b) => a - b),
     deltas.length ? deltas[0]! * 0.12 + Number.EPSILON : 0
   );
-  // The column's margins are the EXTREMES, not modes — a ragged-right
-  // page's body lines end wherever the word ends, and a right-edge mode
-  // would collapse onto a short line and blind the short-line signal.
+  // The column's left margin is the EXTREME, not a mode — a ragged-left
+  // page would collapse a mode onto an indented line and blind the
+  // indent signal.
   const columnLeft = lines.length
     ? Math.min(...lines.map((line) => line.left))
     : 0;
-  const columnRight = lines.length
-    ? Math.max(...lines.map((line) => line.right))
-    : 0;
-  const shortAt = columnRight - (columnRight - columnLeft) * 0.08;
-  const endsSentence = (text: string): boolean =>
-    /[.?!…"”'’]["”'’]?\s*$/u.test(text.trimEnd());
   for (let i = 0; i < lines.length; i++) {
     const next = lines[i + 1];
     if (!next) {
@@ -189,13 +181,7 @@ export function markParagraphBreaks(lines: ParagraphLine[]): void {
       lines[i]!.paraEnd = false;
       continue;
     }
-    const shortLine = lines[i]!.right < shortAt;
-    const sentenceEnd = endsSentence(lines[i]!.text);
     const indented = next.left > columnLeft + next.fontPx * 0.6;
-    lines[i]!.paraEnd =
-      d > leading * 1.45 ||
-      (shortLine && sentenceEnd) ||
-      (sentenceEnd && d > leading * 1.25) ||
-      (indented && d > leading * 1.05);
+    lines[i]!.paraEnd = d > leading * 1.45 || (indented && d > leading * 1.05);
   }
 }
