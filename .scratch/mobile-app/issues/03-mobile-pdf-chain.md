@@ -337,3 +337,15 @@ padding 收 0.5rem——阅读区上沿多出约一个头部行高的空间。
 **验证**:根 verify EXIT=0(105 文件,1161 passed | 3 skipped);真机
 截图:单行头部 + 阅读区扩大,书签飘带/笔钮/音标带照常。APK 重装
 Success。
+
+### 2026-11-15 人验 round 12 返修记档 — 头部两行化(标题整行/按钮铺开)
+
+**现象(维护者拍板)**:单行挤排把标题省略成「Camille 茶…」——改
+标题一行、按钮第二行。
+
+**修笔**:壳头部 flex 改 column(标题整行 nowrap+ellipsis 兜长名,
+字号微升至 1.15rem),reader-tools 二行 space-between 铺开——四钮
+全部单行(打开其他文件不再折行)。
+
+**验证**:根 verify EXIT=0(105 文件,1161 passed | 3 skipped);真机
+截图:标题完整、按钮一行四枚铺满、阅读区起点不变。APK 重装 Success。

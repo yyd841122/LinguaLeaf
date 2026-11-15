@@ -721,18 +721,24 @@ body {
 .reader-shell .reader-head {
   position: static;
   flex: none;
-  /* Compact reading head (round 11): single-line ellipsized title,
-     tight paddings — the room goes to the reading region. The zoom
-     ladder only exists in canvas mode; reflow's four controls fit one
-     row beside it. */
+  /* Compact two-row head (round 12): the title owns row one at full
+     width (ellipsis only for the genuinely long), the face's controls
+     own row two spread edge to edge — the room still goes to reading,
+     but the title reads whole. */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
   padding-bottom: 0.5rem;
 }
 .reader-shell .reader-title {
-  font-size: 1.1rem;
+  font-size: 1.15rem;
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.reader-shell .reader-tools {
+  justify-content: space-between;
 }
 .reader-shell {
   padding-top: 0.5rem;
