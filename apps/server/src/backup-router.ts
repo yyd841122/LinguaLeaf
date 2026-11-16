@@ -96,17 +96,35 @@ export function createBackupRouter(database: Database.Database): Router {
 // Translations are PC learner assets too (the chapter route's settled
 // lines): nested bookTitle → chapter → block → line, the phone-side
 // merge semantics ride the same shape. PC positions are 1-based; the
-// format is 0-based (wire.ts's coordinate convention).
+// format is 0-based (wire.ts's coordinate convention). Accumulation
+// holds Maps, not a plain object: the book title is an external string
+// key, and a title like "constructor" would hit the prototype on a bare
+// `out[title] ??=` — the nullish check would see the inherited function,
+// skip the assignment, and silently drop the book's translations from
+// the backup. fromEntries mints own properties, so the serialized JSON
+// carries every title verbatim.
 function nestTranslations(
   rows: SettledTranslationRow[]
 ): BackupPayload["assets"]["translations"] {
-  const out: BackupPayload["assets"]["translations"] = {};
+  const books = new Map<string, Map<number, Map<number, string>>>();
   for (const row of rows) {
-    const chapters = (out[row.title] ??= {});
-    const blocks = (chapters[String(row.chapter - 1)] ??= {});
-    blocks[String(row.block - 1)] = row.line;
+    let chapters = books.get(row.title);
+    if (!chapters) books.set(row.title, (chapters = new Map()));
+    let blocks = chapters.get(row.chapter - 1);
+    if (!blocks) chapters.set(row.chapter - 1, (blocks = new Map()));
+    blocks.set(row.block - 1, row.line);
   }
-  return out;
+  return Object.fromEntries(
+    [...books].map(([title, chapters]) => [
+      title,
+      Object.fromEntries(
+        [...chapters].map(([chapter, blocks]) => [
+          String(chapter),
+          Object.fromEntries(blocks),
+        ])
+      ),
+    ])
+  );
 }
 
 function backupFilename(): string {

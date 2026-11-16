@@ -18,6 +18,11 @@ import {
   type NoteType,
 } from "../../../server/src/wire";
 import type { VocabState } from "../store/vocabulary-store";
+// The validator mirrors the apply path's deterministic constraints (the
+// zero-write gate): a note the stores would refuse at write time — the
+// 10,000-char cap — must fail validation instead of dying mid-apply with
+// the other assets already landed.
+import { NOTE_TEXT_LIMIT } from "../store/notes-store";
 
 export { BACKUP_APP, BACKUP_VERSION };
 export type { BackupPayload };
@@ -39,6 +44,16 @@ class BackupFormatError extends Error {}
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// Chapter/block keys ride the payload as strings and apply writes
+// Number(key) straight into the stores: a non-canonical spelling — "-1",
+// "1.5", "01" — would coerce to a negative, fractional, or aliased
+// chapter and land as corrupt data after earlier assets already wrote.
+// The canonical decimal spelling of a non-negative integer is the only
+// shape both hosts mint (String(integer) on every export path).
+function isCanonicalIndexKey(key: string): boolean {
+  return /^(?:0|[1-9]\d*)$/.test(key);
 }
 
 // The shape guards carry the failing ASSET's name — a corrupt file must
@@ -98,7 +113,11 @@ export function validateBackupPayload(value: unknown): BackupPayload {
     if (!NOTE_TYPES.includes(raw.type as NoteType)) {
       throw new BackupFormatError("备份已损坏：笔记段无效。");
     }
-    if (typeof raw.text !== "string" || !raw.text.trim()) {
+    if (
+      typeof raw.text !== "string" ||
+      !raw.text.trim() ||
+      raw.text.length > NOTE_TEXT_LIMIT
+    ) {
       throw new BackupFormatError("备份已损坏：笔记段无效。");
     }
   }
@@ -134,14 +153,19 @@ export function validateBackupPayload(value: unknown): BackupPayload {
   if (!isPlainObject(translations)) {
     throw new BackupFormatError("备份已损坏：译文段无效。");
   }
-  for (const chapters of Object.values(translations)) {
-    if (!isPlainObject(chapters))
+  // Keys get the same gate as values: the book title must be present,
+  // and every chapter/block key the canonical spelling of a non-negative
+  // integer (apply coerces them with Number(); a stray key would land as
+  // a corrupt chapter). Values-only checks let "-1"/"01"/"abc" through
+  // to the apply path.
+  for (const [title, chapters] of Object.entries(translations)) {
+    if (!title || !isPlainObject(chapters))
       throw new BackupFormatError("备份已损坏：译文段无效。");
-    for (const chapter of Object.values(chapters)) {
-      if (!isPlainObject(chapter))
+    for (const [chapterKey, chapter] of Object.entries(chapters)) {
+      if (!isCanonicalIndexKey(chapterKey) || !isPlainObject(chapter))
         throw new BackupFormatError("备份已损坏：译文段无效。");
-      for (const line of Object.values(chapter)) {
-        if (typeof line !== "string")
+      for (const [blockKey, line] of Object.entries(chapter)) {
+        if (!isCanonicalIndexKey(blockKey) || typeof line !== "string")
           throw new BackupFormatError("备份已损坏：译文段无效。");
       }
     }

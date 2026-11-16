@@ -10,7 +10,10 @@ import { createBackupManager } from "../src/backup/backup-manager";
 import { createMemoryBackupFileAdapter } from "../src/backup/backup-file";
 import { createMemoryBookmarkStore } from "../src/store/bookmark-store";
 import { createMemoryLibraryStore } from "../src/store/library-store";
-import { createMemoryNotesStore } from "../src/store/notes-store";
+import {
+  createMemoryNotesStore,
+  NOTE_TEXT_LIMIT,
+} from "../src/store/notes-store";
 import { createMemoryTranslationStore } from "../src/store/translation-store";
 import {
   createVocabularyStore,
@@ -88,6 +91,12 @@ describe("backup format validation", () => {
     badNote.assets.notes[0]!.text = "   ";
     expect(() => validateBackupPayload(badNote)).toThrow(/笔记段/);
 
+    // The apply path refuses a note past NOTE_TEXT_LIMIT mid-apply —
+    // validation must refuse it at the gate instead (zero-write rule).
+    const longNote = validPayload();
+    longNote.assets.notes[0]!.text = "字".repeat(NOTE_TEXT_LIMIT + 1);
+    expect(() => validateBackupPayload(longNote)).toThrow(/笔记段/);
+
     const badBookmark = validPayload();
     badBookmark.assets.bookmarks[0]!.chapter = -1;
     expect(() => validateBackupPayload(badBookmark)).toThrow(/书签段/);
@@ -97,6 +106,47 @@ describe("backup format validation", () => {
       "0": { "1": 3 },
     } as never;
     expect(() => validateBackupPayload(badTranslations)).toThrow(/译文段/);
+  });
+
+  it("accepts a note at the exact length cap — the validator draws the same line as the store", () => {
+    const atLimit = validPayload();
+    atLimit.assets.notes[0]!.text = "字".repeat(NOTE_TEXT_LIMIT);
+    expect(validateBackupPayload(atLimit)).toEqual(atLimit);
+  });
+
+  // Apply writes Number(key) straight into the stores: a non-canonical
+  // chapter key would land as a negative/fractional/aliased chapter.
+  it.each([
+    ["abc", "not numeric"],
+    ["-1", "negative"],
+    ["1.5", "fractional"],
+    ["01", "zero-padded alias"],
+    ["1e3", "exponent alias"],
+  ])("rejects a %s translation chapter key (%s)", (key) => {
+    const payload = validPayload();
+    payload.assets.translations = {
+      "Title A": { [key]: { "1": "译文一行" } },
+    } as never;
+    expect(() => validateBackupPayload(payload)).toThrow(/译文段/);
+  });
+
+  it.each([["abc"], ["-1"], ["01"]])(
+    "rejects a non-canonical translation block key: %j",
+    (key) => {
+      const payload = validPayload();
+      payload.assets.translations = {
+        "Title A": { "0": { [key]: "译文一行" } },
+      } as never;
+      expect(() => validateBackupPayload(payload)).toThrow(/译文段/);
+    }
+  );
+
+  it("rejects an empty translation book-title key", () => {
+    const payload = validPayload();
+    payload.assets.translations = {
+      "": { "0": { "1": "译文一行" } },
+    } as never;
+    expect(() => validateBackupPayload(payload)).toThrow(/译文段/);
   });
 });
 
@@ -321,5 +371,32 @@ describe("backup manager + file adapter", () => {
     await expect(manager.importBackup(notJson)).rejects.toThrow(
       /不是 LinguaLeaf 备份文件/
     );
+  });
+
+  it("import rejects an over-limit note at the gate: nothing lands (zero-write)", async () => {
+    // Seed the distinguishing state the payload would otherwise disturb:
+    // its own assets (note/progress/translation for Title A) must NOT land.
+    const stores = makeStores();
+    await stores.store.setStatus("hello", "known");
+    await stores.notes.save(
+      { docId: "doc:Title A", chapterIndex: 9, blockIndex: 9, type: "feeling" },
+      "原有笔记"
+    );
+    const manager = createBackupManager(
+      stores,
+      createMemoryBackupFileAdapter()
+    );
+    const overLimit = validPayload();
+    overLimit.assets.notes[0]!.text = "字".repeat(NOTE_TEXT_LIMIT + 1);
+    const file = new File([JSON.stringify(overLimit)], "backup.json", {
+      type: "application/json",
+    });
+    await expect(manager.importBackup(file)).rejects.toThrow(/笔记段/);
+    expect(await stores.store.exportAll()).toEqual({ hello: "known" });
+    const notes = await stores.notes.list("doc:Title A");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toMatchObject({ chapterIndex: 9, text: "原有笔记" });
+    expect(await stores.library.exportProgress()).toEqual({});
+    expect(await stores.translations.exportAll()).toEqual({});
   });
 });

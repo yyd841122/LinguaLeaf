@@ -159,4 +159,48 @@ describe("GET /api/export/backup", () => {
     });
     expect(response.body.books).toEqual([]);
   });
+
+  it("keeps a book literally titled constructor: own key, not the prototype's", async () => {
+    // "constructor" is a real English word — a legal book title. Nested
+    // on a bare `out[title] ??=` it hits the inherited Object member,
+    // the ??= skips the assignment, and the book's translations vanish
+    // from the backup. The export must carry it as an own key.
+    const ctorId = createImportingBook(db, "constructor", "markdown", null);
+    persistBook(db, ctorId, [
+      {
+        title: "One",
+        level: null,
+        blocks: [
+          {
+            kind: "sentence",
+            text: "Ctors build.",
+            ipaSlots: null,
+            ipaText: null,
+            translation: null,
+          },
+        ],
+      },
+    ]);
+    settleImport(db, ctorId, "ready", null);
+    const blocks = listSentenceBlocks(
+      db,
+      (
+        db.prepare("SELECT id FROM chapters WHERE book_id = ?").get(ctorId) as {
+          id: number;
+        }
+      ).id
+    );
+    saveSentenceTranslations(db, [
+      { id: blocks[0]!.id, translation: "构造函数" },
+    ]);
+
+    const response = await request(app).get("/api/export/backup").expect(200);
+    const translations = response.body.assets.translations;
+    expect(Object.hasOwn(translations, "constructor")).toBe(true);
+    expect(translations).toEqual({ constructor: { "0": { "0": "构造函数" } } });
+    expect(response.body.books).toEqual([
+      { title: "constructor" },
+      { title: "PC Book" },
+    ]);
+  });
 });
