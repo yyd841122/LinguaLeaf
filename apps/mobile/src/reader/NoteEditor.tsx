@@ -221,11 +221,16 @@ export function NoteEditor<T extends { type: NoteType; text: string }>({
     POPUP_MAX_HEIGHT_PX,
     (visualBox?.height ?? window.innerHeight) - 16
   );
+  // Clamped BOTH ways into the visible band: below the keyboard (the
+  // upper bound) and below the band's own top edge — a low anchor with
+  // a keyboard-pinched viewport (visualBox.top pushed down) must not
+  // leave the box above the visible band either (the review's probe:
+  // top 34 under a band starting at 108 stayed at 34).
   const top = visualBox
-    ? Math.min(
-        position.top,
-        Math.max(
-          visualBox.top + 8,
+    ? Math.max(
+        visualBox.top + 8,
+        Math.min(
+          position.top,
           visualBox.top + visualBox.height - maxBoxHeight - 8
         )
       )

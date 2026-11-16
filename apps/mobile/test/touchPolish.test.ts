@@ -25,13 +25,31 @@ const manifest = existsSync(manifestPath)
   ? readFileSync(manifestPath, "utf8")
   : "";
 
+// Comments stripped BEFORE any rule lookup: a bare indexOf can match a
+// selector named inside prose (the review's probe flipped the button
+// rule to `a` and the pin still passed on the word "buttons" in a
+// comment).
+const bare = (css: string): string => css.replace(/\/\*[\s\S]*?\*\//g, "");
+
 const ruleBody = (css: string, selector: string): string => {
-  const at = css.indexOf(selector);
+  const at = bare(css).indexOf(selector);
   expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
-  const open = css.indexOf("{", at);
-  const close = css.indexOf("}", open);
-  return css.slice(open + 1, close);
+  const open = bare(css).indexOf("{", at);
+  const close = bare(css).indexOf("}", open);
+  return bare(css).slice(open + 1, close);
 };
+
+describe("stylesheet integrity (ticket 06 review)", () => {
+  it("the shared kernel sheet imports FIRST — nothing precedes @import", () => {
+    const stripped = bare(readerCss);
+    const at = stripped.indexOf("@import");
+    expect(at).toBeGreaterThanOrEqual(0);
+    // No rule or :root before the import: postcss-import drops the WHOLE
+    // import otherwise (the review's P1 — the shared popup/IPA rules
+    // vanished from dist).
+    expect(stripped.slice(0, at).trim()).toBe("");
+  });
+});
 
 describe("touch floor (ticket 06, static)", () => {
   it("every control clears a 44px minimum height", () => {
@@ -48,6 +66,16 @@ describe("touch floor (ticket 06, static)", () => {
     );
     expect(hit).toContain('content: ""');
     expect(hit).toMatch(/inset:\s*-0\.3em -0\.25em/);
+    // The hit-area host rule must NOT unseat the canvas pen's absolute
+    // positioning (same-specificity later rule wins): the host selector
+    // excludes the canvas pen (the review's P1 — pens drifted off their
+    // lines).
+    expect(readerCss).toMatch(
+      /\.block-note-button:not\(\.pdf-note-button\)\s*\{\s*position: relative/
+    );
+    expect(ruleBody(readerCss, ".pdf-note-button")).toContain(
+      "position: absolute"
+    );
   });
 });
 
@@ -127,6 +155,27 @@ describe("dark follow (ticket 06, static)", () => {
     expect(dark).toMatch(
       /\.lookup-word:hover,\s*\.ipa-word:hover\s*\{[^}]*background: var\(--tint\)/
     );
+  });
+  it("the kernel sheet's every light surface is re-voiced (review P2)", () => {
+    const mediaAt = readerCss.indexOf("@media (prefers-color-scheme: dark)");
+    const dark = readerCss.slice(mediaAt);
+    // Accent lines, muted texts, hover tint, code/image blocks — one
+    // dropped selector leaves a light patch glowing in the dark face.
+    for (const selector of [
+      ".ipa-line",
+      ".lookup-ipa",
+      ".lookup-pos",
+      ".lookup-head-actions button:hover",
+      ".code-block",
+      ".raw-block",
+      ".image-placeholder",
+    ]) {
+      const at = dark.indexOf(selector);
+      expect(at, `${selector} not re-voiced`).toBeGreaterThanOrEqual(0);
+      const open = dark.indexOf("{", at);
+      const body = dark.slice(open, dark.indexOf("}", open));
+      expect(body, `${selector} not re-voiced`).toContain("var(--");
+    }
   });
 });
 

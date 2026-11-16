@@ -46,7 +46,11 @@ public class MainActivity extends BridgeActivity {
     }
     // AUTO follows the system night mode (ON would force dark in
     // daylight); WEB_THEME_DARKENING_ONLY keeps the renderer's hands
-    // off the page, which paints its own dark palette.
+    // off the page, which paints its own dark palette. Causality is
+    // device-scoped: setForceDark is DEPRECATED at API 33, and on 33+
+    // the media query follows the app's isLightTheme with the
+    // algorithmic flag as the opt-in — the OPPO/API-30 evidence below
+    // proves this path only.
     invoke(settings, "setForceDark", constant(settings, "FORCE_DARK_AUTO", 1));
     invoke(
       settings,

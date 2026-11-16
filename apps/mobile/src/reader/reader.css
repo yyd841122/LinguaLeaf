@@ -1,3 +1,8 @@
+/* The annotation styles are the shared annotated stylesheet — the same
+   sheet the web reader and the export render from (ipa-word pairing,
+   popup, blocks). Only the extension's shell lives here. */
+@import "@lingualeaf/reading-model/annotated-shared.css";
+
 /* The reading face's palette tokens (ticket 06's dark-follow
    line): one value per role, the dark block below overrides them per
    prefers-color-scheme. canvas/gray system colors follow color-scheme
@@ -21,10 +26,6 @@
   --ok: #3e7547;
   --ok-2: #2e7d4f;
 }
-/* The annotation styles are the shared annotated stylesheet — the same
-   sheet the web reader and the export render from (ipa-word pairing,
-   popup, blocks). Only the extension's shell lives here. */
-@import "@lingualeaf/reading-model/annotated-shared.css";
 :root {
   color-scheme: light dark;
   --reader-max: 44rem;
@@ -854,12 +855,27 @@ body {
     background: var(--tint);
   }
   .lookup-lemma,
+  .lookup-ipa,
+  .lookup-pos,
   .lookup-status,
-  .lookup-vocab-label {
+  .lookup-vocab-label,
+  .raw-block,
+  .image-block figcaption {
     color: var(--muted);
   }
-  .ipa-word-ipa {
+  .ipa-word-ipa,
+  .ipa-line {
     color: var(--accent);
+  }
+  .lookup-head-actions button:hover {
+    background: var(--tint);
+  }
+  .code-block,
+  .image-placeholder {
+    background: var(--tint);
+  }
+  .image-placeholder {
+    border-color: var(--edge);
   }
 }
 
@@ -871,7 +887,7 @@ body {
    stealing a neighbour's whole glyph. */
 .lookup-word,
 .ipa-word,
-.block-note-button {
+.block-note-button:not(.pdf-note-button) {
   position: relative;
 }
 .lookup-word::after,

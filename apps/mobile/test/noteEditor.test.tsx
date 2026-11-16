@@ -165,13 +165,17 @@ it("keeps tab keyboard focus, one visible field and viewport height limits at a 
 // rect pinned near the layout bottom), so an unclamped box would sit
 // far below the visual viewport's keyboard-shrunk bottom.
 it("lifts the editor inside the visual viewport when the keyboard overlays", async () => {
-  const listeners = new Set<() => void>();
+  const listeners = new Map<string, Set<() => void>>();
+  const kinds = () => [...listeners.keys()].sort();
   const viewport = {
     offsetTop: 0,
     height: 350, // the keyboard left 350 of the 800px layout visible
-    addEventListener: (_kind: string, fn: () => void) => listeners.add(fn),
-    removeEventListener: (_kind: string, fn: () => void) =>
-      listeners.delete(fn),
+    addEventListener: (kind: string, fn: () => void) => {
+      listeners.set(kind, (listeners.get(kind) ?? new Set()).add(fn));
+    },
+    removeEventListener: (kind: string, fn: () => void) => {
+      listeners.get(kind)?.delete(fn);
+    },
   };
   vi.stubGlobal("visualViewport", viewport as unknown as VisualViewport);
   const button = document.createElement("button");
@@ -211,12 +215,64 @@ it("lifts the editor inside the visual viewport when the keyboard overlays", asy
 
   // The keyboard closes: the listener-driven re-read frees the belt and
   // the box returns toward the (still-low) anchor.
+  // Both listener kinds are wired (the belt must track pan too, not
+  // just resize).
+  expect(kinds()).toEqual(["resize", "scroll"]);
+  viewport.offsetTop = 0;
   viewport.height = 800;
   act(() => {
-    for (const fn of listeners) fn();
+    for (const fns of listeners.values()) for (const fn of fns) fn();
   });
   const freed = await screen.findByRole("dialog", { name: "笔记" });
   expect(parseFloat(freed.style.top)).toBeGreaterThan(300);
+  view.unmount();
+  button.remove();
+});
+
+// The clamp's LOWER bound (the review's probe): a keyboard-pinched
+// visual viewport pushed DOWN (offsetTop 100) with a high anchor — the
+// box must not sit above the visible band's top edge.
+it("lifts the editor below the visual viewport's pushed-down top", async () => {
+  const listeners = new Set<() => void>();
+  const viewport = {
+    offsetTop: 100,
+    height: 350,
+    addEventListener: (_kind: string, fn: () => void) => listeners.add(fn),
+    removeEventListener: (_kind: string, fn: () => void) =>
+      listeners.delete(fn),
+  };
+  vi.stubGlobal("visualViewport", viewport as unknown as VisualViewport);
+  const button = document.createElement("button");
+  button.getBoundingClientRect = () =>
+    ({
+      top: 10,
+      bottom: 34,
+      left: 40,
+      right: 120,
+      width: 80,
+      height: 24,
+      x: 40,
+      y: 10,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  document.body.append(button);
+  const view = render(
+    <NoteEditor
+      ref={createRef()}
+      ownerKey="vv-low"
+      ariaLabel="笔记"
+      initial={[]}
+      button={button}
+      store={{ save: vi.fn(), delete: vi.fn() }}
+      onCommitted={vi.fn()}
+      onClose={vi.fn()}
+    />
+  );
+  const box = screen.getByRole("dialog", { name: "笔记" });
+  // Unclamped anchor math lands at ~48; the band starts at 100.
+  const top = parseFloat(box.style.top);
+  expect(top).toBeGreaterThanOrEqual(100 + 8 - 1);
+  expect(top).toBeLessThanOrEqual(100 + 8 + 1);
   view.unmount();
   button.remove();
 });
