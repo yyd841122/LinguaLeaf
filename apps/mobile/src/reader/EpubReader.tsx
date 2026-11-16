@@ -791,67 +791,69 @@ export function EpubReader({
       <header className="reader-head">
         <h1 className="reader-title">{book.title}</h1>
         {toolbarPosition === "top" ? toolsRow : null}
-      </header>
-      {/* 听书控制条 (ticket 07): play/pause from the current chapter's
+        {/* 听书控制条 (ticket 07): play/pause from the current chapter's
           first sentence, sentence stepping, and the rate ladder. The
           bar rides the face — its buttons inherit the 44px touch floor
           and the palette tokens (ticket 06). */}
-      <div className="readaloud-bar" role="group" aria-label="听书">
-        <button
-          type="button"
-          className="reader-toggle"
-          onClick={() => {
-            setReadAloudError(null);
-            if (readAloud.phase === "playing") {
-              player.pause();
-              return;
-            }
-            const from =
-              readAloud.at ??
-              readAloudSentences.findIndex(
-                (sentence) => sentence.chapterIndex === chapterIndex
+        <div className="readaloud-bar" role="group" aria-label="听书">
+          <button
+            type="button"
+            className="reader-toggle"
+            onClick={() => {
+              setReadAloudError(null);
+              if (readAloud.phase === "playing") {
+                player.pause();
+                return;
+              }
+              const from =
+                readAloud.at ??
+                readAloudSentences.findIndex(
+                  (sentence) => sentence.chapterIndex === chapterIndex
+                );
+              if (from >= 0) player.play(from);
+            }}
+          >
+            {readAloud.phase === "playing" ? "暂停朗读" : "听书"}
+          </button>
+          <button
+            type="button"
+            className="reader-toggle"
+            disabled={readAloud.at === null}
+            onClick={() => player.step(-1)}
+          >
+            上一句
+          </button>
+          <button
+            type="button"
+            className="reader-toggle"
+            disabled={readAloud.at === null}
+            onClick={() => player.step(1)}
+          >
+            下一句
+          </button>
+          <button
+            type="button"
+            className="reader-toggle"
+            onClick={() => {
+              const at = READALOUD_RATES.indexOf(
+                readAloud.rate as (typeof READALOUD_RATES)[number]
               );
-            if (from >= 0) player.play(from);
-          }}
-        >
-          {readAloud.phase === "playing" ? "暂停朗读" : "听书"}
-        </button>
-        <button
-          type="button"
-          className="reader-toggle"
-          disabled={readAloud.at === null}
-          onClick={() => player.step(-1)}
-        >
-          上一句
-        </button>
-        <button
-          type="button"
-          className="reader-toggle"
-          disabled={readAloud.at === null}
-          onClick={() => player.step(1)}
-        >
-          下一句
-        </button>
-        <button
-          type="button"
-          className="reader-toggle"
-          onClick={() => {
-            const at = READALOUD_RATES.indexOf(
-              readAloud.rate as (typeof READALOUD_RATES)[number]
-            );
-            player.setRate(READALOUD_RATES[(at + 1) % READALOUD_RATES.length]!);
-          }}
-        >
-          语速 {readAloud.rate}×
-        </button>
-        {readAloudError ? (
-          <p className="reader-error" role="alert">
-            {readAloudError === "engine-missing"
-              ? "听书不可用：设备缺少可用的英语语音引擎。"
-              : "朗读失败，请重试。"}
-          </p>
-        ) : null}
-      </div>
+              player.setRate(
+                READALOUD_RATES[(at + 1) % READALOUD_RATES.length]!
+              );
+            }}
+          >
+            语速 {readAloud.rate}×
+          </button>
+          {readAloudError ? (
+            <p className="reader-error" role="alert">
+              {readAloudError === "engine-missing"
+                ? "听书不可用：设备缺少可用的英语语音引擎。"
+                : "朗读失败，请重试。"}
+            </p>
+          ) : null}
+        </div>
+      </header>
       {settingsLoadFailed ? (
         <p className="reader-error" role="alert">
           设置读取失败，翻译按钮暂不可用。
