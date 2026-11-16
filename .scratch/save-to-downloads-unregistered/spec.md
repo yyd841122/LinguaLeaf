@@ -22,10 +22,6 @@
 ## Comments
 
 - 2026-11-16 立票。
-
-## Comments
-
-- 2026-11-16 立票。
 - 2026-11-16 修讫(TDD,先红后绿):MainActivity onCreate 注册
   `registerPlugin(SaveToDownloadsPlugin.class)`;新注册声明门
   apps/mobile/test/native-plugin-registration.test.ts 双向钉住(JS 注册名

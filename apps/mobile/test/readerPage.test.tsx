@@ -1826,10 +1826,15 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await pickFile(await tideMdFile("The quiet sea runs."));
-    // The 导入中 status lights the importing phase — the phase that guards
-    // reopenDocument — so the click waits for it to leave (lit → gone),
-    // landing on the settled empty phase the decline produces.
-    expect(await screen.findByRole("status")).toBeInTheDocument();
+    // The settled decline signal is the confirm itself: it fires after
+    // the import lands, and phase-empty commits right after it returns.
+    // (Asserting the transient 导入中 element raced it under suite load —
+    // the status window can close before the first poll. The final
+    // confirm-count keeps this honest: no decline, no reopen, no pass.)
+    await waitFor(() => expect(confirm).toHaveBeenCalledTimes(1));
+    // Phase-empty commits right after the decline; waiting for the
+    // importing status to leave keeps the reopen click out of the
+    // importing sliver that guards reopenDocument.
     await waitFor(() =>
       expect(screen.queryByRole("status")).not.toBeInTheDocument()
     );
