@@ -1,3 +1,26 @@
+/* The reading face's palette tokens (ticket 06's dark-follow
+   line): one value per role, the dark block below overrides them per
+   prefers-color-scheme. canvas/gray system colors follow color-scheme
+   on their own and stay literal. */
+:root {
+  --accent: #6a4fa3;
+  --accent-fill: #6a4fa3;
+  --card: #ffffff;
+  --edge: #ccd4c9;
+  --danger: #b3261e;
+  --muted: #5c6f64;
+  --tint: #ecefe6;
+  --card-edge: #dde3d8;
+  --ink: #22342a;
+  --paper: #fffef9;
+  --paper-ink: #243627;
+  --ok-tint: #e8f1e5;
+  --ok-tint-soft: #e7f2df;
+  --note-pen: #8b958b;
+  --ok-strong: #56833b;
+  --ok: #3e7547;
+  --ok-2: #2e7d4f;
+}
 /* The annotation styles are the shared annotated stylesheet — the same
    sheet the web reader and the export render from (ipa-word pairing,
    popup, blocks). Only the extension's shell lives here. */
@@ -17,7 +40,10 @@ body {
 .reader {
   max-width: var(--reader-max);
   margin: 0 auto;
-  padding: 1.5rem 1rem 4rem;
+  /* Ticket 06: the insets pad past notch/gesture bar wherever they
+     exist; max() keeps the base rhythm where they read zero. */
+  padding: max(1.5rem, env(safe-area-inset-top)) 1rem
+    max(4rem, env(safe-area-inset-bottom));
 }
 .reader-entry {
   display: flex;
@@ -45,7 +71,7 @@ body {
   font-size: 0.9rem;
 }
 .reader-error {
-  color: #b3261e;
+  color: var(--danger);
 }
 /* Sticky (ticket 10 人验 round 2): the tools row must stay reachable
    mid-chapter — the plant captures the topmost visible block, which is
@@ -71,7 +97,7 @@ body {
 }
 .reader-toggle[aria-pressed="true"] {
   font-weight: bold;
-  color: #6a4fa3;
+  color: var(--accent);
 }
 /* The 生词本 state row: the web reader's local vocabulary styles,
    hand-mirrored here (the shared annotated sheet carries the popup box
@@ -82,28 +108,28 @@ body {
   gap: 0.25rem;
   margin-top: 0.45rem;
   padding-top: 0.45rem;
-  border-top: 1px solid #ecefe6;
+  border-top: 1px solid var(--tint);
 }
 .lookup-vocab-label {
-  color: #5c6f64;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 .lookup-vocab-option {
-  border: 1px solid #dde3d8;
+  border: 1px solid var(--card-edge);
   background: none;
   border-radius: 999px;
   padding: 0 0.5rem;
   font-size: 0.8rem;
   line-height: 1.4;
   cursor: pointer;
-  color: #22342a;
+  color: var(--ink);
 }
 .lookup-vocab-option:hover {
-  background: #ecefe6;
+  background: var(--tint);
 }
 .lookup-vocab-option[aria-pressed="true"] {
-  background: #ecefe6;
-  border-color: #5c6f64;
+  background: var(--tint);
+  border-color: var(--muted);
 }
 .reader-recents ol {
   list-style: none;
@@ -122,7 +148,7 @@ body {
 .reader-recent {
   background: none;
   border: none;
-  color: #6a4fa3;
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
   padding: 0;
@@ -189,7 +215,7 @@ body {
 }
 .pdf-ipa {
   position: absolute;
-  color: #6a4fa3;
+  color: var(--accent);
   font-size: 0.62em;
   line-height: 1;
   white-space: nowrap;
@@ -218,7 +244,7 @@ body {
 .reader-toc button {
   background: none;
   border: none;
-  color: #6a4fa3;
+  color: var(--accent);
   cursor: pointer;
   font: inherit;
   padding: 0;
@@ -245,17 +271,17 @@ body {
   padding: 0.1rem 0.3rem;
   border: 0;
   background: transparent;
-  color: #8b958b;
+  color: var(--note-pen);
   cursor: pointer;
   font-size: 1rem;
   vertical-align: baseline;
 }
 .block-note-button.has-note {
-  color: #3e7547;
-  background: #e8f1e5;
+  color: var(--ok);
+  background: var(--ok-tint);
 }
 .block-note-button:focus-visible {
-  outline: 2px solid #6a4fa3;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 .note-popup {
@@ -265,11 +291,11 @@ body {
   max-width: calc(100vw - 16px);
   overflow: auto;
   padding: 0.7rem;
-  border: 1px solid #c9d6c5;
+  border: 1px solid var(--card-edge);
   border-radius: 8px;
   box-shadow: 0 5px 22px #0003;
-  background: #fffef9;
-  color: #243627;
+  background: var(--paper);
+  color: var(--paper-ink);
 }
 .note-popup .note-tabs {
   display: flex;
@@ -282,11 +308,11 @@ body {
   padding: 0.25rem;
 }
 .note-popup [role="tab"][aria-selected="true"] {
-  background: #e7f2df;
+  background: var(--ok-tint-soft);
   font-weight: bold;
 }
 .note-popup [role="tab"]:focus-visible {
-  outline: 2px solid #56833b;
+  outline: 2px solid var(--ok-strong);
   outline-offset: 1px;
 }
 .note-popup textarea {
@@ -295,8 +321,8 @@ body {
   min-height: 5rem;
   resize: vertical;
   font: inherit;
-  color: #243627;
-  background: #fffef9;
+  color: var(--paper-ink);
+  background: var(--paper);
 }
 .note-limit {
   font-size: 0.75rem;
@@ -308,7 +334,7 @@ body {
   flex-wrap: wrap;
 }
 .note-popup [role="alert"] {
-  color: #b3261e;
+  color: var(--danger);
   font-size: 0.85rem;
 }
 
@@ -334,15 +360,15 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 0.6rem;
-  background: #ffffff;
-  border: 1px solid #dde3d8;
+  background: var(--card);
+  border: 1px solid var(--card-edge);
   border-radius: 0.5rem;
   padding: 0.6rem 0.9rem;
   box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
 }
 .speak-flag-copy {
   flex: 1;
-  color: #b3261e;
+  color: var(--danger);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -358,7 +384,7 @@ body {
 /* The 按需翻译 trigger (ticket 04): the percent rides the label while a
    chapter translates; a locked trigger reads gray. */
 .reader-translate {
-  color: #6a4fa3;
+  color: var(--accent);
 }
 .reader-translate:disabled {
   color: gray;
@@ -375,15 +401,15 @@ body {
   display: flex;
   align-items: flex-start;
   gap: 0.6rem;
-  background: #ffffff;
-  border: 1px solid #dde3d8;
+  background: var(--card);
+  border: 1px solid var(--card-edge);
   border-radius: 0.5rem;
   padding: 0.6rem 0.9rem;
   box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
 }
 .translate-flag-copy {
   flex: 1;
-  color: #b3261e;
+  color: var(--danger);
   font-size: 0.9rem;
   line-height: 1.5;
 }
@@ -414,9 +440,11 @@ body {
   padding: 1rem;
 }
 .overlay-card {
-  background: #ffffff;
+  background: var(--card);
   border-radius: 0.5rem;
   padding: 1.25rem;
+  /* Ticket 06: the card's actions stay clear of the gesture bar. */
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
   width: min(30rem, 100%);
   max-height: 90vh;
   overflow: auto;
@@ -435,11 +463,11 @@ body {
 }
 .settings-label {
   font-size: 0.9rem;
-  color: #5c6f64;
+  color: var(--muted);
 }
 .settings-field input {
   padding: 0.45rem 0.6rem;
-  border: 1px solid #ccd4c9;
+  border: 1px solid var(--edge);
   border-radius: 0.375rem;
   font-size: 1rem;
 }
@@ -448,12 +476,12 @@ body {
   font-size: 0.8rem;
 }
 .settings-error {
-  color: #b3261e;
+  color: var(--danger);
   font-size: 0.9rem;
   margin: 0;
 }
 .settings-saved {
-  color: #2e7d4f;
+  color: var(--ok-2);
   font-size: 0.9rem;
   margin: 0;
 }
@@ -465,13 +493,13 @@ body {
 .overlay-actions button {
   padding: 0.45rem 1rem;
   border-radius: 0.375rem;
-  border: 1px solid #ccd4c9;
-  background: #ffffff;
+  border: 1px solid var(--edge);
+  background: var(--card);
   cursor: pointer;
   font-size: 1rem;
 }
 .settings-save {
-  color: #6a4fa3;
+  color: var(--accent);
   font-weight: bold;
 }
 
@@ -492,7 +520,7 @@ body {
   width: min(26rem, 100%);
 }
 .bookmark-plant {
-  color: #6a4fa3;
+  color: var(--accent);
   font-weight: bold;
 }
 .bookmark-list {
@@ -516,9 +544,9 @@ body {
   align-items: baseline;
   gap: 0.5rem;
   padding: 0.45rem 0.6rem;
-  border: 1px solid #ccd4c9;
+  border: 1px solid var(--edge);
   border-radius: 0.375rem;
-  background: #ffffff;
+  background: var(--card);
   cursor: pointer;
   font-size: 1rem;
 }
@@ -529,18 +557,18 @@ body {
   white-space: nowrap;
 }
 .bookmark-at {
-  color: #5c6f64;
+  color: var(--muted);
   font-size: 0.8rem;
   white-space: nowrap;
 }
 .bookmark-delete {
   padding: 0.45rem 0.6rem;
-  border: 1px solid #ccd4c9;
+  border: 1px solid var(--edge);
   border-radius: 0.375rem;
-  background: #ffffff;
+  background: var(--card);
   cursor: pointer;
   font-size: 0.9rem;
-  color: #b3261e;
+  color: var(--danger);
 }
 
 /* The in-text bookmark marker (ticket 10 人验 round 6): a small bookmark
@@ -562,7 +590,7 @@ body {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #6a4fa3;
+  background: var(--accent-fill);
   pointer-events: none;
 }
 .block-marked::after {
@@ -572,7 +600,7 @@ body {
   bottom: -1.1rem;
   width: 0.7rem;
   height: 1.1rem;
-  background: #6a4fa3;
+  background: var(--accent-fill);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
   pointer-events: none;
 }
@@ -597,7 +625,7 @@ body {
   top: 0;
   bottom: 0;
   width: 3px;
-  background: #6a4fa3;
+  background: var(--accent-fill);
 }
 .pdf-bookmark-mark::after {
   content: "";
@@ -606,7 +634,7 @@ body {
   top: -0.12rem;
   width: 0.7rem;
   height: 1.1rem;
-  background: #6a4fa3;
+  background: var(--accent-fill);
   clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 74%, 0 100%);
 }
 
@@ -632,11 +660,11 @@ body {
 .backup-export {
   padding: 0.45rem 1rem;
   border-radius: 0.375rem;
-  border: 1px solid #ccd4c9;
-  background: #ffffff;
+  border: 1px solid var(--edge);
+  background: var(--card);
   cursor: pointer;
   font-size: 1rem;
-  color: #6a4fa3;
+  color: var(--accent);
   font-weight: bold;
 }
 .backup-export:disabled {
@@ -645,11 +673,11 @@ body {
 .backup-share {
   padding: 0.45rem 1rem;
   border-radius: 0.375rem;
-  border: 1px solid #ccd4c9;
-  background: #ffffff;
+  border: 1px solid var(--edge);
+  background: var(--card);
   cursor: pointer;
   font-size: 1rem;
-  color: #22342a;
+  color: var(--ink);
 }
 .backup-share:disabled {
   color: gray;
@@ -657,11 +685,11 @@ body {
 .backup-import {
   padding: 0.45rem 1rem;
   border-radius: 0.375rem;
-  border: 1px solid #ccd4c9;
-  background: #ffffff;
+  border: 1px solid var(--edge);
+  background: var(--card);
   cursor: pointer;
   font-size: 1rem;
-  color: #22342a;
+  color: var(--ink);
   display: inline-flex;
   align-items: center;
 }
@@ -723,7 +751,8 @@ body {
   display: flex;
   flex-direction: column;
   height: var(--shell-h, 100vh);
-  padding-bottom: 1rem;
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
 .reader-shell .reader-head {
@@ -747,9 +776,6 @@ body {
 }
 .reader-shell .reader-tools {
   justify-content: space-between;
-}
-.reader-shell {
-  padding-top: 0.5rem;
 }
 .reader-shell .pdf-reflow {
   flex: 1;
@@ -790,3 +816,81 @@ body {
   border-top: 1px solid gray;
   padding: 0.5rem 1rem;
 }
+
+/* Dark follows the system (ticket 06): the same roles, re-voiced for a
+   dark ground — the app-side override ALSO covers the kernel-shared
+   annotated selectors this host renders (popup card, hover tints,
+   muted lines), so the kernel sheet itself stays untouched for the
+   other hosts. The PDF canvas face keeps its paper white: a page is a
+   page; the shell around it goes dark. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #b399e0;
+    --accent-fill: #7a5cb8;
+    --card: #1d2620;
+    --edge: #46534a;
+    --danger: #f2b8b5;
+    --muted: #9db0a3;
+    --tint: #26312a;
+    --card-edge: #3a463d;
+    --ink: #dbe4dd;
+    --paper: #18201b;
+    --paper-ink: #e6ede7;
+    --ok-tint: #243828;
+    --ok-tint-soft: #223527;
+    --note-pen: #8f9c91;
+    --ok-strong: #8fca9f;
+    --ok: #7fc08f;
+    --ok-2: #6fbd85;
+  }
+  /* Kernel-shared surfaces rendered here (annotated-shared.css pins
+     them light; this host re-voices them through the same tokens). */
+  .lookup-popup {
+    background: var(--card);
+    border-color: var(--card-edge);
+  }
+  .lookup-word:hover,
+  .ipa-word:hover {
+    background: var(--tint);
+  }
+  .lookup-lemma,
+  .lookup-status,
+  .lookup-vocab-label {
+    color: var(--muted);
+  }
+  .ipa-word-ipa {
+    color: var(--accent);
+  }
+}
+
+/* ── Ticket 06: touch, safe areas ─────────────────────────────────── */
+
+/* The in-text targets keep their visual size (their lines must not
+   reflow) and grow a tappable box instead: a modest vertical bleed and
+   a small horizontal one that covers the word-space boundary without
+   stealing a neighbour's whole glyph. */
+.lookup-word,
+.ipa-word,
+.block-note-button {
+  position: relative;
+}
+.lookup-word::after,
+.ipa-word::after,
+.block-note-button::after {
+  content: "";
+  position: absolute;
+  inset: -0.3em -0.25em;
+}
+/* The floor's in-flow exemptions: the inline pens live INSIDE text
+   (EPUB/reflow) and on the canvas overlay (line-geometry sized); both
+   ride the hit-area expansion above instead. */
+.block-note-button,
+.pdf-note-button {
+  min-height: 0;
+}
+
+/* Safe areas (ticket 06): viewport-fit=cover is already on, so the
+   insets arrive here; max() keeps the base rhythm wherever they read
+   zero (no notch, no gesture bar, older WebViews). */
+/* The centered overlays sit inside the veil; the card's own bottom
+   padding keeps its actions clear of the gesture bar. */

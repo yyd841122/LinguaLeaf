@@ -793,7 +793,7 @@ describe("block-marked visual declarations (evidence gap ⑥, static)", () => {
     // ribbon below) simply never renders, colors and all.
     expect(strip).toContain('content: ""');
     expect(strip).toContain("width: 3px");
-    expect(strip).toContain("#6a4fa3");
+    expect(strip).toContain("var(--accent-fill)");
     expect(strip).toContain("left: -0.55rem");
   });
 
@@ -801,7 +801,7 @@ describe("block-marked visual declarations (evidence gap ⑥, static)", () => {
     const ribbon = ruleBody(".block-marked::after");
     expect(ribbon).toContain('content: ""');
     expect(ribbon).toContain("clip-path");
-    expect(ribbon).toContain("#6a4fa3");
+    expect(ribbon).toContain("var(--accent-fill)");
     expect(ribbon).toContain("bottom: -1.1rem");
   });
 });

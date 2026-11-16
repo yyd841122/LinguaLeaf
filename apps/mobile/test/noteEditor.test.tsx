@@ -3,6 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import { createRef } from "react";
 import type { NoteType } from "../../server/src/wire";
 import { NoteEditor, type NoteEditorHandle } from "../src/reader/NoteEditor";
+import { POPUP_MAX_HEIGHT_PX } from "@lingualeaf/reading-model";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -156,4 +157,66 @@ it("keeps tab keyboard focus, one visible field and viewport height limits at a 
   fireEvent.keyDown(question, { key: "Home" });
   expect(progress).toHaveFocus();
   ctx.button.remove();
+});
+
+// The keyboard belt (ticket 06): an IME that overlays without resizing
+// leaves the fixed box under it — the visual viewport's own bounds lift
+// the box into what stays visible. The anchor button rides LOW (its
+// rect pinned near the layout bottom), so an unclamped box would sit
+// far below the visual viewport's keyboard-shrunk bottom.
+it("lifts the editor inside the visual viewport when the keyboard overlays", async () => {
+  const listeners = new Set<() => void>();
+  const viewport = {
+    offsetTop: 0,
+    height: 350, // the keyboard left 350 of the 800px layout visible
+    addEventListener: (_kind: string, fn: () => void) => listeners.add(fn),
+    removeEventListener: (_kind: string, fn: () => void) =>
+      listeners.delete(fn),
+  };
+  vi.stubGlobal("visualViewport", viewport as unknown as VisualViewport);
+  const button = document.createElement("button");
+  button.getBoundingClientRect = () =>
+    ({
+      top: 680,
+      bottom: 700,
+      left: 40,
+      right: 120,
+      width: 80,
+      height: 20,
+      x: 40,
+      y: 680,
+      toJSON: () => ({}),
+    }) as DOMRect;
+  document.body.append(button);
+  const view = render(
+    <NoteEditor
+      ref={createRef()}
+      ownerKey="vv"
+      ariaLabel="笔记"
+      initial={[]}
+      button={button}
+      store={{ save: vi.fn(), delete: vi.fn() }}
+      onCommitted={vi.fn()}
+      onClose={vi.fn()}
+    />
+  );
+  const box = screen.getByRole("dialog", { name: "笔记" });
+  // Unclamped, the anchor puts the box at ~714px — deep under the IME.
+  // The belt caps it inside the 350px visual viewport.
+  const top = parseFloat(box.style.top);
+  const maxHeight = parseFloat(box.style.maxHeight);
+  expect(maxHeight).toBe(POPUP_MAX_HEIGHT_PX);
+  expect(top).toBeLessThanOrEqual(350 - maxHeight - 8 + 1);
+  expect(top).toBeLessThan(300);
+
+  // The keyboard closes: the listener-driven re-read frees the belt and
+  // the box returns toward the (still-low) anchor.
+  viewport.height = 800;
+  act(() => {
+    for (const fn of listeners) fn();
+  });
+  const freed = await screen.findByRole("dialog", { name: "笔记" });
+  expect(parseFloat(freed.style.top)).toBeGreaterThan(300);
+  view.unmount();
+  button.remove();
 });

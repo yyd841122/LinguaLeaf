@@ -190,10 +190,46 @@ export function NoteEditor<T extends { type: NoteType; text: string }>({
       patch(type, { busy: false });
     }
   };
+  // The keyboard belt (ticket 06): adjustResize shrinks the layout and
+  // the resize listener above repositions — but an IME that overlays
+  // without resizing (visual-viewport-only keyboards) leaves the box
+  // under it. Track the visual viewport and lift the box into what
+  // stays visible; environments without one (jsdom) simply skip the
+  // belt and keep the resize path.
+  const [visualBox, setVisualBox] = useState<{
+    top: number;
+    height: number;
+  } | null>(null);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const read = () =>
+      setVisualBox({ top: viewport.offsetTop, height: viewport.height });
+    read();
+    viewport.addEventListener("resize", read);
+    viewport.addEventListener("scroll", read);
+    return () => {
+      viewport.removeEventListener("resize", read);
+      viewport.removeEventListener("scroll", read);
+    };
+  }, []);
   const position = anchorPopup(point, {
     width: window.innerWidth,
     height: window.innerHeight,
   });
+  const maxBoxHeight = Math.min(
+    POPUP_MAX_HEIGHT_PX,
+    (visualBox?.height ?? window.innerHeight) - 16
+  );
+  const top = visualBox
+    ? Math.min(
+        position.top,
+        Math.max(
+          visualBox.top + 8,
+          visualBox.top + visualBox.height - maxBoxHeight - 8
+        )
+      )
+    : position.top;
   return (
     <div
       className="note-popup"
@@ -202,8 +238,9 @@ export function NoteEditor<T extends { type: NoteType; text: string }>({
       ref={box}
       style={{
         ...position,
+        top,
         width: POPUP_WIDTH_PX,
-        maxHeight: Math.min(POPUP_MAX_HEIGHT_PX, window.innerHeight - 16),
+        maxHeight: maxBoxHeight,
       }}
     >
       <div className="note-tabs" role="tablist" aria-label="笔记类型">

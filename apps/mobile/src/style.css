@@ -15,3 +15,17 @@ body {
     "Noto Sans SC",
     sans-serif;
 }
+
+/* Touch floor (ticket 06): every control clears a 44px minimum height —
+   UA-default stubs were ~21px. Width rides the text plus its padding:
+   the reader's tools row carries nine-plus buttons that cannot each
+   take 44px of width on a 360px face. The in-text targets (word spans,
+   note pens) are exempt from the floor — their lines must not reflow —
+   and grow a hit AREA instead (reader.css). */
+button {
+  min-height: 44px;
+}
+input,
+select {
+  min-height: 44px;
+}
