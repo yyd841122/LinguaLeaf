@@ -271,6 +271,10 @@ export function EpubReader({
   const readAloudPlaying = readAloud.phase === "playing";
   const readAloudPlayingRef = useRef(readAloudPlaying);
   readAloudPlayingRef.current = readAloudPlaying;
+  // The cursor (non-null while 听书 ever started) gates manual chapter
+  // navigation's progress write — see goChapter.
+  const readAloudCursorRef = useRef<number | null>(readAloud.at);
+  readAloudCursorRef.current = readAloud.at;
   const readAloudSentence =
     readAloud.at !== null ? (readAloudSentences[readAloud.at] ?? null) : null;
 
@@ -524,12 +528,16 @@ export function EpubReader({
   // progress write), and the live sentence scrolls into view so the
   // highlight stays findable without the reader's hands.
   useEffect(() => {
-    if (readAloud.phase !== "playing" || !readAloudSentence) return;
+    if (!readAloudSentence || readAloud.phase === "idle") return;
     if (readAloudSentence.chapterIndex !== chapterIndex) {
+      // Chapter follow runs for paused steps too (a step back across
+      // the boundary must still present its target sentence); silent —
+      // the walk owns the progress write.
       onChapter(readAloudSentence.chapterIndex);
       window.scrollTo(0, 0);
       return;
     }
+    if (readAloud.phase !== "playing") return;
     const raf = requestAnimationFrame(() => {
       document
         .querySelector<HTMLElement>(
@@ -614,7 +622,13 @@ export function EpubReader({
       onChapter(index);
       // The chapter switch is itself a position fact — written straight
       // to the seam (scroll writes cover the within-chapter drift).
-      void library.setProgress(docId, { chapterIndex: index, blockIndex: 0 });
+      // EXCEPT while 听书 holds the cursor: the walk owns the position
+      // then, and a {chapter, 0} write here would strand the saved
+      // progress at a chapter top the reader never reached (the walk's
+      // own per-sentence write is the truth).
+      if (readAloudCursorRef.current === null) {
+        void library.setProgress(docId, { chapterIndex: index, blockIndex: 0 });
+      }
       // The seam says block 0; the viewport must agree. Window scroll
       // persists across the chapter swap (the EPUB face scrolls the
       // window), so without this reset the reader lands mid-chapter at
@@ -813,7 +827,7 @@ export function EpubReader({
               if (from >= 0) player.play(from);
             }}
           >
-            {readAloud.phase === "playing" ? "暂停朗读" : "听书"}
+            {readAloud.phase === "playing" ? "暂停听书" : "听书"}
           </button>
           <button
             type="button"
@@ -849,7 +863,7 @@ export function EpubReader({
             <p className="reader-error" role="alert">
               {readAloudError === "engine-missing"
                 ? "听书不可用：设备缺少可用的英语语音引擎。"
-                : "朗读失败，请重试。"}
+                : "听书失败，请重试。"}
             </p>
           ) : null}
         </div>

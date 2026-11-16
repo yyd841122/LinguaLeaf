@@ -115,11 +115,17 @@ export function createReadAloudPlayer(
     void walk();
   };
 
+  // An interrupting move OWNS the generation it mints: the caller must
+  // verify the generation is STILL current after its flush lands before
+  // acting — a slower, earlier move's flush finishing late must not
+  // resurrect itself over a newer state (the review's probe:
+  // play→step→pause with the step's stop last re-entered playing).
   const interrupt = async (): Promise<number> => {
-    generation += 1;
+    const mine = ++generation;
     await speaker.stop().catch(() => undefined);
-    return generation;
+    return mine;
   };
+  const stillMine = (mine: number) => generation === mine;
 
   return {
     getState: () => state,
@@ -140,7 +146,9 @@ export function createReadAloudPlayer(
       if (state.phase === "playing" && state.at === startIndex) return;
       if (state.phase === "playing") {
         // A live utterance must be flushed before the new one may speak.
-        void interrupt().then((gen) => run(gen, startIndex));
+        void interrupt().then((mine) => {
+          if (stillMine(mine)) run(mine, startIndex);
+        });
       } else {
         // Idle/paused: nothing of ours is in flight — take the
         // generation without a pointless stop round-trip.
@@ -153,23 +161,22 @@ export function createReadAloudPlayer(
       // The paused phase lands only if nothing newer moved while the
       // flush was in flight — a play() that raced the flush owns the
       // state instead.
-      const genAtPause = generation;
-      void interrupt().then((gen) => {
-        if (gen === genAtPause + 1) notify({ ...state, phase: "paused" });
+      void interrupt().then((mine) => {
+        if (stillMine(mine)) notify({ ...state, phase: "paused" });
       });
     },
     stop() {
-      const genAtStop = generation;
-      void interrupt().then((gen) => {
-        if (gen === genAtStop + 1)
-          notify({ ...state, phase: "idle", at: null });
+      void interrupt().then((mine) => {
+        if (stillMine(mine)) notify({ ...state, phase: "idle", at: null });
       });
     },
     step(delta: 1 | -1) {
       if (state.at === null) return;
       const target = clampIndex(state.at + delta);
       if (state.phase === "playing") {
-        void interrupt().then((gen) => run(gen, target));
+        void interrupt().then((mine) => {
+          if (stillMine(mine)) run(mine, target);
+        });
       } else {
         notify({ ...state, at: target });
       }
@@ -177,9 +184,11 @@ export function createReadAloudPlayer(
     setRate(rate: number) {
       if (state.phase === "playing" && state.at !== null) {
         const at = state.at;
-        void interrupt().then((gen) => {
-          notify({ ...state, rate });
-          run(gen, at);
+        void interrupt().then((mine) => {
+          if (stillMine(mine)) {
+            notify({ ...state, rate });
+            run(mine, at);
+          }
         });
       } else {
         notify({ ...state, rate });

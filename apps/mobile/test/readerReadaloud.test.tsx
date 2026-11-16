@@ -175,9 +175,9 @@ describe("EPUB face 听书 (ticket 07)", () => {
       document.querySelector("[data-block-index='0']")?.classList
     ).not.toContain("reading-aloud");
 
-    // The button reads 暂停朗读 while playing.
+    // The button reads 暂停听书 while playing.
     expect(
-      screen.getByRole("button", { name: "暂停朗读" })
+      screen.getByRole("button", { name: "暂停听书" })
     ).toBeInTheDocument();
   });
 
@@ -213,7 +213,7 @@ describe("EPUB face 听书 (ticket 07)", () => {
     // The face followed the walk across the chapter boundary.
     await screen.findByText("More");
 
-    fireEvent.click(screen.getByRole("button", { name: "暂停朗读" }));
+    fireEvent.click(screen.getByRole("button", { name: "暂停听书" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "听书" })).toBeInTheDocument()
     );
@@ -261,5 +261,104 @@ describe("EPUB face 听书 (ticket 07)", () => {
       fireEvent.click(screen.getByRole("button", { name: "听书" }));
     });
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+});
+
+// The review's P2s on navigation: manual chapter moves must not fight
+// the walk's progress ownership, and paused steps across the chapter
+// boundary must still present their target.
+describe("EPUB face 听书 — navigation races (07 review)", () => {
+  it("a manual chapter move while playing leaves the walk owning progress", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes("dictionary.json")) {
+          return {
+            ok: true,
+            json: async () => FIXTURE_DICT,
+          } as unknown as Response;
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+    const fake = fakeSpeaker();
+    const library = createMemoryLibraryStore();
+    await renderFace(fake.speaker, library);
+
+    fireEvent.click(screen.getByRole("button", { name: "听书" }));
+    await waitFor(() => expect(fake.calls.length).toBe(1));
+    // Walk holds chapter one's first sentence; the reader taps 下一章.
+    // The follow effect pulls the face back to the walk's chapter
+    // (possibly within the same commit — the transient chapter-two
+    // view is not observable); the assertion that matters: the saved
+    // progress is NOT stranded at chapter two's top.
+    fireEvent.click(screen.getByRole("button", { name: "下一章" }));
+    // The face is back on the walk's chapter (the pager names it; the
+    // sentence text itself is split across word spans).
+    await waitFor(() =>
+      expect(document.querySelector(".reader-position")?.textContent).toBe(
+        "1 / 2"
+      )
+    );
+    // The held sentence has not completed — the walk has written nothing;
+    // the manual move must not strand progress at chapter two's top
+    // (the guard's mutant writes exactly { chapterIndex: 1, blockIndex: 0 }).
+    expect(Object.values(await library.exportProgress())).not.toContainEqual({
+      chapterIndex: 1,
+      blockIndex: 0,
+    });
+  });
+
+  it("a paused step across the chapter boundary presents its target", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: unknown) => {
+        const url = String(input);
+        if (url.includes("dictionary.json")) {
+          return {
+            ok: true,
+            json: async () => FIXTURE_DICT,
+          } as unknown as Response;
+        }
+        throw new Error(`unexpected fetch: ${url}`);
+      })
+    );
+    const fake = fakeSpeaker();
+    const library = createMemoryLibraryStore();
+    await renderFace(fake.speaker, library);
+
+    // Play through chapter one; the walk lands on chapter two's only
+    // sentence; pause there, then step BACK across the boundary.
+    fireEvent.click(screen.getByRole("button", { name: "听书" }));
+    await waitFor(() => expect(fake.calls.length).toBe(1));
+    fake.resolve();
+    await tick();
+    fake.resolve();
+    await tick();
+    await waitFor(() =>
+      expect(fake.calls.at(-1)?.text).toBe("More words live here.")
+    );
+    await screen.findByText("More");
+    fireEvent.click(screen.getByRole("button", { name: "暂停听书" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "听书" })).toBeInTheDocument()
+    );
+    fireEvent.click(screen.getByRole("button", { name: "上一句" }));
+
+    // The paused cursor is back in chapter one: the face followed it
+    // (not stuck on chapter two) and its sentence carries the highlight.
+    // (The pager's position readout names the chapter; the sentence text
+    // itself is split across word spans.)
+    await waitFor(() =>
+      expect(document.querySelector(".reader-position")?.textContent).toBe(
+        "1 / 2"
+      )
+    );
+    await waitFor(() =>
+      expect(
+        document.querySelector("[data-block-index='1']")?.classList
+      ).toContain("reading-aloud")
+    );
   });
 });

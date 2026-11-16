@@ -31,14 +31,24 @@ export interface NativeSpeaker {
 export function createNativeSpeaker(
   plugin: NativeTtsPlugin = TextToSpeech
 ): NativeSpeaker {
+  // The cancellation epoch (ticket 07 review): stop() must invalidate a
+  // speak that is still WAITING on the engine probe — the native stop
+  // only flushes utterances already submitted, so a probe in flight
+  // would otherwise land and SPEAK after the pause (the review's probe:
+  // pause settles, the old probe returns, audio starts from a paused
+  // walk). Each speak captures the epoch at entry; a stale epoch
+  // resolves silently and never reaches the plugin.
+  let epoch = 0;
   return {
     async speak(text: string, lang: string, rate?: number): Promise<void> {
+      const mine = epoch;
       let supported: boolean;
       try {
         supported = (await plugin.isLanguageSupported({ lang })).supported;
       } catch (detail) {
         throw new SpeakRejectionError("engine-missing", detail);
       }
+      if (epoch !== mine) return; // cancelled while probing — stay silent
       if (!supported) throw new SpeakRejectionError("engine-missing");
       try {
         await plugin.speak(
@@ -49,6 +59,7 @@ export function createNativeSpeaker(
       }
     },
     stop() {
+      epoch += 1;
       return plugin.stop();
     },
   };

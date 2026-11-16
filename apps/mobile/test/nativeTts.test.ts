@@ -73,3 +73,35 @@ describe("createNativeSpeaker", () => {
     }
   });
 });
+
+// The read-aloud cancellation epoch (ticket 07 review): a pause during
+// the engine probe must keep the probe's late answer from ever reaching
+// plugin.speak — the native stop only flushes submitted utterances, so
+// without the epoch a paused walk would still speak.
+it("a stop during the probe cancels the pending speak silently", async () => {
+  let releaseProbe!: () => void;
+  const probeGate = new Promise<void>((resolve) => {
+    releaseProbe = resolve;
+  });
+  const plugin = fakePlugin({
+    isLanguageSupported: vi.fn(async () => {
+      await probeGate;
+      return { supported: true };
+    }),
+  });
+  const speaker = createNativeSpeaker(plugin);
+
+  const utterance = speaker.speak("held by the probe", "en-US");
+  await speaker.stop();
+  releaseProbe();
+  await utterance; // resolves silently — no error, no speech
+  expect(plugin.speak).not.toHaveBeenCalled();
+  expect(plugin.stop).toHaveBeenCalled();
+
+  // The NEXT speak runs normally (the epoch is per-cancellation).
+  await speaker.speak("after the cancel", "en-US");
+  expect(plugin.speak).toHaveBeenCalledWith({
+    text: "after the cancel",
+    lang: "en-US",
+  });
+});

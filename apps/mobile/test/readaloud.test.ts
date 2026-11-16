@@ -216,3 +216,60 @@ describe("read-aloud player", () => {
     expect(fake.calls.at(-1)?.text).toBe("First sentence.");
   });
 });
+
+// The review's race probe (ticket 07): play → step → pause, with the
+// STEP's flush landing LAST. The un-fixed interrupt returned the global
+// generation after its own flush, so the stale step's continuation read
+// "current", ran again, and playing resurrected over the pause. The
+// owned-generation gate must hold: per-move stop gates order the flushes.
+it("a stale move's late flush cannot resurrect over a newer pause", async () => {
+  type Pending = { resolve: () => void; reject: (error: Error) => void };
+  const pending: Pending[] = [];
+  const calls: string[] = [];
+  let stopSeq = 0;
+  let releaseFirstStop!: () => void;
+  const speaker: ReadAloudSpeaker = {
+    speak(text: string) {
+      calls.push(text);
+      return new Promise<void>((resolve, reject) =>
+        pending.push({ resolve, reject })
+      );
+    },
+    stop() {
+      const seq = stopSeq++;
+      // Only the FIRST stop (the step's) is gated; later stops settle
+      // immediately — the pause's flush lands first, the step's lands
+      // last: the review's exact interleave.
+      return seq === 0
+        ? new Promise<void>((resolve) => {
+            releaseFirstStop = () => {
+              resolve();
+              pending.splice(0).forEach((utterance) => utterance.resolve());
+            };
+          })
+        : Promise.resolve();
+    },
+  };
+  const player = makePlayer(speaker);
+
+  player.play();
+  await tick();
+  // step flushes (stop #0 — gated), pause flushes (stop #1 — instant).
+  player.step(1);
+  await tick();
+  player.pause();
+  await tick();
+  // The step's own run is still gated behind its flush; the pause found
+  // the cursor at 0 and holds it there.
+  expect(player.getState()).toMatchObject({ phase: "paused", at: 0 });
+
+  // The stale step's flush lands NOW — after the pause settled.
+  releaseFirstStop();
+  await tick();
+  await tick();
+  // The step's run was legitimately superseded: the cursor stays where
+  // the pause found it (0), never resurrects playing, and the step's
+  // target sentence was never issued.
+  expect(player.getState()).toMatchObject({ phase: "paused", at: 0 });
+  expect(calls.filter((text) => text === "Second sentence.")).toHaveLength(0);
+});
