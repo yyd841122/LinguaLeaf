@@ -10,6 +10,7 @@
 // 文件本身跑在 Node 侧,node:fs 直读既绕开解析、又能先探活再跳过
 // (readerPage.test 等已有 fs 先例)。
 import { existsSync, readFileSync } from "node:fs";
+import { env } from "node:process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import prettierIgnore from "../../../.prettierignore?raw";
@@ -33,6 +34,24 @@ describe("dictionary asset .prettierignore pin (rewrap 防线)", () => {
   it("两份资产都在 .prettierignore 的 rewrap 保护清单里", () => {
     expect(prettierIgnore).toContain("apps/extension/public/dictionary.json");
     expect(prettierIgnore).toContain("apps/mobile/public/dictionary.json");
+  });
+});
+
+// mobile-app 03 终审证据缺口③: asset absence used to fall into the byte
+// suite's skipIf silently — on a dev machine a wiped asset degraded the
+// mutation defense with no signal. CI checkouts legitimately lack the
+// gitignored bake products (the skip shows in the report); locally the
+// assets MUST be present, and their absence is a red naming the fix.
+describe("baked assets present (本地产物门;CI 无资产属正常,跳过可见)", () => {
+  it.skipIf(env.CI === "true")("两份烘料资产都在本地就位", () => {
+    expect(
+      existsSync(mobileDictPath),
+      "apps/mobile/public/dictionary.json 缺失:先在 apps/extension 跑 npm run bake:dictionary 烘料,再把产物放进 mobile/public"
+    ).toBe(true);
+    expect(
+      existsSync(extensionDictPath),
+      "apps/extension/public/dictionary.json 缺失:先在 apps/extension 跑 npm run bake:dictionary 烘料"
+    ).toBe(true);
   });
 });
 
