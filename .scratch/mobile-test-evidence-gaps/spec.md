@@ -25,3 +25,10 @@
   rect 全零、只在第一章打签、面板无多行顺序案例(readerBookmarks.test.tsx
   :156);⑥视觉仅断 .block-marked class,飘带/页边紫条样式可删仍绿、
   换书换章无带可区分陈旧结果的直接回归(:248)。
+
+- 2026-11-16 追加(来自 mobile-app 05 独立终审,threadId
+  01a1e1e9-f7c3-7550-927e-9e06deee6655):⑦web 导出测试以 "{}" 冒充备份
+  只断文件名,contract suite 无备份端点覆盖——真实下载字节应能通过手机
+  validator/manager(bookshelf.test.tsx:672);⑧merge 测试未预置仅本地
+  生词/他书进度/异位书签,导出 fixture 未覆盖完整词状态与非首句译文落点,
+  「保留 vs 清空」无区分 fixture(backup.test.ts:202)。

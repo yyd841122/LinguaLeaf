@@ -109,3 +109,18 @@ bookshelf.test.tsx 2 例,复用 ticket-03 导出 harness)。
 ②**Codex 独立终审 11-15 10:55 额度恢复后补跑**(Lane A 翻转挂账,
 同票 10,两笔一起),范围=本票实现 commit + 拍板;发现实项按
 follow-up 处置。
+
+### 2026-11-16 Codex 独立终审(挂账补跑)
+
+threadId `01a1e1e9-f7c3-7550-927e-9e06deee6655`,verdict **NO-GO**,只读
+含校验器/manager 探针。已排除 02 终审所立续读竞态簇(不重复报告)。
+发现全走 follow-up:
+- 发现 1(SaveToDownloads 未注册,P1)→
+  `.scratch/save-to-downloads-unregistered/`(编排侧 git 追溯:自
+  scaffold 生来未注册;与 11-13 人验记录矛盾待真机复按澄清)
+- 发现 2+3+4(校验零写入失守/译文键未校验/导出书名键原型污染)→
+  `.scratch/backup-integrity-defects/`
+- 缺口 5+6 → 并入 `.scratch/mobile-test-evidence-gaps/` ⑦⑧
+生词四态/四型笔记/书签幂等/合并实现/wire 双端形状均 PASS。05 维持 done,
+实项随 follow-up 票处置;建议拍板时优先 1(真机功能缺失)与 2(零写入
+承诺失守)。
