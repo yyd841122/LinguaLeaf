@@ -871,7 +871,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     // The landing lists the document with its position.
     const recent = await screen.findByRole("button", { name: "Journey Book" });
@@ -893,7 +893,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     const other = await buildEpub({
       title: "Other Book",
@@ -904,7 +904,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await pickFile(await fixtureFile("b.epub", other));
     await screen.findByText("Other");
 
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     // Both recents listed; each shows its own chapter.
     expect(
       await screen.findByRole("button", { name: "Journey Book" })
@@ -914,7 +914,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     expect(await screen.findByText("Other")).toBeInTheDocument();
 
     // And the first book still restores to its own chapter.
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
     );
@@ -941,7 +941,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     // Both documents on the recents list.
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     const other = await buildEpub({
       title: "Other Book",
       docs: [
@@ -950,7 +950,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     });
     await pickFile(await fixtureFile("b.epub", other));
     await screen.findByText("Other");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     // Journey's open hangs; the reader picks Other while it is in flight.
     fireEvent.click(
@@ -991,7 +991,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     renderWithSeams({ library });
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
     );
@@ -1775,7 +1775,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     expect(await screen.findByText("More")).toBeInTheDocument();
 
     // The shelf lists the md book like any other, with its position.
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(
       await screen.findByRole("button", { name: "Deep Waters" })
     ).toBeInTheDocument();
@@ -1801,7 +1801,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     renderWithSeams({ library });
     await pickFile(await tideMdFile("Woke early today."));
     await screen.findByText("Woke");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     await pickFile(await tideMdFile("The quiet sea runs."));
@@ -1821,7 +1821,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     renderWithSeams({ library });
     await pickFile(await tideMdFile("Woke early today."));
     await screen.findByText("Woke");
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     await pickFile(await tideMdFile("The quiet sea runs."));

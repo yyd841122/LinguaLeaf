@@ -631,7 +631,10 @@ export function EpubReader({
           onReopen();
         }}
       >
-        打开
+        {/* 返回, not 打开: the action is navigation back to the shelf,
+            and the navigation-shaped label is the discoverable one
+            (真机 md round 4 — the PDF face's own 打开 stays as is). */}
+        返回
       </button>
     </div>
   );
@@ -780,6 +783,12 @@ export function EpubReader({
       {showToc ? (
         <div className="overlay-veil" role="dialog" aria-label="目录">
           <div className="overlay-card">
+            {/* 返回 rides the card head: with a many-chapter list the
+                bottom 关闭 sits below the fold, and the way out must not
+                require scrolling (真机 md round 4). */}
+            <button type="button" onClick={() => setShowToc(false)}>
+              返回
+            </button>
             <h2 className="overlay-title">目录</h2>
             <nav className="reader-toc" aria-label="章节列表">
               <ol>
