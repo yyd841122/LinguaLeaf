@@ -1,5 +1,5 @@
 # 01 主题与令牌基座
-Status: ready-for-human(2026-11-16 实现完毕,待 Codex 审核与 verify 补跑;见 ## Comments)
+Status: done(2026-11-17 收官:Codex GO(threadId 01a1e6bf)修笔三缺 + verify 补跑 EXIT=0 + 默认档拍板入档;真机四主题截图归 04 票,见 ## Comments)
 
 ## 目标
 
@@ -100,3 +100,7 @@ Status: ready-for-human(2026-11-16 实现完毕,待 Codex 审核与 verify 补�
   底删除);对比度与 bundle 序声明现场复算属实。Codex 侧只读沙箱
   pretest EROFS 跑不了套件,不背书历史计数——caller verify 见下条。
   修笔后:mobile 44 文件 440 过 1 skip,tsc/eslint 零告警。
+- 2026-11-17 收官:caller `npm run verify` **EXIT=0**(typecheck 全域 +
+  全量测试 + lint + locality 门 + build)。翻 done。余项:真机四主题
+  截图入档归 04 出口票;02 票消费本票令牌与主题机制,顺手收口
+  style.css 盖 Georgia 死规则(见上「发现」条)。
