@@ -47,3 +47,12 @@ Blocked by: 04 + 05(两线汇合)
   键盘收缩 → 既有 --shell-h 重钉 + NoteEditor resize 重定位链路生效);
   NoteEditor 加 visualViewport 边界钳制带(belt,jsdom 无 vv 走守卫可
   mock 测);overlay-card 补 overflow-y:auto(key 表单可滚)。
+
+- 2026-11-16 真机机检(OPPO,API 30,装机 10c6019):四线全过。
+  ①触控:底置工具行实测 132px@3x=44dp;②深色:五轮迭代——WebView
+  默认向页面报 light(静态/jsdom 不可见),algorithmic(<33 轻主题)无效
+  → FORCE_DARK_ON → AUTO(双向实时)→ 每调用独立兜底(ColorOS 缺
+  strategy 成员曾一废全链);终态渲自家暗色 token 非渲染器反色;③键盘:
+  adjustResize 生效,设置页密钥输入框完整可见于 IME 上方;④安全区目测
+  无裁切。Codex 评审(含修笔)已发。人验项中「日常操作无误触」需日常
+  使用面检验,留给用户随手反馈。
