@@ -145,7 +145,10 @@ export function createLibraryStore(storage: NamespaceStorage): LibraryStore {
       });
     },
     async listDocuments() {
-      const r = await record.read();
+      // The 续读 click trusts this list's progress: an in-flight (debounced)
+      // write must land before the read, or the shelf reopens the stale
+      // chapter (mobile-app 02 终审: the read raced the write).
+      const r = await record.readSettled();
       return Object.entries(r.documents)
         .map(([id, doc]) => ({
           id,
@@ -171,7 +174,10 @@ export function createLibraryStore(storage: NamespaceStorage): LibraryStore {
       });
     },
     async exportProgress() {
-      const r = await record.read();
+      // The backup's enumeration read joins the write queue for the same
+      // reason listDocuments does: a progress write in flight must land
+      // before the export reads.
+      const r = await record.readSettled();
       return Object.fromEntries(Object.entries(r.progress));
     },
   };

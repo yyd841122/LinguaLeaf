@@ -46,6 +46,12 @@ export function ReaderLanding({
   onOpenSettings: () => void;
 }) {
   const [recents, setRecents] = useState<LibraryEntry[] | null>(null);
+  // Bumped by a backup import's success: the recents read re-runs so a
+  // restored position shows on the shelf — the 续读 click reads
+  // entry.progress, and a stale row would reopen the old chapter
+  // (mobile-progress-stale-reopen 缺陷 1; the ticket-05 import path
+  // introduced the regression).
+  const [recentsRevision, setRecentsRevision] = useState(0);
   // The backup block's local facts (ticket 05): one busy bit and the two
   // outcome lines. Errors stay until the next action; the import summary
   // reads per-asset counts, the cap's skips included.
@@ -73,7 +79,7 @@ export function ReaderLanding({
     return () => {
       cancelled = true;
     };
-  }, [phase, library]);
+  }, [phase, library, recentsRevision]);
 
   const onPick = (event: ChangeEvent<HTMLInputElement>) => {
     void onFile(event.target.files?.[0]);
@@ -136,6 +142,10 @@ export function ReaderLanding({
       .then((summary) => {
         setBackupBusy(false);
         setImportSummary(summary);
+        // The import landed progress/bookmarks/etc. on the shelf's rows:
+        // re-read the recents so the 续读 hints (and the reopen targets)
+        // carry the restored positions.
+        setRecentsRevision((value) => value + 1);
       })
       .catch((error: unknown) => {
         setBackupBusy(false);

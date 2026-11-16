@@ -34,17 +34,21 @@ import { createMemoryBackupFileAdapter } from "../src/backup/backup-file";
 
 const FIXTURE_DICT = { ipa: {}, inflections: {}, entries: {} };
 
-const renderLanding = (adapter = createMemoryBackupFileAdapter()) => {
-  const stores = {
-    store: createVocabularyStore(
-      new OfflineDictionary(FIXTURE_DICT),
-      memoryBackend()
-    ),
-    notes: createMemoryNotesStore(),
-    library: createMemoryLibraryStore(),
-    bookmarks: createMemoryBookmarkStore(),
-    translations: createMemoryTranslationStore(),
-  };
+const makeLandingStores = () => ({
+  store: createVocabularyStore(
+    new OfflineDictionary(FIXTURE_DICT),
+    memoryBackend()
+  ),
+  notes: createMemoryNotesStore(),
+  library: createMemoryLibraryStore(),
+  bookmarks: createMemoryBookmarkStore(),
+  translations: createMemoryTranslationStore(),
+});
+
+const renderLanding = (
+  adapter = createMemoryBackupFileAdapter(),
+  stores = makeLandingStores()
+) => {
   const manager = createBackupManager(stores, adapter);
   render(
     <ReaderPage
@@ -187,6 +191,50 @@ describe("ReaderPage — 备份与恢复 (ticket 05)", () => {
     expect(await stores.store.exportAll()).toEqual({ hello: "known" });
     expect(await stores.notes.exportAll()).toEqual([]);
     expect(screen.queryByText(/导入完成/)).toBeNull();
+  });
+
+  // mobile-progress-stale-reopen 缺陷 1: the import landed progress on the
+  // shelf's rows but the recents read never re-ran, so the 续读 click
+  // reopened the OLD chapter (恢复到第 3 章 → 打开仍在第 1 章).
+  it("a successful import refreshes the recents rows to the restored positions", async () => {
+    stubDictionaryOnly();
+    // Seeded BEFORE render: the mount read lists the row at its old spot
+    // (the shelf shows 第 1 章 — the default position).
+    const stores = makeLandingStores();
+    await stores.library.saveDocument({
+      id: "doc:Title A",
+      title: "Title A",
+      book: { title: "Title A", chapters: [] },
+    });
+    renderLanding(undefined, stores);
+    expect(await screen.findByText("第 1 章")).toBeInTheDocument();
+
+    await pickBackupFile({
+      app: BACKUP_APP,
+      version: BACKUP_VERSION,
+      exportedAt: "2026-11-13T10:00:00.000Z",
+      books: [{ title: "Title A" }],
+      assets: {
+        vocabulary: {},
+        notes: [],
+        progress: { "Title A": { chapterIndex: 2, blockIndex: 5 } },
+        bookmarks: [],
+        translations: {},
+      },
+    });
+    expect(
+      await screen.findByText(
+        /导入完成：生词本 0 条、笔记 0 条、进度 1 本、书签 0 条、译文 0 行。/
+      )
+    ).toBeInTheDocument();
+    // The row re-read: the restored position is what the 续读 click now
+    // carries (the hint renders chapterIndex + 1).
+    expect(await screen.findByText("第 3 章")).toBeInTheDocument();
+    expect(screen.queryByText("第 1 章")).toBeNull();
+    expect((await stores.library.listDocuments())[0]?.progress).toEqual({
+      chapterIndex: 2,
+      blockIndex: 5,
+    });
   });
 });
 

@@ -218,4 +218,59 @@ describe("LibraryStore — record backend write serialization", () => {
     expect(entry.title).toBe("Book A2");
     expect(entry.progress).toEqual({ chapterIndex: 1, blockIndex: 2 });
   });
+
+  // mobile-progress-stale-reopen 缺陷 2: the 终审 read probe reproduced a
+  // fast return to the shelf reading {0,0} while a {1,2} write was in
+  // flight. The enumeration read joins the write queue — it must not
+  // resolve until the write before it has landed, and it must read that
+  // write's effect.
+  it("listDocuments joins the write queue: an in-flight progress write is not raced", async () => {
+    let stored: unknown = undefined;
+    let releaseWrite!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let gateArmed = false;
+    const lag = <T>(value: T): Promise<T> =>
+      new Promise((resolve) => setTimeout(() => resolve(value), 0));
+    const library = createLibraryStore({
+      async get(namespace) {
+        const snapshot =
+          stored === undefined ? undefined : JSON.parse(JSON.stringify(stored));
+        return lag({ [namespace]: snapshot });
+      },
+      async set(bag) {
+        if (gateArmed) await writeGate;
+        const [, record] = Object.entries(bag)[0]!;
+        stored = JSON.parse(JSON.stringify(record));
+      },
+    });
+    await library.saveDocument({
+      id: "doc:a",
+      title: "Book A",
+      book: BOOK("Book A"),
+    });
+
+    // The progress write is in flight (its set() hangs on the gate; one
+    // tick lets the queue reach it).
+    gateArmed = true;
+    const progress = library.setProgress("doc:a", {
+      chapterIndex: 1,
+      blockIndex: 2,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const listing = library.listDocuments();
+    let settled = false;
+    void listing.then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // The read did not race the write: it is still waiting on the queue.
+    expect(settled).toBe(false);
+
+    releaseWrite();
+    await progress;
+    const entry = (await listing).find((e) => e.id === "doc:a")!;
+    expect(entry.progress).toEqual({ chapterIndex: 1, blockIndex: 2 });
+  });
 });

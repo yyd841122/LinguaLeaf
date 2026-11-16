@@ -21,6 +21,12 @@ export function createNamespaceRecord<T>(
   storage: NamespaceStorage
 ): {
   read(): Promise<T>;
+  // The enumeration read: joins the write queue first, so a read issued
+  // while a write is in flight sees that write's effect, never the last
+  // persisted snapshot. Reads that feed a user-facing next action (the
+  // recents list a 续读 click trusts) go through this, not read() —
+  // racing an in-flight write reads stale and acts on it.
+  readSettled(): Promise<T>;
   update<U>(
     step: (record: T, write: (record: T) => Promise<void>) => Promise<U>
   ): Promise<U>;
@@ -44,5 +50,12 @@ export function createNamespaceRecord<T>(
     );
     return run;
   };
-  return { read, update };
+  // Joins the queue tail as captured at call time: writes enqueued LATER
+  // reassign the chain but do not extend this read's wait — a read joins
+  // the writes issued before it, not every future one.
+  const readSettled = async (): Promise<T> => {
+    await writeQueue.catch(() => undefined);
+    return read();
+  };
+  return { read, readSettled, update };
 }
