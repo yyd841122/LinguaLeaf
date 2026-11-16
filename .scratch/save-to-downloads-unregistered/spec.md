@@ -1,6 +1,6 @@
 # SaveToDownloads 原生插件未注册:「保存到本机」真机必败(P1)
 
-**Status:** needs-triage
+**Status:** ready-for-human
 
 来自 mobile-app 05 独立终审发现 1(2026-11-16,threadId
 01a1e1e9-f7c3-7550-927e-9e06deee6655)。编排侧现场核验:
@@ -22,3 +22,14 @@
 ## Comments
 
 - 2026-11-16 立票。
+
+## Comments
+
+- 2026-11-16 立票。
+- 2026-11-16 修讫(TDD,先红后绿):MainActivity onCreate 注册
+  `registerPlugin(SaveToDownloadsPlugin.class)`;新注册声明门
+  apps/mobile/test/native-plugin-registration.test.ts 双向钉住(JS 注册名
+  ↔ @CapacitorPlugin 类 ↔ MainActivity 注册行),漏注册从此在测试期红、
+  不再只真机炸。门测 2 绿,typecheck/lint 绿,gradle BUILD SUCCESSFUL,
+  已出包装机。**人检点待做**:真机点「保存到本机」→ 应见「已保存到手机的
+  「下载」目录:…」状态行;顺带澄清 11-13 人验矛盾。过后翻 done。
