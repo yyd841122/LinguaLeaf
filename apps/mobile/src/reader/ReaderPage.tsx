@@ -77,6 +77,7 @@ import {
   createUiSettingsStore,
   type UiSettingsStore,
 } from "../store/ui-settings-store";
+import { useThemePreference } from "../theme";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -212,6 +213,10 @@ export function ReaderPage({
     () => injectedUiSettings ?? createUiSettingsStore(idbStorage),
     [injectedUiSettings, idbStorage]
   );
+  // The manual theme mechanism (redesign 01): one hook for the whole
+  // app — the resolved theme stamps <html data-theme> for every face
+  // (shelf, EPUB, PDF, popups); ticket 02's Aa panel drives the choice.
+  useThemePreference(uiSettings);
   const registry = injectedRegistry ?? chapterTasks;
   const persistencePromise = useRef<Promise<PersistenceResult> | null>(null);
   const [persistence, setPersistence] = useState<PersistenceResult | null>(
@@ -490,7 +495,6 @@ export function ReaderPage({
             lookup={state.lookup}
             showIpa={showIpa}
             initialView={state.view ?? "canvas"}
-            uiSettings={uiSettings}
             // A page flip or a zoom is itself a position fact — the
             // anchored popup's coordinates died with the old view (the
             // EPUB chapter switch clears its lookup the same way).
@@ -535,7 +539,6 @@ export function ReaderPage({
           onToggleIpa={() => setShowIpa((shown) => !shown)}
           onOpenSettings={() => setSettingsOpen(true)}
           onReopen={() => setState({ phase: "empty" })}
-          uiSettings={uiSettings}
         />
       ) : null}
     </>

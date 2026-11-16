@@ -32,10 +32,6 @@ import { formatPlantedAt } from "./bookmark-view";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 import { PdfReflow } from "./PdfReflow";
 import type { PdfViewMode } from "../store/pdf-position-store";
-import type {
-  PdfToolbarPosition,
-  UiSettingsStore,
-} from "../store/ui-settings-store";
 
 // The PDF reading view (ticket 06): one page on canvas at a time — a big
 // book is progressive by shape — with the proven word/IPA overlay. Word
@@ -59,7 +55,6 @@ export function PdfReader({
   lookup,
   showIpa,
   initialView = "canvas",
-  uiSettings,
   onPage,
   onScale,
   onToggleIpa,
@@ -81,8 +76,6 @@ export function PdfReader({
   // The face the doc reopens into (persisted per doc in the position
   // store; canvas — the coordinate-overlay gate's form — is the default).
   initialView?: PdfViewMode;
-  // The reader's global face preferences (toolbar position, round 14).
-  uiSettings?: UiSettingsStore | undefined;
   onPage: (page: number) => void;
   onScale: (scale: number) => void;
   onToggleIpa: () => void;
@@ -124,24 +117,15 @@ export function PdfReader({
     };
   }, []);
   // 工具栏位置 (round 14): under the title, or below the page number —
-  // a global preference, the toggle riding the row itself (置底/置顶).
-  const [toolbarPosition, setToolbarPosition] =
-    useState<PdfToolbarPosition>("top");
-  const toolbarOwner = useOwner();
-  const { run: runToolbar } = useSettle(toolbarOwner);
-  useEffect(() => {
-    if (!uiSettings) return;
-    void runToolbar(uiSettings.load(), {
-      onFresh: (settings) => setToolbarPosition(settings.pdfToolbar),
-    });
-    return () => toolbarOwner.invalidate();
-  }, [uiSettings, runToolbar, toolbarOwner]);
-  const moveToolbar = () => {
-    const next: PdfToolbarPosition =
-      toolbarPosition === "top" ? "bottom" : "top";
-    setToolbarPosition(next);
-    void uiSettings?.savePdfToolbar(next);
-  };
+  // the toggle riding the row itself (置底/置顶). Redesign 01 retired the
+  // persisted preference with the ui-settings migration (v1 → v2 carried
+  // the theme in its place); the choice lives in session state until
+  // ticket 02 removes the toggle with the whole tools row.
+  const [toolbarPosition, setToolbarPosition] = useState<"top" | "bottom">(
+    "top"
+  );
+  const moveToolbar = () =>
+    setToolbarPosition(toolbarPosition === "top" ? "bottom" : "top");
 
   // The tools row renders under the title (top) or below the page
   // number (bottom) — one element, two homes (round 14).

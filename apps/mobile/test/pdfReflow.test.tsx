@@ -248,7 +248,7 @@ describe("PDF reflow face (round 7)", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
   });
 
-  it("moves the toolbar below the pager and remembers the choice (round 14)", async () => {
+  it("moves the toolbar below the pager in-session (round 14; the persisted choice retired with redesign 01, the toggle leaves with ticket 02)", async () => {
     const ui = createMemoryUiSettingsStore();
     const ctx = mount(
       createMemoryBookmarkStore(),
@@ -266,22 +266,20 @@ describe("PDF reflow face (round 7)", () => {
     expect(
       pager.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
+    // The ui-settings migration (v1 → v2) retired the pdfToolbar item:
+    // the record carries the theme only, so a fresh tree starts at the
+    // default — the toggle itself goes away with ticket 02's rework.
     await waitFor(() =>
-      expect(ui.load()).resolves.toMatchObject({ pdfToolbar: "bottom" })
+      expect(ui.load()).resolves.toEqual({ theme: "system" })
     );
-    // A fresh tree over the same settings opens with the row at the bottom.
     ctx.view.unmount();
     render(ctx.tree());
     await pick();
-    // The persisted choice lands with the async settings read — wait for
-    // it, the first paint legitimately shows the default.
-    await waitFor(() =>
-      expect(document.querySelector(".reader-tools-bottom")).not.toBeNull()
-    );
+    expect(document.querySelector(".reader-tools-bottom")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "置底" }));
+    expect(document.querySelector(".reader-tools-bottom")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "置顶" }));
-    await waitFor(() =>
-      expect(document.querySelector(".reader-tools-bottom")).toBeNull()
-    );
+    expect(document.querySelector(".reader-tools-bottom")).toBeNull();
   });
 
   it("返回 goes back to the shelf (round 12)", async () => {

@@ -1,10 +1,8 @@
 /* 全局壳样式。阅读链样式由 reader/reader.css 承载(ReaderPage 导入,
-   含 annotated-shared 共享标注样式);触控、安全区、深色跟随是票 06
-   的收口范围,这里只保证可读与基本布局。 */
-:root {
-  color-scheme: light dark;
-}
-
+   含 annotated-shared 共享标注样式);触控、安全区是票 06 的收口范围,
+   这里只保证可读与基本布局。color-scheme 归 reader.css 的主题块
+   (改版 01)——本文件在打包序里后于 reader.css,这里声明会盖住手动
+   主题,故不再声明。 */
 body {
   margin: 0;
   font-family:

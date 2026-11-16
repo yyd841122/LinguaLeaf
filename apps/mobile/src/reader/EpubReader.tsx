@@ -50,10 +50,6 @@ import {
   type ReadAloudSpeaker,
 } from "../speak/readaloud";
 import { createNativeSpeaker } from "../speak/native-tts";
-import type {
-  PdfToolbarPosition,
-  UiSettingsStore,
-} from "../store/ui-settings-store";
 
 // The settled-failure copy (ticket 04): a chapter whose every sentence
 // came back null. The Translator contract reports wrong key and network
@@ -139,7 +135,6 @@ export function EpubReader({
   editorRef,
   restoreRef,
   scrollSaveAt,
-  uiSettings,
   readAloudSpeaker,
   onChapter,
   onToggleIpa,
@@ -166,9 +161,6 @@ export function EpubReader({
   editorRef: RefObject<NoteEditorHandle | null>;
   restoreRef: RefObject<ChapterProgress | null>;
   scrollSaveAt: RefObject<number>;
-  // The reader's global face preferences (toolbar position, round 14) —
-  // the EPUB face shares the PDF face's choice.
-  uiSettings?: UiSettingsStore | undefined;
   // The read-aloud speaker (ticket 07): the native TTS adapter by
   // default; tests inject a fake whose deferred promises are the
   // sentence boundaries.
@@ -439,26 +431,16 @@ export function EpubReader({
     };
   }, [settings, settingsRevision, settingsAttempt]);
 
-  // 工具栏位置 (round 14): the EPUB face shares the PDF face's global
-  // choice — top (under the title) or a fixed bar at the viewport's
-  // bottom edge; the toggle rides the row itself (置底/置顶).
-  const [toolbarPosition, setToolbarPosition] =
-    useState<PdfToolbarPosition>("top");
-  const toolbarOwner = useOwner();
-  const { run: runToolbar } = useSettle(toolbarOwner);
-  useEffect(() => {
-    if (!uiSettings) return;
-    void runToolbar(uiSettings.load(), {
-      onFresh: (settings) => setToolbarPosition(settings.pdfToolbar),
-    });
-    return () => toolbarOwner.invalidate();
-  }, [uiSettings, runToolbar, toolbarOwner]);
-  const moveToolbar = () => {
-    const next: PdfToolbarPosition =
-      toolbarPosition === "top" ? "bottom" : "top";
-    setToolbarPosition(next);
-    void uiSettings?.savePdfToolbar(next);
-  };
+  // 工具栏位置 (round 14): top (under the title) or a fixed bar at the
+  // viewport's bottom edge; the toggle rides the row itself (置底/置顶).
+  // Redesign 01 retired the persisted preference with the ui-settings
+  // migration (v1 → v2 carried the theme in its place); session state
+  // holds the choice until ticket 02 removes the toggle with the row.
+  const [toolbarPosition, setToolbarPosition] = useState<"top" | "bottom">(
+    "top"
+  );
+  const moveToolbar = () =>
+    setToolbarPosition(toolbarPosition === "top" ? "bottom" : "top");
   const bookmarksOwner = useOwner();
   const bookmarksSettle = useSettle(bookmarksOwner);
   const runBookmarks = bookmarksSettle.run;

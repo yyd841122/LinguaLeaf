@@ -1660,8 +1660,11 @@ describe("ReaderPage — shared settled-hover CSS wiring", () => {
       ),
       "utf8"
     );
+    // Redesign 01: the tint rides the page-anchored token (the canvas
+    // paper is white in every theme — 纸就是纸 — so the overlay keys to
+    // the page, not the theme).
     expect(local).toMatch(
-      /\.pdf-word:focus-visible\s*\{[^}]*background:\s*rgba\(236,\s*239,\s*230,\s*0\.55\);[^}]*\}/
+      /\.pdf-word:focus-visible\s*\{[^}]*background:\s*var\(--pdf-word-tint\);[^}]*\}/
     );
   });
 

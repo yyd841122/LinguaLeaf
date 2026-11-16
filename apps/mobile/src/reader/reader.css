@@ -3,32 +3,108 @@
    popup, blocks). Only the extension's shell lives here. */
 @import "@lingualeaf/reading-model/annotated-shared.css";
 
-/* The reading face's palette tokens (ticket 06's dark-follow
-   line): one value per role, the dark block below overrides them per
-   prefers-color-scheme. canvas/gray system colors follow color-scheme
-   on their own and stay literal. */
+/* The palette (redesign 01): one value per role per theme. 暖纸 (warm
+   paper) is the bare :root — the default light and the pre-JS face;
+   白 and 夜间 override through <html data-theme>, which the app stamps
+   from the ui-settings preference (跟随系统 resolves in JS against
+   matchMedia, so no prefers-color-scheme block remains to fight the
+   manual choice). The kernel-shared surfaces further down re-voice
+   through the same tokens; the kernel sheet keeps its pinned light
+   values for the web and export hosts. */
 :root {
-  --accent: #6a4fa3;
-  --accent-fill: #6a4fa3;
-  --card: #ffffff;
-  --edge: #ccd4c9;
+  color-scheme: light;
+  --accent: #c5322a;
+  --accent-fill: #c5322a;
+  --card: #fffefb;
+  --edge: #d9d5cb;
   --danger: #b3261e;
-  --muted: #5c6f64;
-  --tint: #ecefe6;
-  --card-edge: #dde3d8;
-  --ink: #22342a;
-  --paper: #fffef9;
-  --paper-ink: #243627;
+  --muted: #6d675c;
+  --tint: #ece9e1;
+  --card-edge: #e2ded4;
+  --ink: #2f2d29;
+  --paper: #f6f5f1;
+  --paper-ink: #33302a;
   --ok-tint: #e8f1e5;
   --ok-tint-soft: #e7f2df;
-  --note-pen: #8b958b;
+  --note-pen: #8f897d;
   --ok-strong: #56833b;
   --ok: #3e7547;
   --ok-2: #2e7d4f;
-}
-:root {
-  color-scheme: light dark;
+  --scrim: #00000073; /* rgba(0, 0, 0, 0.45) */
+  --shadow-color: #0000001f; /* rgba(0, 0, 0, 0.12) */
+  /* Page-anchored constants (PDF original face): the canvas page is the
+     PDF's own white paper in every theme (纸就是纸), so its overlays key
+     to the page, never the theme — no theme block re-voices these. */
+  --pdf-page-paper: #ffffff;
+  --pdf-word-tint: rgba(120, 112, 100, 0.18);
+  --pdf-ipa-chip: rgba(255, 255, 255, 0.85);
+  --pdf-ipa-chip-soft: rgba(255, 255, 255, 0.45);
+  --pdf-ipa-ink: #6d675c;
+  /* The 4px-base scales the later redesign tickets consume (spacing,
+     type, corners) — rem so accessibility font scaling carries them. */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-5: 1.5rem; /* 24px */
+  --space-6: 2rem; /* 32px */
+  --text-xs: 0.75rem;
+  --text-s: 0.85rem;
+  --text-m: 1rem;
+  --text-l: 1.15rem;
+  --text-xl: 1.4rem;
+  --radius-s: 0.25rem; /* 4px */
+  --radius-m: 0.5rem; /* 8px */
+  --radius-l: 0.75rem; /* 12px */
   --reader-max: 44rem;
+}
+/* 白 (white): the pure-white variant — neutral grays, same brick. */
+:root[data-theme="white"] {
+  color-scheme: light;
+  --accent: #c5322a;
+  --accent-fill: #c5322a;
+  --card: #ffffff;
+  --edge: #d8d7d3;
+  --danger: #b3261e;
+  --muted: #6e6e6a;
+  --tint: #f0efec;
+  --card-edge: #e4e3df;
+  --ink: #262624;
+  --paper: #ffffff;
+  --paper-ink: #2b2a28;
+  --ok-tint: #e8f1e5;
+  --ok-tint-soft: #e7f2df;
+  --note-pen: #8f8e8a;
+  --ok-strong: #56833b;
+  --ok: #3e7547;
+  --ok-2: #2e7d4f;
+  --scrim: #00000073;
+  --shadow-color: #0000001a;
+}
+/* 夜间 (night): ticket 06's dark surface re-voiced — only the accent
+   changes: 砖红提亮 to stay readable on the dark ground; the fill keeps
+   the brick itself. */
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --accent: #e5705f;
+  --accent-fill: #c5322a;
+  --card: #1d2620;
+  --edge: #46534a;
+  --danger: #f2b8b5;
+  --muted: #9db0a3;
+  --tint: #26312a;
+  --card-edge: #3a463d;
+  --ink: #dbe4dd;
+  --paper: #18201b;
+  --paper-ink: #e6ede7;
+  --ok-tint: #243828;
+  --ok-tint-soft: #223527;
+  --note-pen: #8f9c91;
+  --ok-strong: #8fca9f;
+  --ok: #7fc08f;
+  --ok-2: #6fbd85;
+  --scrim: #00000099;
+  --shadow-color: #000000cc;
 }
 * {
   box-sizing: border-box;
@@ -37,6 +113,8 @@ body {
   margin: 0;
   font-family: Georgia, "Times New Roman", "Songti SC", serif;
   line-height: 1.7;
+  background: var(--paper);
+  color: var(--ink);
 }
 .reader {
   max-width: var(--reader-max);
@@ -61,14 +139,14 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  border: 2px dashed gray;
+  border: 2px dashed var(--edge);
   border-radius: 8px;
   padding: 2rem 1.5rem;
   cursor: pointer;
 }
 .reader-hint,
 .reader-status {
-  color: gray;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 .reader-error {
@@ -77,8 +155,8 @@ body {
 /* Sticky (ticket 10 人验 round 2): the tools row must stay reachable
    mid-chapter — the plant captures the topmost visible block, which is
    the reading position only if the 书签 button never forces a scroll
-   back to the chapter top. canvas is the scheme-aware page color, so the
-   stuck head masks the text scrolling under it in both themes. */
+   back to the chapter top. The ground is the theme's own paper token,
+   so the stuck head masks the text scrolling under it in every theme. */
 /* Stacked rows (mobile-ipa-buttons 02): the EPUB head carries three
    children (title, 听书 row, tools row) — the old single-line flex
    squeezed the title into a glyph column and pushed the 听书 group
@@ -89,12 +167,12 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
-  background: canvas;
+  background: var(--paper);
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.4rem;
-  border-bottom: 1px solid gray;
+  border-bottom: 1px solid var(--edge);
   padding-bottom: 0.6rem;
 }
 .reader-tools {
@@ -204,6 +282,9 @@ body {
 }
 .pdf-stage canvas {
   display: block;
+  /* 纸就是纸 (redesign 01): pdf.js fills the page white and the pin
+     keeps any future theme work from bleeding onto the paper. */
+  background: var(--pdf-page-paper);
 }
 .pdf-word {
   position: absolute;
@@ -224,23 +305,26 @@ body {
 .pdf-word:hover {
   /* Translucent: the word span owns no visible glyphs (transparent text
      over the canvas), so an opaque hover tint would read as a solid bar
-     covering the word — the tint must let the canvas glyphs show. */
-  background: rgba(236, 239, 230, 0.55);
+     covering the word — the tint must let the canvas glyphs show. Keys
+     to the white page (纸就是纸), not the theme. */
+  background: var(--pdf-word-tint);
 }
 .pdf-word:focus-visible {
   /* Keyboard focus needs a visible cue; focus-visible keeps it tied to
      keyboard navigation. Translucency leaves the canvas glyphs readable,
      just as the hover tint does. */
-  background: rgba(236, 239, 230, 0.55);
+  background: var(--pdf-word-tint);
 }
 .pdf-ipa {
   position: absolute;
-  color: var(--accent);
+  /* 音标紫退役: the chip's ink is page-anchored (it sits on the white
+     canvas paper whatever the shell's theme). */
+  color: var(--pdf-ipa-ink);
   font-size: 0.62em;
   line-height: 1;
   white-space: nowrap;
   transform: translateX(-50%);
-  background: rgba(255, 255, 255, 0.85);
+  background: var(--pdf-ipa-chip);
   border-radius: 2px;
   padding: 0 1px;
   pointer-events: none;
@@ -251,7 +335,7 @@ body {
    chip — smaller and see-through, the glyphs stay legible underneath. */
 .pdf-ipa-tight {
   font-size: 0.5em;
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--pdf-ipa-chip-soft);
 }
 .reader-toc ol {
   list-style: none;
@@ -296,7 +380,7 @@ body {
   inset: -0.35em -0.35em;
 }
 .reader-position {
-  color: gray;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 /* Note button and popup styling mirrors apps/web/src/style.css's kernel
@@ -329,7 +413,7 @@ body {
   padding: 0.7rem;
   border: 1px solid var(--card-edge);
   border-radius: 8px;
-  box-shadow: 0 5px 22px #0003;
+  box-shadow: 0 5px 22px var(--shadow-color);
   background: var(--paper);
   color: var(--paper-ink);
 }
@@ -400,7 +484,7 @@ body {
   border: 1px solid var(--card-edge);
   border-radius: 0.5rem;
   padding: 0.6rem 0.9rem;
-  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+  box-shadow: 0 0.4rem 1rem var(--shadow-color);
 }
 .speak-flag-copy {
   flex: 1;
@@ -412,7 +496,7 @@ body {
   border: none;
   background: none;
   font-size: 1rem;
-  color: gray;
+  color: var(--muted);
   padding: 0 0.2rem;
   cursor: pointer;
 }
@@ -423,7 +507,7 @@ body {
   color: var(--accent);
 }
 .reader-translate:disabled {
-  color: gray;
+  color: var(--muted);
 }
 
 /* The translation failure flag: the speak flag's fixed dismissible card,
@@ -441,7 +525,7 @@ body {
   border: 1px solid var(--card-edge);
   border-radius: 0.5rem;
   padding: 0.6rem 0.9rem;
-  box-shadow: 0 0.4rem 1rem rgba(34, 52, 42, 0.12);
+  box-shadow: 0 0.4rem 1rem var(--shadow-color);
 }
 .translate-flag-copy {
   flex: 1;
@@ -453,7 +537,7 @@ body {
   border: none;
   background: none;
   font-size: 1rem;
-  color: gray;
+  color: var(--muted);
   padding: 0 0.2rem;
   cursor: pointer;
 }
@@ -469,7 +553,7 @@ body {
   position: fixed;
   inset: 0;
   z-index: 40;
-  background: rgba(20, 28, 24, 0.45);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -508,7 +592,7 @@ body {
   font-size: 1rem;
 }
 .settings-hint {
-  color: gray;
+  color: var(--muted);
   font-size: 0.8rem;
 }
 .settings-error {
@@ -678,7 +762,7 @@ body {
    two actions, one status line each way. The import label hides its file
    input; the label itself is the button. */
 .backup-block {
-  border-top: 1px solid gray;
+  border-top: 1px solid var(--edge);
   padding-top: 1rem;
   display: flex;
   flex-direction: column;
@@ -704,7 +788,7 @@ body {
   font-weight: bold;
 }
 .backup-export:disabled {
-  color: gray;
+  color: var(--muted);
 }
 .backup-share {
   padding: 0.45rem 1rem;
@@ -716,7 +800,7 @@ body {
   color: var(--ink);
 }
 .backup-share:disabled {
-  color: gray;
+  color: var(--muted);
 }
 .backup-import {
   padding: 0.45rem 1rem;
@@ -733,7 +817,7 @@ body {
   display: none;
 }
 .backup-busy {
-  color: gray;
+  color: var(--muted);
 }
 
 /* The reflow reading face (round 7): kernel word styles apply as-is
@@ -848,70 +932,50 @@ body {
   right: 0;
   bottom: 0;
   z-index: 30;
-  background: canvas;
-  border-top: 1px solid gray;
+  background: var(--paper);
+  border-top: 1px solid var(--edge);
   padding: 0.5rem 1rem;
 }
 
-/* Dark follows the system (ticket 06): the same roles, re-voiced for a
-   dark ground — the app-side override ALSO covers the kernel-shared
-   annotated selectors this host renders (popup card, hover tints,
-   muted lines), so the kernel sheet itself stays untouched for the
-   other hosts. The PDF canvas face keeps its paper white: a page is a
-   page; the shell around it goes dark. */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --accent: #b399e0;
-    --accent-fill: #7a5cb8;
-    --card: #1d2620;
-    --edge: #46534a;
-    --danger: #f2b8b5;
-    --muted: #9db0a3;
-    --tint: #26312a;
-    --card-edge: #3a463d;
-    --ink: #dbe4dd;
-    --paper: #18201b;
-    --paper-ink: #e6ede7;
-    --ok-tint: #243828;
-    --ok-tint-soft: #223527;
-    --note-pen: #8f9c91;
-    --ok-strong: #8fca9f;
-    --ok: #7fc08f;
-    --ok-2: #6fbd85;
-  }
-  /* Kernel-shared surfaces rendered here (annotated-shared.css pins
-     them light; this host re-voices them through the same tokens). */
-  .lookup-popup {
-    background: var(--card);
-    border-color: var(--card-edge);
-  }
-  .lookup-word:hover,
-  .ipa-word:hover {
-    background: var(--tint);
-  }
-  .lookup-lemma,
-  .lookup-ipa,
-  .lookup-pos,
-  .lookup-status,
-  .lookup-vocab-label,
-  .raw-block,
-  .image-block figcaption {
-    color: var(--muted);
-  }
-  .ipa-word-ipa,
-  .ipa-line {
-    color: var(--accent);
-  }
-  .lookup-head-actions button:hover {
-    background: var(--tint);
-  }
-  .code-block,
-  .image-placeholder {
-    background: var(--tint);
-  }
-  .image-placeholder {
-    border-color: var(--edge);
-  }
+/* Kernel-shared surfaces, re-voiced app-side for EVERY theme (the
+   ticket-06 dark override, generalized by redesign 01): the kernel
+   sheet pins its light values for the web and export hosts; this host
+   carries its own palette, so the popup card, hover tints, muted lines
+   and blocks read through the same role tokens in all three themes.
+   The PDF canvas face keeps its paper white regardless (纸就是纸): the
+   page-anchored tokens above key its overlays to the page, not the
+   theme. */
+.lookup-popup {
+  background: var(--card);
+  border-color: var(--card-edge);
+  box-shadow: 0 0.4rem 1rem var(--shadow-color);
+}
+.lookup-word:hover,
+.ipa-word:hover {
+  background: var(--tint);
+}
+.lookup-lemma,
+.lookup-ipa,
+.lookup-pos,
+.lookup-status,
+.raw-block,
+.image-block figcaption {
+  color: var(--muted);
+}
+/* 音标紫退役 (redesign 01): the annotation IPA reads the warm gray. */
+.ipa-word-ipa,
+.ipa-line {
+  color: var(--muted);
+}
+.lookup-head-actions button:hover {
+  background: var(--tint);
+}
+.code-block,
+.image-placeholder {
+  background: var(--tint);
+}
+.image-placeholder {
+  border-color: var(--edge);
 }
 
 /* ── Ticket 06: touch, safe areas ─────────────────────────────────── */

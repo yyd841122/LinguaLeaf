@@ -99,7 +99,7 @@ describe("safe areas (ticket 06, static)", () => {
   });
 });
 
-describe("dark follow (ticket 06, static)", () => {
+describe("theme tokens (redesign 01, static)", () => {
   const TOKENS = [
     "accent",
     "accent-fill",
@@ -118,51 +118,90 @@ describe("dark follow (ticket 06, static)", () => {
     "ok-strong",
     "ok",
     "ok-2",
+    "scrim",
+    "shadow-color",
   ];
 
-  it("the palette is tokenized — no hardcoded light hexes remain", () => {
-    const root = ruleBody(readerCss, ":root");
+  it("every theme block re-voices the full palette — paper is the bare default", () => {
     for (const token of TOKENS) {
-      expect(root).toContain(`--${token}: #`);
+      expect(ruleBody(readerCss, ":root")).toContain(`--${token}: #`);
+      expect(ruleBody(readerCss, ':root[data-theme="white"]')).toContain(
+        `--${token}: #`
+      );
+      expect(ruleBody(readerCss, ':root[data-theme="night"]')).toContain(
+        `--${token}: #`
+      );
     }
-    // The declarations reference tokens, not literals (the shadow's
-    // #0003 alpha is the one deliberate exception).
-    const leftovers = readerCss.match(/#[0-9a-fA-F]{3,6}\b/g) ?? [];
-    const outsideRootDark = readerCss
-      .replace(ruleBody(readerCss, ":root"), "")
-      .replace(/--[\w-]+: #[0-9a-fA-F]{3,6};/g, "");
-    expect(
-      (outsideRootDark.match(/#[0-9a-fA-F]{3,6}\b/g) ?? []).filter(
-        (hex) => hex !== "#0003"
-      )
-    ).toEqual([]);
-    expect(leftovers.length).toBeGreaterThan(0);
+    // The blocks own the scheme hint: light themes read light, night
+    // reads dark — UA canvas colors follow the resolved theme.
+    expect(ruleBody(readerCss, ":root")).toContain("color-scheme: light");
+    expect(ruleBody(readerCss, ':root[data-theme="white"]')).toContain(
+      "color-scheme: light"
+    );
+    expect(ruleBody(readerCss, ':root[data-theme="night"]')).toContain(
+      "color-scheme: dark"
+    );
+    // The shell sheet no longer declares a scheme — reader.css's theme
+    // blocks own it (style.css loads after reader.css in the bundle, so
+    // a scheme there would smother the manual themes).
+    expect(bare(shellCss)).not.toContain("color-scheme");
   });
 
-  it("the dark block re-voices every token under the system scheme", () => {
-    const mediaAt = readerCss.indexOf("@media (prefers-color-scheme: dark)");
-    expect(mediaAt).toBeGreaterThanOrEqual(0);
-    const dark = readerCss.slice(mediaAt);
-    for (const token of TOKENS) {
-      expect(dark).toContain(`--${token}: #`);
-    }
-  });
-
-  it("the kernel-shared popup surfaces are re-voiced app-side, not in the kernel sheet", () => {
-    const mediaAt = readerCss.indexOf("@media (prefers-color-scheme: dark)");
-    const dark = readerCss.slice(mediaAt);
-    expect(dark).toMatch(/\.lookup-popup\s*\{[^}]*background: var\(--card\)/);
-    expect(dark).toMatch(
-      /\.lookup-word:hover,\s*\.ipa-word:hover\s*\{[^}]*background: var\(--tint\)/
+  it("the accent is brick — the phonetic purple is retired everywhere", () => {
+    expect(ruleBody(readerCss, ":root")).toContain("--accent: #c5322a");
+    expect(ruleBody(readerCss, ':root[data-theme="white"]')).toContain(
+      "--accent: #c5322a"
+    );
+    // 夜间砖红提亮: night's accent differs from the light brick (a
+    // literal #c5322a on the dark ground is unreadable).
+    const night = ruleBody(readerCss, ':root[data-theme="night"]');
+    expect(night).toContain("--accent:");
+    expect(night).not.toContain("--accent: #c5322a");
+    // The annotation IPA reads warm gray, not accent (音标紫退役).
+    expect(bare(readerCss)).not.toContain("#6a4fa3");
+    expect(bare(readerCss)).toMatch(
+      /\.ipa-word-ipa,\s*\.ipa-line\s*\{[^}]*color: var\(--muted\)/
     );
   });
-  it("the kernel sheet's every light surface is re-voiced (review P2)", () => {
-    const mediaAt = readerCss.indexOf("@media (prefers-color-scheme: dark)");
-    const dark = readerCss.slice(mediaAt);
-    // Accent lines, muted texts, hover tint, code/image blocks — one
-    // dropped selector leaves a light patch glowing in the dark face.
+
+  it("the palette is the single color source — no scattered literals in declarations", () => {
+    const css = bare(readerCss);
+    // Hex and rgba() colors live only inside token declarations. The
+    // theme blocks are the one place a hex is written.
+    const withoutDeclarations = css.replace(
+      /--[\w-]+:\s*(#[0-9a-fA-F]{3,8}|rgba\([^)]*\));/g,
+      ""
+    );
+    expect(withoutDeclarations.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
+    expect(withoutDeclarations.match(/rgba\(/g) ?? []).toEqual([]);
+    // Keyword colors retired with the reskin: gray borders/text and the
+    // scheme-following canvas ground become tokens.
+    expect(withoutDeclarations).not.toMatch(
+      /(?:border[^;]*|color|background)\s*:\s*(?:gray|canvas)\b/
+    );
+  });
+
+  it("the page ground rides tokens — body and the masking bands follow the theme", () => {
+    const body = ruleBody(readerCss, "body");
+    expect(body).toContain("background: var(--paper)");
+    expect(body).toContain("color: var(--ink)");
+    expect(ruleBody(readerCss, ".reader-head")).toContain(
+      "background: var(--paper)"
+    );
+    expect(ruleBody(readerCss, ".reader-tools-fixed")).toContain(
+      "background: var(--paper)"
+    );
+  });
+
+  it("kernel-shared surfaces are re-voiced app-side for every theme, not behind a media query", () => {
+    const css = bare(readerCss);
+    // The manual mechanism replaced prefers-color-scheme CSS: the app
+    // resolves the theme in JS and stamps data-theme — no media block
+    // remains to fight it.
+    expect(css).not.toContain("@media (prefers-color-scheme");
     for (const selector of [
-      ".ipa-line",
+      ".lookup-popup",
+      ".lookup-word:hover",
       ".lookup-ipa",
       ".lookup-pos",
       ".lookup-head-actions button:hover",
@@ -170,11 +209,48 @@ describe("dark follow (ticket 06, static)", () => {
       ".raw-block",
       ".image-placeholder",
     ]) {
-      const at = dark.indexOf(selector);
+      const at = css.indexOf(selector);
       expect(at, `${selector} not re-voiced`).toBeGreaterThanOrEqual(0);
-      const open = dark.indexOf("{", at);
-      const body = dark.slice(open, dark.indexOf("}", open));
+      const body = css.slice(at, css.indexOf("}", at));
       expect(body, `${selector} not re-voiced`).toContain("var(--");
+    }
+  });
+
+  it("the PDF original page is white paper in every theme (纸就是纸)", () => {
+    // Page-anchored tokens, defined once on :root — never re-voiced by
+    // a theme block, so no theme can bleed onto the canvas page.
+    const root = ruleBody(readerCss, ":root");
+    expect(root).toContain("--pdf-page-paper: #ffffff");
+    for (const block of [
+      ':root[data-theme="white"]',
+      ':root[data-theme="night"]',
+    ]) {
+      expect(ruleBody(readerCss, block)).not.toContain("--pdf-page-paper");
+    }
+    expect(ruleBody(readerCss, ".pdf-stage canvas")).toContain(
+      "background: var(--pdf-page-paper)"
+    );
+    // The canvas overlays key to the page, not the theme: the IPA chip
+    // reads its own page-anchored ink.
+    expect(ruleBody(readerCss, ".pdf-ipa")).toContain(
+      "color: var(--pdf-ipa-ink)"
+    );
+  });
+
+  it("the scale tokens land for later tickets (4px base)", () => {
+    const root = ruleBody(readerCss, ":root");
+    for (const token of [
+      "--space-1: 0.25rem",
+      "--space-2: 0.5rem",
+      "--space-3: 0.75rem",
+      "--space-4: 1rem",
+      "--space-5: 1.5rem",
+      "--text-s: 0.85rem",
+      "--text-m: 1rem",
+      "--radius-s: 0.25rem",
+      "--radius-m: 0.5rem",
+    ]) {
+      expect(root).toContain(token);
     }
   });
 });
