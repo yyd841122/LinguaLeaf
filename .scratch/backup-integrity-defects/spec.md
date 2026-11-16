@@ -1,6 +1,6 @@
 # 备份完整性缺陷簇:校验零写入失守 + 译文键未校验 + 导出书名键原型污染
 
-**Status:** claimed
+**Status:** done
 
 来自 mobile-app 05 独立终审发现 2+3+4(2026-11-16,threadId
 01a1e1e9-f7c3-7550-927e-9e06deee6655;编排侧现场核验站点):
@@ -39,5 +39,7 @@
   **NO-GO 一处 P2**:零写入测试预置与 payload 同值(hello:known)+未查书签,
   评审探针实证「校验前偷写 vocab/bookmarks 仍全绿」,违反 No-change claims。
   已修:预置改 hello:learning + 书签 {7,3} 异位锚,断言偷写后必红;探针同款
-  变异复核咬合(1 红)。非阻断余量:块层 1.5/1e3 用例缺(备注)。caller 补跑
-  verify 后翻 done。
+  变异复核咬合(1 红)。修笔在 c7e252a(与后续票批同 commit,文件纠缠)。
+  非阻断余量:块层 1.5/1e3 用例缺(备注)。caller 补跑 verify 后翻 done。
+
+- 2026-11-16 收官翻 done:Codex 审核 3 生产修复 PASS + P2 已修(探针变异复核咬合);修笔 c7e252a pre-commit 全链 verify EXIT=0。真机人验项各自挂账等机检。

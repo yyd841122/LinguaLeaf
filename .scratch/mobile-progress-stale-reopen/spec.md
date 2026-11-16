@@ -1,6 +1,6 @@
 # mobile 续读竞态簇:备份恢复不刷新书架 + listDocuments 不等在途写
 
-**Status:** claimed
+**Status:** done
 
 来自 mobile-app 02 独立终审发现 1+2(2026-11-16,threadId
 01a1e1db-a5d2-75f0-9f2f-1c7b4accd86b,verdict NO-GO;两案同属「重开续读
@@ -30,3 +30,15 @@
   附带核过:notes-store 已有同型 pendingWrites join;translation-store
   的 exportAll 仍直读(备份时若有译文写入在途会漏最新行,量级小,暂不
   扩票,留观)。
+
+- 2026-11-16 Codex 审核(threadId 01a1e2bf-6c23-7040-b1f9-cbefe74de1f1,
+  基线 ef932b4→b8cdebd):缺陷 2 PASS(探针确认 join 语义);readSettled
+  捕获时点语义 PASS;**NO-GO 一项 P2**:error 页也提供备份导入,但
+  recents effect 的 empty-only 守卫跳过重读——error 页恢复成功后旧行
+  仍可点(评审探针:error 态存 3 章显示/点击仍 1 章)。修于 c7e252a:
+  守卫改 `phase !== "empty" && recentsRevision === 0`,导入成功即重读;
+  补 error 页恢复回归测试(垃圾 epub 落 error 态 → 恢复 → 第 3 章出现)。
+  评审另记(不判 FAIL):ReaderPage 续读仍用列表快照 entry.progress,
+  列表读后写入/导入中点击等窗口有旧值面——票面未要求改,留观。
+
+- 2026-11-16 收官翻 done:Codex 审核 2 缺陷 PASS + error 页 P2 修笔在 c7e252a,回归测试+守卫变异咬合,verify EXIT=0。真机人验项各自挂账等机检。

@@ -1,6 +1,6 @@
 # mobile 书签两缺陷:面板加载清空正文记号 + 打签落位含 plain 块
 
-**Status:** claimed
+**Status:** done
 
 来自 mobile-app 10 独立终审发现 1+2(2026-11-16,threadId
 01a1e1e2-b13e-7d73-b20d-c51c8a08fc1e,verdict NO-GO;终审内存探针确认,
@@ -34,3 +34,16 @@
   新测试 5 片,变异心证:还原 src 后 5 红全数咬合(既有 stale-outvote
   测试不变绿);全量 verify 108 文件 1205 测试绿。人验项(真机慢读关闭、
   混合块打签)挂账等机检。
+
+- 2026-11-16 Codex 审核(threadId 01a1e2ba-a6dd-7db0-9de4-e6ab5cbc32ad,
+  基线 8a463f0→ef932b4):**NO-GO 三项**,全部实修于 c7e252a:
+  ①重试交错复活(新引入):快照在、面板读失败、重试 refetch 期间删除可行,
+  慢列表落地旧快照覆盖删除结果——修:删除钮/打签挂 panelRowsLoading 上锁,
+  pending 期间无 op 可与列表读交错;②失败且无快照(bookmarkRows null)时
+  等待行与错误行同屏——修:渲染条件改为「无快照时旗语独占」;③常量 0 base
+  在 image 首块章仍打出图片坐标——修:base 改章内首个 sentence。修笔测试
+  5 片(EPUB 3 + PDF 2),六变异(两面上锁×2/两面渲染×2/base/含 A-3)全
+  咬合。票面先前误记「CSS 选择器收窄属本票」——实为 A-5 commit 16a2b1b
+  的改动,已更正。
+
+- 2026-11-16 收官翻 done:Codex 审核 3 缺陷 PASS + 3 修笔(重试交错复活/失败无快照让位/首 sentence base)全在 c7e252a,六变异咬合,verify EXIT=0。真机人验项各自挂账等机检。

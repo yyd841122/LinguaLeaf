@@ -1,6 +1,6 @@
 # mobile 词典外部词键原型污染:constructor/toString 等真实词查错
 
-**Status:** claimed
+**Status:** done
 
 来自 mobile-app 02 独立终审发现 3+7(2026-11-16,threadId
 01a1e1db-a5d2-75f0-9f2f-1c7b4accd86b):
@@ -25,3 +25,14 @@
   既有 runs→run 测试即优先级钉。新测试 2 片,双变异心证:裸索引还原后
   仅原型测试红;lookup 优先级翻转(form-first)后仅 runs 测试红。
   全量 verify 108 文件 1208 测试绿。
+
+- 2026-11-16 Codex 审核(threadId 01a1e2c3-fb2a-7e42-a810-a5e22a16cece,
+  基线 b8cdebd→4c9c57e):实现逐项 PASS(10 处读点全换/顺序保留/容错
+  保留);**NO-GO 一项 P2 证据缺口**:原型测试选词经 normalization 后
+  多数折离原型——entries 裸索引单点回退、lookup 内 inflections 单点
+  回退均仍绿。修于 c7e252a:补两条不变量断言(无自有条目时
+  lookup("constructor")===null——constructor 是唯一折叠后仍命中原型的
+  词,钉 entries 表;baked 自有条目时 lookup("constructor").lemma===null,
+  钉 lookup 内 inflections 读点),两变异实证咬合。
+
+- 2026-11-16 收官翻 done:Codex 实现全 PASS + P2 证据缺口补强在 c7e252a,entries/inflections 单点变异咬合,verify EXIT=0。真机人验项各自挂账等机检。

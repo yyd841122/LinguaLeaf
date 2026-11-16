@@ -1,6 +1,6 @@
 # mobile 测试证据缺口批扫:词汇后端 catcher / 落点断言 / 字典资产门
 
-**Status:** needs-triage
+**Status:** claimed
 
 来自 mobile-app 02 独立终审发现 4+5+6(2026-11-16,threadId
 01a1e1db-a5d2-75f0-9f2f-1c7b4accd86b,变异心证证据缺口簇):
@@ -42,3 +42,14 @@
   ⑩长按测试未派发松手后 click,「吞掉点词」断言无法区分删掉抑制逻辑
   (pdfReaderBookmarks.test.tsx:269、pdfReflow.test.tsx:249);⑪长按用
   字面量属性选择器查词,违反大小写约定(pdfReflow.test.tsx:245,P3)。
+
+- 2026-11-16 批扫实施(Lane A,Codex 审核待发):①③ commit 4362c02;
+  ②-⑪ commit c7e252a(与 A-1~A-4 评审修笔同 commit,文件纠缠,票面
+  各自映射)。逐项:①vocabularyBackend 双实例跨挂载读回 + App.test 零
+  注入默认组合根走查(put/enroll/组合根/资产门四变异咬合);③本地产物
+  存在门(CI 跳过可见);②区分几何精确落点;④跳回 scrollIntoView 原型
+  探针;⑤多章行序;⑥CSS 静态钉+换章不外溢;⑦contract 借手机 validator
+  验真路由字节 + web 桩真 payload;⑧merge 区分 fixture + 导出全状态/
+  非首句落点;⑨阈值边界/适宽 368/壳高/缩放作用域/跳签滚动/span inline
+  双钉(七变异咬合);⑩松手 click 派发断言吞点词(两文件);⑪wordEl
+  精确 getAttribute。pinch 属真机面,未测,挂账。Codex 审核排队中。
