@@ -1,6 +1,6 @@
 # web 阅读页:章切换滚动重置(与 mobile 章滚动洞同型)
 
-**Status:** needs-triage
+**Status:** wontfix
 
 来自 mobile-md-import 真机 round 1 诊断的跨端一致性发现(2026-11-15)。
 mobile 面已修:`EpubReader.goChapter` 切章补 `window.scrollTo(0, 0)`
@@ -21,3 +21,9 @@ scroll restoration 语义,与 mobile 的组件内切换不同型,结论待测);
 
 - 2026-11-15 mobile-md-import 真机诊断时立票(跨端一致性:同一阅读
   契约,web 面未见对应实现)。
+- 2026-11-16 维护者判示:**网页版没有问题**,立票理由不成立,销票。
+  与源码形态吻合:web 面章切换是 React Router 路由跳转(Link),非
+  mobile 的组件内 setState 换章——路由切换自带滚动复位语义,同型洞
+  不成立。若日后有人在 web 面复现「切章不停在章首」,再开新票,诊断
+  环配方可复用(scripts/browser-e2e/mobile-md-chapter-scroll.mjs 改驱动
+  web dist)。
