@@ -804,11 +804,12 @@ export function EpubReader({
     >
       <header className="reader-head">
         <h1 className="reader-title">{book.title}</h1>
-        {toolbarPosition === "top" ? toolsRow : null}
         {/* 听书控制条 (ticket 07): play/pause from the current chapter's
           first sentence, sentence stepping, and the rate ladder. The
-          bar rides the face — its buttons inherit the 44px touch floor
-          and the palette tokens (ticket 06). */}
+          bar rides the face — its buttons inherit the palette tokens
+          (ticket 06) and the compact row (mobile-ipa-buttons 02):
+          directly under the title, below the touch floor visually with
+          a grown hit area, so the sticky head stays one slim band. */}
         <div className="readaloud-bar" role="group" aria-label="听书">
           <button
             type="button"
@@ -867,6 +868,7 @@ export function EpubReader({
             </p>
           ) : null}
         </div>
+        {toolbarPosition === "top" ? toolsRow : null}
       </header>
       {settingsLoadFailed ? (
         <p className="reader-error" role="alert">

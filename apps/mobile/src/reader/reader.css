@@ -79,20 +79,29 @@ body {
    the reading position only if the 书签 button never forces a scroll
    back to the chapter top. canvas is the scheme-aware page color, so the
    stuck head masks the text scrolling under it in both themes. */
+/* Stacked rows (mobile-ipa-buttons 02): the EPUB head carries three
+   children (title, 听书 row, tools row) — the old single-line flex
+   squeezed the title into a glyph column and pushed the 听书 group
+   off-screen at phone widths. Rows stack like the PDF shell's head
+   (round 12); readingAnchorTop() measures the head's bottom live, so
+   progress/bookmark anchors adapt on their own. */
 .reader-head {
   position: sticky;
   top: 0;
   z-index: 10;
   background: canvas;
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
   border-bottom: 1px solid gray;
-  padding-bottom: 0.75rem;
+  padding-bottom: 0.6rem;
 }
 .reader-tools {
   display: flex;
+  /* Narrow-phone fallback: at ≥360px the eight controls fit one row;
+     below that they wrap instead of overflowing the viewport. */
+  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: baseline;
 }
@@ -911,16 +920,37 @@ body {
 /* The centered overlays sit inside the veil; the card's own bottom
    padding keeps its actions clear of the gesture bar. */
 
-/* 听书 (ticket 07): the control bar rides under the face's header row;
-   its buttons inherit the touch floor and the palette tokens. The
-   live sentence's highlight is a tint band plus the accent spine —
-   visible in both schemes without covering the glyphs. */
+/* 听书 (ticket 07): the control bar rides directly under the title
+   (mobile-ipa-buttons 02) as ONE compact row — the reader asked for
+   small: its four buttons sit below the 44px touch floor visually and
+   grow a hit area instead (the ticket-06 pens' exemption pattern), so
+   the sticky head stays a slim band. The live sentence's highlight is
+   a tint band plus the accent spine — visible in both schemes without
+   covering the glyphs. */
 .readaloud-bar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  /* Row gap ≥ the hit area's vertical bleed (±0.35em ≈ ±4.8px → 9.5px
+     span; 0.6rem = 9.6px) so a wrapped second row's hit areas never
+     overlap the first's — the later-DOM button would steal the tap. */
+  gap: 0.6rem;
   flex-wrap: wrap;
-  padding-top: 0.25rem;
+}
+.readaloud-bar button {
+  /* Floor exemption, scoped (the pens' precedent): visual size small
+     by request, touch size restored below. */
+  min-height: 0;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  position: relative;
+}
+.readaloud-bar button::after {
+  /* The grown hit area: ±0.35em on a 0.85rem font ≈ ±4.8px — a ~24px
+     visual button clears ~37px of touch without crossing the row gap
+     or the 0.6rem column gap between neighbours. */
+  content: "";
+  position: absolute;
+  inset: -0.35em -0.35em;
 }
 .readaloud-bar .reader-error {
   margin: 0;

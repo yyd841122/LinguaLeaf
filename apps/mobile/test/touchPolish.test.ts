@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -188,4 +188,82 @@ describe("keyboard (ticket 06, static)", () => {
     const card = ruleBody(readerCss, ".overlay-card");
     expect(card).toMatch(/overflow(-y)?: auto/);
   });
+});
+
+describe("EPUB head + 听书 compact row (mobile-ipa-buttons 02, static)", () => {
+  it("the EPUB head stacks its rows — the single-line flex squeezed the title and pushed the 听书 group off-screen", () => {
+    expect(ruleBody(readerCss, ".reader-head")).toContain(
+      "flex-direction: column"
+    );
+  });
+
+  it("the 听书 buttons sit below the floor visually and grow hit areas (the pens' exemption pattern)", () => {
+    const bar = ruleBody(readerCss, ".readaloud-bar button");
+    expect(bar).toContain("min-height: 0");
+    expect(bar).toContain("font-size: 0.85rem");
+    expect(bar).toContain("position: relative");
+    const hit = ruleBody(readerCss, ".readaloud-bar button::after");
+    expect(hit).toContain('content: ""');
+    expect(hit).toMatch(/inset:\s*-0\.35em -0\.35em/);
+  });
+
+  it("the 听书 bar renders directly under the title, before the tools row (书名下方)", () => {
+    const epub = readFileSync(
+      resolve(here, "../src/reader/EpubReader.tsx"),
+      "utf8"
+    );
+    const header = epub.indexOf('<header className="reader-head">');
+    const bar = epub.indexOf('className="readaloud-bar"', header);
+    const tools = epub.indexOf(
+      '{toolbarPosition === "top" ? toolsRow : null}',
+      header
+    );
+    expect(header).toBeGreaterThanOrEqual(0);
+    expect(bar, "听书 bar must live inside the header").toBeGreaterThan(header);
+    expect(tools, "tools row must live inside the header").toBeGreaterThan(
+      header
+    );
+    expect(bar).toBeLessThan(tools);
+  });
+});
+
+describe("built-artifact integrity (mobile-ipa-buttons 01, static)", () => {
+  // The transcription glyphs are painted ONLY by the kernel sheet's
+  // `.ipa-word-ipa::before { content: attr(data-ipa) }` — the span body
+  // is empty. A build that loses the kernel stylesheet (postcss-import
+  // drops the whole @import when any rule precedes it) ships a reader
+  // whose 音标 toggle silently shows nothing. The android assets once
+  // carried exactly that broken CSS while dist was already fixed (cap
+  // sync never re-run after the fix), so the marker is demanded of every
+  // built stylesheet, in both output locations, wherever they exist.
+  const CSS_DIRS = [
+    resolve(here, "../dist/assets"),
+    resolve(here, "../android/app/src/main/assets/public/assets"),
+  ];
+  const presentDirs = CSS_DIRS.filter((dir) => existsSync(dir));
+
+  it.skipIf(presentDirs.length === 0)(
+    "every built stylesheet carries the kernel IPA marker",
+    () => {
+      // Per directory: present → it must hold at least one stylesheet
+      // (a present-but-css-less directory is a broken build), and every
+      // stylesheet must carry the marker (a present css without it is
+      // the historical silent drop). Both dirs absent → skipped above:
+      // a fresh clone runs the suite before any build — root verify's
+      // build step lands after its test phase.
+      const files: string[] = [];
+      for (const dir of presentDirs) {
+        const css = readdirSync(dir).filter((name) => name.endsWith(".css"));
+        expect(css, `${dir} exists but holds no stylesheet`).not.toHaveLength(
+          0
+        );
+        files.push(...css.map((name) => join(dir, name)));
+      }
+      for (const file of files) {
+        expect(readFileSync(file, "utf8"), file).toContain(
+          "content:attr(data-ipa)"
+        );
+      }
+    }
+  );
 });
