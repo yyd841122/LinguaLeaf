@@ -20,9 +20,6 @@ twins of an available named type sweep in a batch, not per diff」:不在功能�
 ## Comments
 
 - 2026-11-15 mobile-md-import 票 02 评审发现立票(Standards 轴 finding 1)。
-
-## Comments
-
 - 2026-11-16 维护者拍板"现在修了",当轮修讫:新 `apps/mobile/test/reader-picker.ts`
   导出 PICKER_LABEL(单一事实源,注释注明改一处编译器点名全部站点);6 文件
   14 处字面量全部换用(计数断言替换),accept 精确值断言保持字面量(钉值
