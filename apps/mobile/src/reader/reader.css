@@ -703,7 +703,10 @@ body {
   user-select: none;
   -webkit-user-select: none;
 }
-.pdf-reflow .block-note-button {
+/* The paragraph pen pins top-right of its block; a noted line's own
+   inline pen (defect-cluster A-5) stays in the text flow — the override
+   scopes to the block's direct child only. */
+.pdf-reflow .sentence-block > .block-note-button {
   position: absolute;
   right: 0.2rem;
   top: 0.15rem;

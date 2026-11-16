@@ -84,6 +84,11 @@ const pageItems = (): TextItem[] => [
   item("Second line here", 40, 260, 200),
 ];
 
+// The line read's fault injector (retry-wiring test): the face's read
+// counts its calls so the test can prove 重试读取 actually re-armed it.
+let lineReadCalls = 0;
+let failLineRead = false;
+
 function session(): pdf.PdfSession {
   return {
     title: "Same title",
@@ -91,7 +96,11 @@ function session(): pdf.PdfSession {
     doc: {
       destroy: vi.fn().mockResolvedValue(undefined),
       getPage: vi.fn(async () => ({
-        getTextContent: vi.fn(async () => ({ items: pageItems() })),
+        getTextContent: vi.fn(async () => {
+          lineReadCalls += 1;
+          if (failLineRead) throw new Error("getTextContent died");
+          return { items: pageItems() };
+        }),
         cleanup: vi.fn(),
       })),
     } as unknown as pdf.PdfSession["doc"],
@@ -99,6 +108,8 @@ function session(): pdf.PdfSession {
 }
 
 beforeEach(() => {
+  lineReadCalls = 0;
+  failLineRead = false;
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: unknown) => {
@@ -133,7 +144,8 @@ afterEach(() => {
 function mount(
   bookmarks: BookmarkStore = createMemoryBookmarkStore(),
   positions: PdfPositionStore = createMemoryPdfPositionStore(),
-  uiSettings: UiSettingsStore = createMemoryUiSettingsStore()
+  uiSettings: UiSettingsStore = createMemoryUiSettingsStore(),
+  pdfNotes = createMemoryPdfNotesStore()
 ) {
   const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
   const tree = () => (
@@ -141,7 +153,7 @@ function mount(
       store={vocab}
       library={createMemoryLibraryStore()}
       notes={createMemoryNotesStore()}
-      pdfNotes={createMemoryPdfNotesStore()}
+      pdfNotes={pdfNotes}
       pdfPositions={positions}
       pdfBytes={bytes}
       translations={createMemoryTranslationStore()}
@@ -150,7 +162,14 @@ function mount(
       uiSettings={uiSettings}
     />
   );
-  return { view: render(tree()), tree, bookmarks, positions, uiSettings };
+  return {
+    view: render(tree()),
+    tree,
+    bookmarks,
+    positions,
+    uiSettings,
+    pdfNotes,
+  };
 }
 
 async function pick() {
@@ -283,6 +302,134 @@ describe("PDF reflow face (round 7)", () => {
     expect(screen.getAllByRole("button", { name: "编辑笔记" })).toHaveLength(1);
     const docId = await id();
     expect(await ctx.bookmarks.list(docId)).toHaveLength(0);
+  });
+
+  // mobile-pdf-reflow-defects 缺陷 1: the pen used to open the paragraph's
+  // FIRST line blind — a mid-paragraph note showed 编辑笔记 over a blank
+  // editor (the 终审 probe reproduced it on the second line). The pen now
+  // targets the first line whose anchor still matches; other noted lines
+  // keep their own inline pens.
+  it("the pen opens the noted line, and mid-paragraph notes stay reachable", async () => {
+    const { pdfNotes } = mount();
+    const docId = await id();
+    // The fixture's paragraph is two lines; the note sits on the SECOND.
+    await pdfNotes.save(
+      {
+        type: "progress",
+        docId,
+        page: 1,
+        lineIndex: 1,
+        lineText: "Second line here",
+      },
+      "第二行存量笔记"
+    );
+    await pick();
+    await reflow();
+
+    const pen = screen.getByRole("button", { name: "编辑笔记" });
+    fireEvent.click(pen);
+    expect(screen.getByRole("dialog", { name: "行笔记" })).toBeInTheDocument();
+    // The editor opened on the NOTED line: the seeded text loads (the
+    // mutant opens line 0 and the box comes up empty).
+    expect(screen.getByRole("textbox")).toHaveValue("第二行存量笔记");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+
+    // Saving through the pen keeps the mid-line anchor (not the head).
+    fireEvent.click(screen.getByRole("button", { name: "编辑笔记" }));
+    fireEvent.click(screen.getByRole("tab", { name: "感受" }));
+    fireEvent.change(screen.getByRole("textbox"), {
+      target: { value: "段中补记" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("已存");
+    const notes = await pdfNotes.list(docId);
+    expect(notes.find((note) => note.text === "段中补记")?.lineIndex).toBe(1);
+  });
+
+  // 缺陷 2: a note whose lineText drifted (re-imported PDF, line text
+  // changed) used to open by page+lineIndex alone and save back with the
+  // CURRENT line text — re-stamping the stale anchor. The canvas face's
+  // drift guard: the pen locks, the alert names the preserved rows.
+  it("a drifted note is preserved and locked: no pen opens it, an alert says so", async () => {
+    const { pdfNotes } = mount();
+    const docId = await id();
+    await pdfNotes.save(
+      {
+        type: "progress",
+        docId,
+        page: 1,
+        lineIndex: 0,
+        lineText: "漂移前的旧行文本",
+      },
+      "错锚旧笔记"
+    );
+    await pick();
+    await reflow();
+
+    // The pen names the note (its target line carries one) but the
+    // anchor is stale: disabled, and no editor opens.
+    const pen = screen.getByRole("button", { name: "编辑笔记" });
+    expect(pen).toBeDisabled();
+    expect(screen.getByText(/已有笔记与本页行文本不符/)).toBeInTheDocument();
+    fireEvent.click(pen);
+    expect(screen.queryByRole("dialog", { name: "行笔记" })).toBeNull();
+    // The drifted row survives untouched.
+    const notes = await pdfNotes.list(docId);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.lineText).toBe("漂移前的旧行文本");
+  });
+
+  // 缺陷 3: 重试读取 only bumped `attempt` while the read effect ignored
+  // it (stable owner identity) — the probe's call count stayed at 1.
+  it("重试读取 re-arms the failed line read", async () => {
+    mount();
+    await pick();
+    failLineRead = true;
+    fireEvent.click(screen.getByRole("button", { name: "重排" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("页面文本读取失败");
+    expect(lineReadCalls).toBe(1);
+
+    failLineRead = false;
+    fireEvent.click(screen.getByRole("button", { name: "重试读取" }));
+    // The re-read lands: lines render, the alert retires.
+    expect(await screen.findByText("Woke")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(lineReadCalls).toBe(2);
+  });
+
+  // 缺陷 4: the notes read's `failed` was dropped — every pen disabled
+  // forever with no hint. The canvas face's failure channel, mirrored.
+  it("a failed notes read surfaces its own alert with a working retry", async () => {
+    const inner = createMemoryPdfNotesStore();
+    let failList = true;
+    const pdfNotes: typeof inner = {
+      ...inner,
+      list: (docId) =>
+        failList
+          ? Promise.reject(new Error("pdf notes read died"))
+          : inner.list(docId),
+    };
+    mount(
+      createMemoryBookmarkStore(),
+      createMemoryPdfPositionStore(),
+      createMemoryUiSettingsStore(),
+      pdfNotes
+    );
+    await pick();
+    await reflow();
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("笔记读取失败");
+    // The pens cannot confirm existing notes: disabled while failed.
+    expect(
+      screen.getAllByRole("button", { name: "写笔记" })[0]!
+    ).toBeDisabled();
+
+    failList = false;
+    fireEvent.click(screen.getByRole("button", { name: "重试读取笔记" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(screen.getAllByRole("button", { name: "写笔记" })[0]!).toBeEnabled();
   });
 
   it("persists the chosen face with the position and flips back to canvas", async () => {

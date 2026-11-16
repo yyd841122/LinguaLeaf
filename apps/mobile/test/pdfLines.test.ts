@@ -185,6 +185,27 @@ describe("markParagraphBreaks", () => {
     expect(lines[2]!.paraEnd).toBe(true);
   });
 
+  it("a lone closing quote is not a sentence end — only a closer after one is", () => {
+    // The v5 contract (短行∧句末标点): `words "Well,"` ends on a quote
+    // riding a COMMA — the quote is not sentence-final punctuation, the
+    // short line stays mid-paragraph (the old class let the bare quote
+    // fire the turn end). The closer-after-punct forms still fire.
+    const lines = [
+      para(300, 40, 260, "body line running to the margin,"),
+      para(270, 40, 130, 'words "Well,"'),
+      para(244, 40, 260, "and the sentence runs on,"),
+      para(214, 40, 120, 'then closed the thought."'),
+      para(184, 40, 260, "a fresh paragraph starts here,"),
+    ];
+    markParagraphBreaks(lines);
+    expect(lines[0]!.paraEnd).toBe(false);
+    // Quote-after-comma: no break.
+    expect(lines[1]!.paraEnd).toBe(false);
+    expect(lines[2]!.paraEnd).toBe(false);
+    // A closer AFTER sentence punctuation still ends the turn.
+    expect(lines[3]!.paraEnd).toBe(true);
+  });
+
   it("breaks where the next line is indented with a raised gap", () => {
     const lines = [
       para(300, 40, 260, "body line running to the margin,"),

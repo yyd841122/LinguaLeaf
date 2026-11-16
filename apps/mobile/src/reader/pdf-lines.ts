@@ -172,8 +172,12 @@ export function markParagraphBreaks(lines: ParagraphLine[]): void {
     ? Math.max(...lines.map((line) => line.right))
     : 0;
   const turnShortAt = columnRight - (columnRight - columnLeft) * 0.08;
+  // The v5 contract: a turn end needs SENTENCE-FINAL punctuation. A lone
+  // closing quote/apostrophe is not one (words "Well," used to fire) —
+  // quotes only ride along as the optional closer after the punctuation
+  // (Yes." / said.’).
   const endsSentence = (text: string): boolean =>
-    /[.?!…"”'’]["”'’]?\s*$/u.test(text.trimEnd());
+    /[.?!…][”"’']?\s*$/u.test(text.trimEnd());
   for (let i = 0; i < lines.length; i++) {
     const next = lines[i + 1];
     if (!next) {

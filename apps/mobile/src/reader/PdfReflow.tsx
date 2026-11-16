@@ -165,14 +165,18 @@ export function PdfReflow({
       },
     });
     return () => readOwner.invalidate();
-  }, [session, page, run, readOwner]);
-  const notesOwner = useOwner(docId, session, page, notes);
-  const { run: runNotes } = useSettle(notesOwner);
+    // attempt rides the deps: the 重试读取 button bumps it, and without
+    // it here the owner's stable identity meant the click re-rendered
+    // but never re-read (the retry stayed a dead button).
+  }, [session, page, attempt, run, readOwner]);
+  const [notesAttempt, setNotesAttempt] = useState(0);
+  const notesOwner = useOwner(docId, session, page, notes, notesAttempt);
+  const { run: runNotes, failed: notesFailed } = useSettle(notesOwner);
   const [saved, setSaved] = useState<PdfNote[] | null>(null);
   useEffect(() => {
     void runNotes(notes.list(docId), { onFresh: setSaved });
     return () => notesOwner.invalidate();
-  }, [docId, notes, runNotes, notesOwner]);
+  }, [docId, notes, notesAttempt, runNotes, notesOwner]);
   useImperativeHandle(
     ref,
     () => ({
@@ -276,6 +280,33 @@ export function PdfReflow({
           </button>
         </p>
       ) : null}
+      {notesFailed ? (
+        <p role="alert" className="reader-error">
+          笔记读取失败，无法确认已有笔记。
+          <button type="button" onClick={() => setNotesAttempt((v) => v + 1)}>
+            重试读取笔记
+          </button>
+        </p>
+      ) : null}
+      {/* The canvas face's drift guard: notes whose lineText no longer
+          matches any rendered line keep their rows but lose their pens —
+          opening one would re-stamp the stale anchor as current text. */}
+      {paragraphs !== null &&
+      (saved ?? []).some(
+        (note) =>
+          note.page === page &&
+          !paragraphs.some((paraLines) =>
+            paraLines.some(
+              (line) =>
+                line.lineIndex === note.lineIndex &&
+                line.lineText === note.lineText
+            )
+          )
+      ) ? (
+        <p role="alert" className="reader-error">
+          已有笔记与本页行文本不符，已保留原笔记，未回挂不符条目。
+        </p>
+      ) : null}
       <div
         className="pdf-reflow"
         ref={container}
@@ -327,12 +358,32 @@ export function PdfReflow({
                   note.page === page && note.lineIndex === line.lineIndex
               )
             );
-            const hasNote = paraNotes.some((note) =>
-              paraLines.some(
-                (line) =>
-                  note.lineText === line.lineText &&
-                  note.lineIndex === line.lineIndex
-              )
+            // A note's anchor matches only when its lineText is still the
+            // rendered line's text — the drift guard below keys on it.
+            const lineHasNote = (line: ReflowLine): boolean =>
+              paraNotes.some(
+                (note) =>
+                  note.lineIndex === line.lineIndex &&
+                  note.lineText === line.lineText
+              );
+            // A note's anchor matches only when its lineText is still the
+            // rendered line's text — the drift guard keys on it. The
+            // paragraph pen writes the paragraph's HEAD line (its fresh
+            // write entry, labeled/locked by that line's own notes); every
+            // OTHER noted line keeps its own inline pen (段中笔记可达 —
+            // the pen used to open the head line blind, showing 编辑笔记
+            // over a blank editor). A line whose notes drifted keeps its
+            // rows but no pen opens it (the canvas face's drift guard).
+            const headAnyNote = paraNotes.some(
+              (note) => note.lineIndex === first.lineIndex
+            );
+            const headMismatch = paraNotes.some(
+              (note) =>
+                note.lineIndex === first.lineIndex &&
+                note.lineText !== first.lineText
+            );
+            const sideNotes = paraLines.filter(
+              (line) => line.lineIndex !== first.lineIndex && lineHasNote(line)
             );
             return (
               <div
@@ -359,12 +410,37 @@ export function PdfReflow({
                       {lineAt < paraLines.length - 1 ? " " : null}
                     </span>
                   ))}
+                  {/* The paragraph pen writes the head; these inline pens
+                      keep every other noted line's own entry. */}
+                  {sideNotes.map((line) => (
+                    <button
+                      key={line.lineIndex}
+                      type="button"
+                      className="block-note-button has-note"
+                      aria-label="编辑笔记"
+                      disabled={saved === null || notesFailed}
+                      onClick={(event) => {
+                        if (editorRef.current?.requestClose() === false) return;
+                        onOpenNote();
+                        setPopup({
+                          lineIndex: line.lineIndex,
+                          lineText: line.lineText,
+                          button: event.currentTarget,
+                          op: ++nextOp.current,
+                        });
+                      }}
+                    >
+                      ✎
+                    </button>
+                  ))}
                 </p>
                 <button
                   type="button"
-                  className={`block-note-button${hasNote ? " has-note" : ""}`}
-                  aria-label={hasNote ? "编辑笔记" : "写笔记"}
-                  disabled={saved === null}
+                  className={`block-note-button${
+                    lineHasNote(first) ? " has-note" : ""
+                  }`}
+                  aria-label={headAnyNote ? "编辑笔记" : "写笔记"}
+                  disabled={saved === null || notesFailed || headMismatch}
                   onClick={(event) => {
                     if (editorRef.current?.requestClose() === false) return;
                     onOpenNote();
@@ -390,7 +466,12 @@ export function PdfReflow({
           ownerKey={`${docId}:${page}:${popup.lineIndex}`}
           ariaLabel="行笔记"
           initial={(saved ?? []).filter(
-            (note) => note.page === page && note.lineIndex === popup.lineIndex
+            (note) =>
+              note.page === page &&
+              note.lineIndex === popup.lineIndex &&
+              // The drift guard's belt: only notes anchored to THIS
+              // line's current text prefill the editor.
+              note.lineText === popup.lineText
           )}
           button={popup.button}
           store={{
