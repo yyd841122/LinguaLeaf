@@ -203,3 +203,19 @@ read-only 契约只复核 typecheck/lint,caller 门照例另行补跑(EXIT 见�
   3 skipped,含新门)。终审 NEEDS REVISION 的三个实项全部闭环:书签路由
   10、字典门补齐、收官声明修正;两项 CONCERN(PDF 措辞、verify 独立
   复证)记档处置如上。02 维持 done。
+
+### 2026-11-16 Codex 独立终审(挂账补跑)
+
+threadId `01a1e1db-a5d2-75f0-9f2f-1c7b4accd86b`,verdict **NO-GO**,只读
+未运行测试。发现 3 行为缺陷 + 4 证据缺口,按票面规则全走 follow-up:
+- 缺陷 1+2(备份恢复不刷新书架 / listDocuments 不等在途写)→
+  `.scratch/mobile-progress-stale-reopen/`
+- 缺陷 3 + 缺口 7(词典裸索引原型污染 + 薄条目 fixture 缺失)→
+  `.scratch/mobile-dict-proto-lookup/`
+- 缺口 4/5/6(词汇后端 catcher / 打签落点断言 / 字典资产门跳过)→
+  `.scratch/mobile-test-evidence-gaps/`
+三簇代码站点均经编排侧现场核验后立票。验收门判定:EPUB 本地解析/注入缝/
+离线资产/笔记/发音 PASS;点词生词与进度落位 FAIL(即上述缺陷);书签与
+杀进程重开 PARTIAL(证据缺口);根 verify 为旧树记录(今日全链由
+mobile-md-import 收官时的 caller verify 覆盖)。02 维持 done,实项随
+follow-up 票处置。
