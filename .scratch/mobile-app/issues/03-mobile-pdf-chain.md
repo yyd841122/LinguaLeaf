@@ -504,3 +504,17 @@ Success。
 段距书的段落在印刷层即不存在、重排态字号/行距可调。
 **Codex 独立终审**:与 02/10/05 同批挂账补跑(额度已恢复),如有实项
 按 follow-up 处置。
+
+### 2026-11-16 Codex 独立终审(挂账补跑)
+
+threadId `01a1e1ea-a7e2-72c1-83c8-a5dda0a47c67`,verdict **NO-GO**,只读
+含内存探针与分段夹具比对。实项/缺口全走 follow-up:
+- 实项 1/3/4/5/6(段中笔记不可达/漂移保护缺失/重试断链/失败禁用无恢复/
+  句末信号偏宽)→ `.scratch/mobile-pdf-reflow-defects/`
+- 实项 2(PDF 面书签面板清快照)→ 并入 `.scratch/mobile-bookmark-defects/`
+- 缺口 7/8/9(阈值簇/壳高/适宽/连续流/pinch 无 catcher;长按 click 缺失;
+  大小写约定)→ 并入 `.scratch/mobile-test-evidence-gaps/` ⑨⑩⑪
+导入/坐标叠加/点词生词/进度/扫描件边界/壳高实现/工具栏互通 PASS;书签与
+笔记门 FAIL(即上述实项);v5 连续流 PARTIAL。已知边界(双栏/紧排/零段距/
+字号行距可调)按票面豁免不重复报告。收官后目录浮层/返回/md 导入未引入
+PDF 回归。03 维持 done,实项随 follow-up 票处置。

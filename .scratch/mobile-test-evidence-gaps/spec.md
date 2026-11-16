@@ -32,3 +32,13 @@
   validator/manager(bookshelf.test.tsx:672);⑧merge 测试未预置仅本地
   生词/他书进度/异位书签,导出 fixture 未覆盖完整词状态与非首句译文落点,
   「保留 vs 清空」无区分 fixture(backup.test.ts:202)。
+
+- 2026-11-16 追加(来自 mobile-app 03 终审,threadId
+  01a1e1ea-a7e2-72c1-83c8-a5dda0a47c67):⑨分段阈值簇无 catcher——
+  1.45→1.4、1.05→1.12 四组分段夹具全不变;壳高改 innerHeight/删 resize
+  无 catcher;适宽禁用无 main 夹具时 400px 容器 368→300 不可测;行 span
+  display:block(连续流退化为块)现有断言全不变;pinch/缩放钮作用域/
+  跳签滚动无性质断言(pdfRendering.test.ts:58、pdfReflow.test.tsx:183);
+  ⑩长按测试未派发松手后 click,「吞掉点词」断言无法区分删掉抑制逻辑
+  (pdfReaderBookmarks.test.tsx:269、pdfReflow.test.tsx:249);⑪长按用
+  字面量属性选择器查词,违反大小写约定(pdfReflow.test.tsx:245,P3)。
