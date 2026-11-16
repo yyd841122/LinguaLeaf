@@ -1,5 +1,5 @@
 # 06 第一批收口:触控/安全区/深色跟随(exit gate)
-Status: claimed (2026-11-16, Lane A)(2026-11-09 立票;to-spec 补全轮定名 exit gate;/to-tickets 补全轮重编号,原 05)
+Status: done(2026-11-09 立票;to-spec 补全轮定名 exit gate;/to-tickets 补全轮重编号,原 05)
 Blocked by: 04 + 05(两线汇合)
 
 ## 目标
@@ -56,3 +56,13 @@ Blocked by: 04 + 05(两线汇合)
   adjustResize 生效,设置页密钥输入框完整可见于 IME 上方;④安全区目测
   无裁切。Codex 评审(含修笔)已发。人验项中「日常操作无误触」需日常
   使用面检验,留给用户随手反馈。
+
+- 2026-11-16 Codex 审核(threadId 01a1e409-003a-7e11-bc15-8bc2ff26b3de,
+  849dbba+10c6019 深色部分):**NO-GO 2P1+2P2+证据缺口**,全修于 dd6045d:
+  ①:root 先于 @import 致内核共享表整份被丢(postcss 规则,jsdom/静态
+  测不可见)——token 块移位+样式表完整性钉;②命中区 relative 同特异度
+  后位覆盖画布笔钮 absolute——:not(.pdf-note-button) 豁免+双向钉;
+  ③vv 钳制缺下界;④内核暗色覆写不完整(六选择器补全+枚举钉)。另按
+  评审更正 MainActivity 注释的 API 33 因果、touchPolish ruleBody 剥注
+  释(探针:button→a 靠注释词仍绿)。四变异咬合;verify 112 文件 1263
+  绿。收官翻 done。人验余项:日常误触感 + TTS 听感(用户随手反馈)。

@@ -1,5 +1,5 @@
 # 07 听书 MVP:系统 TTS 连续朗读 EPUB
-Status: implemented (2026-11-16, Lane A;评审排队 17:43 配额)(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
+Status: done(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
 Blocked by: 06
 
 ## 目标
@@ -41,3 +41,14 @@ Blocked by: 06
   滚动在章中时入口不可达——挪进 sticky header 常驻(a11y 树里 WebView
   inline 笔钮报零界,dtap 不可用,直接坐标点按)。TTS 实声由用户侧
   听感确认(机检以高亮推进为证)。Codex 评审已发。
+
+- 2026-11-16 Codex 审核(threadId 01a1e409-4fa1-7951-bc7c-f4769b19b4c7,
+  基线 849dbba→10c6019):**NO-GO 2P1+2P2+2 Standards**,全修于 3e77d2d:
+  ①中断续体竞态(旧操作 flush 晚落地借全局代际复活)——自有代际+
+  stillMine 门,评审探针形测试钉住;②探针期 stop 停不掉(原生 stop 只
+  清已提交朗读)——native-tts 取消纪元,陈旧探针静默不发;③手动换章
+  {chapter,0} 与播放器争写进度——cursor 守卫;④暂停跨章跳句画面/高亮
+  失联——章跟随扩 paused(滚动跟随之分记档);Standards:竞态测试原形
+  不成立已重造(逐次门控 stop);「暂停朗读/朗读失败」归 GLOSSARY 改
+  「暂停听书/听书失败」。四变异咬合;verify 112 文件 1263 绿。真机
+  机检已过主体链,竞态类为评审探针所钉;TTS 实声听感留用户。收官。
