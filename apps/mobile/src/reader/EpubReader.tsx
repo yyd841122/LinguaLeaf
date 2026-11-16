@@ -5,7 +5,7 @@ import {
   type WordClick,
 } from "@lingualeaf/reading-model/react";
 import { segmentOriginal, type StatusApplied } from "@lingualeaf/reading-model";
-import type { ExtBook } from "./import-book";
+import type { ExtBlock, ExtBook } from "./import-book";
 import type { VocabularyStore, VocabState } from "../store/vocabulary-store";
 import type { ChapterProgress, LibraryStore } from "../store/library-store";
 import type { NotesStore } from "../store/notes-store";
@@ -67,6 +67,29 @@ const topmostVisibleBlockIndex = (): number => {
     if (block.getBoundingClientRect().top <= anchorTop) {
       current = Number(block.dataset.blockIndex ?? 0);
     }
+  }
+  return current;
+};
+
+// The bookmark plant's target: the topmost visible SENTENCE block — the
+// 落位契约 (ticket 10: 打书签坐标 = 最顶可见 sentence 块). The geometry
+// walk is the progress save's rule narrowed by the chapter data: the DOM
+// anchors carry every block kind (EpubChapter mounts [data-block-index]
+// on raw/code/image too, for the jump technique), so the kind filter
+// rides the blocks, not the DOM. No sentence block crossed yet falls
+// back to the chapter top (block 0), the walk's own initial value.
+const topmostVisibleSentenceIndex = (
+  blocks: ExtBlock[] | undefined
+): number => {
+  if (!blocks) return 0;
+  const anchorTop = readingAnchorTop();
+  let current = 0;
+  for (const block of document.querySelectorAll<HTMLElement>(
+    "[data-block-index]"
+  )) {
+    if (block.getBoundingClientRect().top > anchorTop) continue;
+    const index = Number(block.dataset.blockIndex ?? 0);
+    if (blocks[index]?.kind === "sentence") current = index;
   }
   return current;
 };
@@ -161,6 +184,14 @@ export function EpubReader({
   const [showBookmarks, setShowBookmarks] = useState(false);
   const [showToc, setShowToc] = useState(false);
   const [bookmarkRows, setBookmarkRows] = useState<BookmarkRow[] | null>(null);
+  // The panel's own loading surface, deliberately separate from the
+  // shared snapshot: wiping bookmarkRows on open used to blank the
+  // in-text markers too (they derive from these rows), and a close
+  // before the refetch landed — the cleanup invalidates the read's
+  // ticket — left them gone for good while the store still held the
+  // marks. The snapshot now survives the open/close; only the panel's
+  // spinner waits on the refetch.
+  const [panelRowsLoading, setPanelRowsLoading] = useState(false);
   const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
   const [jumpTarget, setJumpTarget] = useState<EpubBookmarkTarget | null>(null);
 
@@ -362,14 +393,23 @@ export function EpubReader({
   // (the web session's same trade: stale client rows lose to fresh truth)
   // — through the one settle channel the ops share. Teardown invalidates
   // the read's ticket: a closed panel's late list cannot outvote the
-  // reopened panel's own read.
+  // reopened panel's own read. The shared snapshot is NOT wiped here —
+  // the panel's wait rides panelRowsLoading, so the in-text markers keep
+  // reading the last landed rows through an open, a slow read, or a
+  // close before the read lands.
   useEffect(() => {
     if (!showBookmarks) return;
-    setBookmarkRows(null);
+    setPanelRowsLoading(true);
     void runBookmarks(bookmarks.list(docId), {
-      onFresh: (rows) => setBookmarkRows(rows),
+      onFresh: (rows) => {
+        setBookmarkRows(rows);
+        setPanelRowsLoading(false);
+      },
     });
-    return () => bookmarksOwner.invalidate();
+    return () => {
+      bookmarksOwner.invalidate();
+      setPanelRowsLoading(false);
+    };
   }, [
     bookmarks,
     docId,
@@ -485,14 +525,15 @@ export function EpubReader({
       window.scrollTo(0, 0);
     }
   };
-  // 打书签: the plant lands on the position progress would report — the
-  // current chapter's topmost visible block — and the store's
-  // same-position idempotence makes a double click one mark.
+  // 打书签: the plant lands on the position progress would report,
+  // narrowed to the blocks a bookmark may land on (the topmost visible
+  // sentence block — the 落位契约) — and the store's same-position
+  // idempotence makes a double click one mark.
   const plantBookmark = () => {
     void runBookmarks(
       bookmarks.add(docId, {
         chapter: chapterIndex,
-        block: topmostVisibleBlockIndex(),
+        block: topmostVisibleSentenceIndex(chapter?.blocks),
       }),
       {
         onFresh: (row) =>
@@ -717,7 +758,7 @@ export function EpubReader({
               // pending list would merge the row locally, only for the
               // older snapshot to overwrite the panel when its read
               // lands (one channel, no invalidate between the marks).
-              disabled={bookmarkRows === null}
+              disabled={panelRowsLoading}
               onClick={plantBookmark}
             >
               在当前位置打书签
@@ -737,7 +778,12 @@ export function EpubReader({
                 </button>
               </p>
             ) : null}
-            {bookmarkRows === null ? (
+            {/* The panel's wait is its own state, not the snapshot: a
+                failure retires the wait line (the flag's error line
+                speaks instead) and the last landed rows stay listed. */}
+            {panelRowsLoading && !bookmarksSettle.failed ? (
+              <p className="reader-status">读取书签中…</p>
+            ) : bookmarkRows === null ? (
               <p className="reader-status">读取书签中…</p>
             ) : bookmarkRows.length === 0 ? (
               <p className="reader-status">

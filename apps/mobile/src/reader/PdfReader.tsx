@@ -233,6 +233,12 @@ export function PdfReader({
   const [bookmarkRows, setBookmarkRows] = useState<PdfBookmarkRow[] | null>(
     null
   );
+  // The panel's own loading surface, separate from the shared snapshot —
+  // the EPUB face's same fix: wiping the rows on open blanked the page
+  // marks too (pageMarks derive from them), and a close before the
+  // refetch landed — the cleanup invalidates the read's ticket — left
+  // them gone while the store still held the marks.
+  const [panelRowsLoading, setPanelRowsLoading] = useState(false);
   const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
   // The armed jump (ticket 10's same shape): the row's line scrolls into
   // view once its page's render settles — PdfPage owns the scroll.
@@ -251,11 +257,17 @@ export function PdfReader({
   }, [bookmarks, docId, runBookmarks, bookmarksOwner]);
   useEffect(() => {
     if (!showBookmarks) return;
-    setBookmarkRows(null);
+    setPanelRowsLoading(true);
     void runBookmarks(bookmarks.list(docId), {
-      onFresh: (rows) => setBookmarkRows(rows.filter(isPdfRow)),
+      onFresh: (rows) => {
+        setBookmarkRows(rows.filter(isPdfRow));
+        setPanelRowsLoading(false);
+      },
     });
-    return () => bookmarksOwner.invalidate();
+    return () => {
+      bookmarksOwner.invalidate();
+      setPanelRowsLoading(false);
+    };
   }, [
     bookmarks,
     docId,
@@ -369,7 +381,7 @@ export function PdfReader({
               // pending list would merge the row locally, only for the
               // older snapshot to overwrite the panel when its read
               // lands (one channel, no invalidate between the marks).
-              disabled={bookmarkRows === null}
+              disabled={panelRowsLoading}
               onClick={plantBookmark}
             >
               在当前位置打书签
@@ -389,7 +401,12 @@ export function PdfReader({
                 </button>
               </p>
             ) : null}
-            {bookmarkRows === null ? (
+            {/* The panel's wait is its own state, not the snapshot: a
+                failure retires the wait line (the flag's error line
+                speaks instead) and the last landed rows stay listed. */}
+            {panelRowsLoading && !bookmarksSettle.failed ? (
+              <p className="reader-status">读取书签中…</p>
+            ) : bookmarkRows === null ? (
               <p className="reader-status">读取书签中…</p>
             ) : bookmarkRows.length === 0 ? (
               <p className="reader-status">

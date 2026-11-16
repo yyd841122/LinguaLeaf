@@ -66,6 +66,26 @@ const SAMPLE_EPUB = () =>
 
 const DOC_ID = "doc:Skeleton Book";
 
+// The 落位契约 fixture: sentence/code/sentence/image interleaved — the
+// plant must land on the topmost visible SENTENCE block, never a plain
+// one (mobile-bookmark-defects 缺陷 2; the h1 yields no block, so the
+// chapter's blocks index 0..3 exactly as spelled here).
+const MIXED_EPUB = () =>
+  buildEpub({
+    title: "Mixed Book",
+    docs: [
+      {
+        href: "text/mixed.xhtml",
+        body: `<h1>Mixed Chapter</h1>
+<p>First sentence lands here.</p>
+<pre><code>const x = 1;</code></pre>
+<p>Second sentence follows the code.</p>
+<p><img src="../images/dot.png" alt="A red dot"/></p>`,
+      },
+    ],
+    images: [{ href: "images/dot.png" }],
+  });
+
 // Only the baked dictionary asset is fetched in this suite (bookmarks
 // never leave the seam); an unmatched request throws naming the URL
 // (CODING_STANDARDS: a stub gap must not read as a domain failure).
@@ -94,7 +114,11 @@ async function pickFile(file: File): Promise<void> {
 }
 
 async function renderReadingFace(
-  bookmarks: BookmarkStore = createMemoryBookmarkStore()
+  bookmarks: BookmarkStore = createMemoryBookmarkStore(),
+  book: { build: () => Promise<Uint8Array>; title: string } = {
+    build: SAMPLE_EPUB,
+    title: "Skeleton Book",
+  }
 ): Promise<void> {
   render(
     <ReaderPage
@@ -114,11 +138,11 @@ async function renderReadingFace(
     />
   );
   await pickFile(
-    new File([(await SAMPLE_EPUB()) as BlobPart], "book.epub", {
+    new File([(await book.build()) as BlobPart], "book.epub", {
       type: "application/epub+zip",
     })
   );
-  await screen.findByRole("heading", { name: "Skeleton Book" });
+  await screen.findByRole("heading", { name: book.title });
 }
 
 const openPanel = async () => {
@@ -406,5 +430,162 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     expect(within(dialog).queryByText("Chapter Two")).toBeNull();
     expect(calls).toBe(3);
     expect(await inner.list(DOC_ID)).toEqual([planted]);
+  });
+
+  // mobile-bookmark-defects 缺陷 1 (EPUB face): the open used to wipe the
+  // shared snapshot, so an open (or a close before the open's read landed
+  // — teardown invalidates that read's ticket) blanked the in-text markers
+  // for good while the store still held the marks.
+  it("a slow panel read never blanks the in-text markers, on open or on close", async () => {
+    stubDictionaryOnly();
+    const inner = createMemoryBookmarkStore();
+    const planted: BookmarkRow = await inner.add(DOC_ID, {
+      chapter: 0,
+      block: 1,
+    });
+    let calls = 0;
+    let releaseOpen!: () => void;
+    const openGate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const bookmarks: BookmarkStore = {
+      list: (docId) => {
+        calls += 1;
+        // Call 1 is the mount read (lands fresh, drives the markers).
+        // Call 2 is the OPEN's read — gated until the test releases it,
+        // by which time the panel has closed. Its answer carries an
+        // extra bogus row so any adoption would be visible.
+        return calls === 2
+          ? openGate.then(() => [
+              planted,
+              {
+                id: 999,
+                chapter: 1,
+                block: 0,
+                createdAt: "2026-11-11T00:00:00.000Z",
+              } as BookmarkRow,
+            ])
+          : inner.list(docId);
+      },
+      add: (docId, target) => inner.add(docId, target),
+      remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
+    };
+    await renderReadingFace(bookmarks);
+
+    // The mount read landed: the mark shows (the read is async — wait).
+    await waitFor(() =>
+      expect(
+        document
+          .querySelector("[data-block-index='1']")
+          ?.classList.contains("block-marked")
+      ).toBe(true)
+    );
+
+    const dialog = await openPanel();
+    // The open's read hangs; the marker must survive the open itself.
+    expect(
+      await within(dialog).findByText(/读取书签中/, {}, { timeout: 3000 })
+    ).toBeInTheDocument();
+    expect(
+      document
+        .querySelector("[data-block-index='1']")
+        ?.classList.contains("block-marked")
+    ).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    // The abandoned read cannot blank the face: the store still holds it.
+    expect(
+      document
+        .querySelector("[data-block-index='1']")
+        ?.classList.contains("block-marked")
+    ).toBe(true);
+
+    // The late answer is stale (teardown invalidated its ticket): the
+    // reopened panel's own read speaks, and the bogus row is nowhere.
+    releaseOpen();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    const again = await openPanel();
+    expect(await within(again).findByText("Chapter One")).toBeInTheDocument();
+    expect(within(again).queryByText("Chapter Two")).toBeNull();
+    expect(
+      document
+        .querySelector("[data-block-index='1']")
+        ?.classList.contains("block-marked")
+    ).toBe(true);
+  });
+
+  it("a failed panel read keeps the marks in text and the rows listed", async () => {
+    stubDictionaryOnly();
+    const inner = createMemoryBookmarkStore();
+    await inner.add(DOC_ID, { chapter: 0, block: 1 });
+    let calls = 0;
+    const bookmarks: BookmarkStore = {
+      list: (docId) => {
+        calls += 1;
+        // Only the OPEN's read (call 2) fails; the mount read lands.
+        return calls === 2
+          ? Promise.reject(new Error("idb read died"))
+          : inner.list(docId);
+      },
+      add: (docId, target) => inner.add(docId, target),
+      remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
+    };
+    await renderReadingFace(bookmarks);
+    const marked = document.querySelector("[data-block-index='1']");
+    await waitFor(() =>
+      expect(marked?.classList.contains("block-marked")).toBe(true)
+    );
+
+    const dialog = await openPanel();
+    // The flag speaks; the wait line retires; the last landed rows stay
+    // listed under it — the snapshot is the panel's fallback truth.
+    const flag = await within(dialog).findByRole("alert");
+    expect(flag.textContent).toContain("书签操作失败");
+    expect(within(dialog).queryByText(/读取书签中/)).toBeNull();
+    expect(within(dialog).getByText("Chapter One")).toBeInTheDocument();
+
+    // The failed refetch must not have blanked the face on close.
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(marked?.classList.contains("block-marked")).toBe(true);
+  });
+
+  it("plants on the topmost visible sentence block, never a plain block (落位契约)", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    await renderReadingFace(bookmarks, {
+      build: MIXED_EPUB,
+      title: "Mixed Book",
+    });
+
+    const dialog = await openPanel();
+    await awaitEmptyList(dialog);
+    plantHere();
+
+    // jsdom lays every block at top 0, so "topmost visible" resolves to
+    // the LAST eligible block in DOM order. The chapter is sentence(0),
+    // code(1), sentence(2), image(3): the old all-block walk planted the
+    // image (3); the contract says the last SENTENCE (2).
+    const rows = (await bookmarks.list("doc:Mixed Book")).filter(isEpubRow);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.chapter).toBe(0);
+    expect(rows[0]!.block).toBe(2);
+    // The marker rides the planted sentence; the plain blocks stay clean.
+    // (The merge commit lags the seam write — wait for it to land.)
+    await waitFor(() =>
+      expect(
+        document
+          .querySelector("[data-block-index='2']")
+          ?.classList.contains("block-marked")
+      ).toBe(true)
+    );
+    expect(
+      document
+        .querySelector("[data-block-index='3']")
+        ?.classList.contains("block-marked")
+    ).toBe(false);
   });
 });

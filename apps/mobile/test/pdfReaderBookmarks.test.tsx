@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -302,5 +303,111 @@ describe("PDF face bookmarks (ticket 03)", () => {
     await screen.findByRole("dialog", { name: "词详情：Woke" });
     fireEvent.click(screen.getByRole("button", { name: "150%" }));
     expect(screen.queryByRole("dialog", { name: "词详情：Woke" })).toBeNull();
+  });
+
+  // mobile-bookmark-defects 缺陷 1 (PDF face): the open used to wipe the
+  // shared snapshot, so an open (or a close before the open's read landed
+  // — teardown invalidates that read's ticket) blanked the page marks for
+  // good while the store still held them.
+  it("a slow panel read never blanks the page marks, on open or on close", async () => {
+    const inner = createMemoryBookmarkStore();
+    const docId = await id();
+    const planted = await inner.add(docId, { page: 1, line: 0, text: "Woke" });
+    let calls = 0;
+    let releaseOpen!: () => void;
+    const openGate = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const bookmarks: BookmarkStore = {
+      list: () => {
+        calls += 1;
+        // Call 1 is the mount read (lands fresh, drives the marks); call
+        // 2 is the OPEN's read — gated until the test releases it, by
+        // which time the panel has closed. Its answer carries an extra
+        // bogus page-3 row so any adoption would be visible.
+        return calls === 2
+          ? openGate.then(() => [
+              planted,
+              {
+                id: 999,
+                page: 3,
+                line: 9,
+                text: "stale",
+                createdAt: "2026-11-11T00:00:00.000Z",
+              },
+            ])
+          : inner.list(docId);
+      },
+      add: (docId, target) => inner.add(docId, target),
+      remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
+    };
+    mount(bookmarks);
+    await pick();
+    // The mount read landed and the page rendered: the mark shows.
+    await waitFor(() =>
+      expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull()
+    );
+
+    await openPanel();
+    expect(await screen.findByText(/读取书签中/)).toBeInTheDocument();
+    // The open's read hangs; the mark must survive the open itself.
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    // The abandoned read cannot blank the face: the store still holds it.
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
+
+    // The late answer is stale (teardown invalidated its ticket): the
+    // reopened panel's own read speaks, and the bogus row is nowhere.
+    releaseOpen();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    await openPanel();
+    expect(
+      await screen.findByRole("button", { name: /^第 1 页/ })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^第 3 页/ })).toBeNull();
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
+  });
+
+  it("a failed panel read keeps the page marks and the rows listed", async () => {
+    const inner = createMemoryBookmarkStore();
+    const docId = await id();
+    await inner.add(docId, { page: 1, line: 0, text: "Woke" });
+    let calls = 0;
+    const bookmarks: BookmarkStore = {
+      list: () => {
+        calls += 1;
+        // Only the OPEN's read (call 2) fails; the mount read lands.
+        return calls === 2
+          ? Promise.reject(new Error("idb read died"))
+          : inner.list(docId);
+      },
+      add: (docId, target) => inner.add(docId, target),
+      remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
+    };
+    mount(bookmarks);
+    await pick();
+    await waitFor(() =>
+      expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull()
+    );
+
+    await openPanel();
+    const dialog = screen.getByRole("dialog", { name: "书签" });
+    // The flag speaks; the wait line retires; the last landed rows stay
+    // listed under it — the snapshot is the panel's fallback truth.
+    const flag = await within(dialog).findByRole("alert");
+    expect(flag.textContent).toContain("书签操作失败");
+    expect(within(dialog).queryByText(/读取书签中/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /^第 1 页/ })
+    ).toBeInTheDocument();
+
+    // The failed refetch must not have blanked the face on close.
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
   });
 });
