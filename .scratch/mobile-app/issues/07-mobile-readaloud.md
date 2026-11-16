@@ -1,5 +1,5 @@
 # 07 听书 MVP:系统 TTS 连续朗读 EPUB
-Status: claimed (2026-11-16, Lane A)(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
+Status: implemented (2026-11-16, Lane A;评审排队 17:43 配额)(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
 Blocked by: 06
 
 ## 目标
@@ -26,3 +26,11 @@ Blocked by: 06
   06 评审若有修笔属视觉层,不影响本票缝。另:票面「speechSynthesis 真机
   实测」前置已被票 09 终审定案(WebView 内静默),原生 TTS 插件经 09 已
   就位——本票直接走 speak router 原生面。
+
+- 2026-11-16 实现落地(commit,基线 849dbba):readaloud player(纯逻辑,
+  延迟 promise 假 speaker 单元 6 片)+ EpubReader 接线(控制条/高亮/
+  进度跟随/跨章跟随/滚动静默)+ native-tts 扩 rate/stop。面级 3 片,
+  四变异咬合;verify 112 文件 1256 绿。PDF 听书按票面许可降级存根
+  .scratch/mobile-pdf-readaloud/(needs-triage 待拍板)。语速 MVP 会话级
+  (不持久化),起播点=当前章首句——两项如真机反馈需要再开票。Codex
+  评审排 17:43 后(与 06 同批)。
