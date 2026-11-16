@@ -260,7 +260,7 @@ describe("markParagraphBreaks", () => {
 describe("markParagraphBreaks — threshold boundaries", () => {
   it("a raised gap just under 1.45×leading stays mid-paragraph (a 1.4 mutant fires it)", () => {
     // Body leading 30; L2→L3 gap 42.3 sits between 1.40×30=42 and
-    // 1.45×30=42.5: the contract says NO break.
+    // 1.45×30=43.5: the contract says NO break.
     const lines = [
       para(300, 40, 260, "body line one runs on,"),
       para(270, 40, 260, "body line two runs on,"),

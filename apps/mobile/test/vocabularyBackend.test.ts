@@ -29,6 +29,16 @@ describe("the storage-backed vocabulary store (the phone's composition)", () => 
     );
     // 查词即状态 enrolls through the record's queued write …
     expect((await first.lookup("Woke"))?.status).toBe("learning");
+    // … and enroll's write is durable ON ITS OWN: a fresh instance reads
+    // it back BEFORE any put could mask it (a deleted enroll persist
+    // still answers learning here from the in-flight map — the review's
+    // probe had setStatus overwrite the evidence).
+    const enrolled = createVocabularyStore(
+      DICT,
+      createStorageBackend(createIdbNamespaceStorage(factory))
+    );
+    expect(await enrolled.exportAll()).toEqual({ woke: "learning" });
+    expect((await enrolled.lookup("Woke"))?.status).toBe("learning");
     // … and the popup's explicit set overrides it through the same path.
     await first.setStatus("woke", "known");
 

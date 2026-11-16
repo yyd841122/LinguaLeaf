@@ -1,6 +1,6 @@
 # mobile 测试证据缺口批扫:词汇后端 catcher / 落点断言 / 字典资产门
 
-**Status:** claimed
+**Status:** done
 
 来自 mobile-app 02 独立终审发现 4+5+6(2026-11-16,threadId
 01a1e1db-a5d2-75f0-9f2f-1c7b4accd86b,变异心证证据缺口簇):
@@ -53,3 +53,15 @@
   非首句落点;⑨阈值边界/适宽 368/壳高/缩放作用域/跳签滚动/span inline
   双钉(七变异咬合);⑩松手 click 派发断言吞点词(两文件);⑪wordEl
   精确 getAttribute。pinch 属真机面,未测,挂账。Codex 审核排队中。
+
+- 2026-11-16 Codex 审核(threadId 01a1e2db-2a38-7290-9a0e-b756d5481f38):
+  ②③④⑦⑧⑨⑩⑪ 全 PASS(逐项变异心证);**NO-GO 三 P2 + 一 P3**,全在
+  新测试自身,已修(本 commit):①enroll 写被后续 put 掩盖→setStatus 前以
+  新实例读回 learning;⑤排序夹具无区分态(插入序=阅读序)→反序打签 +
+  末次添加后当前面板直查(本地合并路径,重开面板会被 store 自排序掩盖);
+  ⑥静态钉未钉伪元素生成条件→两伪元素 content:"" 各入断言;P3
+  App.test 残留字面量属性选择器→改精确 getAttribute 匹配。另按评审更正
+  阈值注释笔误(1.45×30=43.5)。评审探针四变异(enroll 落盘删/本地排序
+  删/content 删×2)全部精确咬合。verify 109 文件 1238 测试 EXIT=0。
+  pinch 未测(真机面)如票面声明;①组合根 cleanup/双挂载时序经评审确认
+  有效。收官翻 done。

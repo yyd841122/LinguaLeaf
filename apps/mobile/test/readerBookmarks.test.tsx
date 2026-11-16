@@ -653,24 +653,36 @@ describe("ReaderPage — 书签落点与滚动 (evidence gaps ②④⑤⑥)", ()
     const bookmarks = createMemoryBookmarkStore();
     await renderReadingFace(bookmarks);
 
-    // Plant on chapter one, walk to chapter two, plant again.
-    const first = await openPanel();
-    await awaitEmptyList(first);
-    plantHere();
-    expect(await within(first).findByText("Chapter One")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    // Plant in REVERSE reading order (chapter two first, then one):
+    // insertion order must not be what the panel shows — the local
+    // merge's byReadingOrder sort is under test (the store's own sort
+    // would mask it after a refetch, so the final read is the CURRENT
+    // panel, not a reopen).
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
     const second = await openPanel();
+    await awaitEmptyList(second);
     plantHere();
     expect(await within(second).findByText("Chapter Two")).toBeInTheDocument();
 
-    // Reading order: chapter one's row first, chapter two's second.
-    const titles = within(second)
-      .getAllByRole("button", { name: /^Chapter/ })
-      .map((button) => button.querySelector(".bookmark-title")?.textContent);
-    expect(titles).toEqual(["Chapter One", "Chapter Two"]);
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chapter One" }));
+    expect(await screen.findByText("Words")).toBeInTheDocument();
+    const first = await openPanel();
+    expect(await within(first).findByText("Chapter Two")).toBeInTheDocument();
+    plantHere();
+    // The just-planted row enters through the LOCAL merge (no reopen):
+    // the sort must put Chapter One first against insertion order.
+    // (The merge lands a beat after the seam write — wait for it.)
+    await waitFor(() =>
+      expect(
+        within(first)
+          .getAllByRole("button", { name: /^Chapter/ })
+          .map((button) => button.querySelector(".bookmark-title")?.textContent)
+      ).toEqual(["Chapter One", "Chapter Two"])
+    );
   });
 
   it("a cross-chapter jump scrolls the planted block into view (④)", async () => {
@@ -777,6 +789,9 @@ describe("block-marked visual declarations (evidence gap ⑥, static)", () => {
 
   it("the page-margin strip rides the marked block's left edge", () => {
     const strip = ruleBody(".block-marked::before");
+    // content generates the box at all — drop it and the strip (and the
+    // ribbon below) simply never renders, colors and all.
+    expect(strip).toContain('content: ""');
     expect(strip).toContain("width: 3px");
     expect(strip).toContain("#6a4fa3");
     expect(strip).toContain("left: -0.55rem");
@@ -784,6 +799,7 @@ describe("block-marked visual declarations (evidence gap ⑥, static)", () => {
 
   it("the ribbon hangs below the block's right edge", () => {
     const ribbon = ruleBody(".block-marked::after");
+    expect(ribbon).toContain('content: ""');
     expect(ribbon).toContain("clip-path");
     expect(ribbon).toContain("#6a4fa3");
     expect(ribbon).toContain("bottom: -1.1rem");

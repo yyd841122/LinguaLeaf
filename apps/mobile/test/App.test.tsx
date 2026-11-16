@@ -153,7 +153,11 @@ test("默认组合根走真实 IndexedDB 后端:生词状态跨重启读回", as
     await screen.findByText("Woke");
   };
   const openPopup = async () => {
-    fireEvent.click(document.querySelector("[data-word='Woke']")!);
+    fireEvent.click(
+      [...document.querySelectorAll<HTMLElement>("[data-word]")].find(
+        (el) => el.getAttribute("data-word") === "Woke"
+      )!
+    );
     return screen.findByRole("dialog", { name: "词详情：Woke" });
   };
 
