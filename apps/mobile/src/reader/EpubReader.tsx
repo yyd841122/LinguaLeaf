@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useState, type RefObject } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type RefObject,
+} from "react";
 import {
   useOwner,
   useSettle,
@@ -36,6 +43,13 @@ import { EpubChapter } from "./EpubChapter";
 import type { NoteEditorHandle } from "./NoteEditor";
 import { WordLookupPopup } from "./WordLookupPopup";
 import { formatPlantedAt } from "./bookmark-view";
+import {
+  createReadAloudPlayer,
+  READALOUD_RATES,
+  type ReadAloudSentence,
+  type ReadAloudSpeaker,
+} from "../speak/readaloud";
+import { createNativeSpeaker } from "../speak/native-tts";
 import type {
   PdfToolbarPosition,
   UiSettingsStore,
@@ -126,6 +140,7 @@ export function EpubReader({
   restoreRef,
   scrollSaveAt,
   uiSettings,
+  readAloudSpeaker,
   onChapter,
   onToggleIpa,
   onOpenSettings,
@@ -154,6 +169,10 @@ export function EpubReader({
   // The reader's global face preferences (toolbar position, round 14) —
   // the EPUB face shares the PDF face's choice.
   uiSettings?: UiSettingsStore | undefined;
+  // The read-aloud speaker (ticket 07): the native TTS adapter by
+  // default; tests inject a fake whose deferred promises are the
+  // sentence boundaries.
+  readAloudSpeaker?: ReadAloudSpeaker;
   onChapter: (index: number) => void;
   onToggleIpa: () => void;
   onOpenSettings: () => void;
@@ -203,6 +222,57 @@ export function EpubReader({
   const [panelRowsLoading, setPanelRowsLoading] = useState(false);
   const [bookmarkAttempt, setBookmarkAttempt] = useState(0);
   const [jumpTarget, setJumpTarget] = useState<EpubBookmarkTarget | null>(null);
+  // 听书 (ticket 07): the book's sentence blocks as one flat timeline,
+  // played through the native TTS adapter (the plugin probes the
+  // engine; a plain browser host falls to its web implementation).
+  // Progress rides each sentence's completion — the reading-walk seam,
+  // the same fact a scroll would write.
+  const [readAloudError, setReadAloudError] = useState<
+    "engine-missing" | "synthesis-failed" | null
+  >(null);
+  const nativeSpeaker = useMemo(
+    () => readAloudSpeaker ?? createNativeSpeaker(),
+    [readAloudSpeaker]
+  );
+  const readAloudSentences = useMemo<ReadAloudSentence[]>(
+    () =>
+      book.chapters.flatMap((chapter, chapterIdx) =>
+        chapter.blocks
+          .filter((block) => block.kind === "sentence")
+          .map((block) => ({
+            chapterIndex: chapterIdx,
+            blockIndex: chapter.blocks.indexOf(block),
+            text: block.text,
+          }))
+      ),
+    [book]
+  );
+  const player = useMemo(
+    () =>
+      createReadAloudPlayer(
+        {
+          sentences: readAloudSentences,
+          speaker: nativeSpeaker,
+          onPosition: (sentence) =>
+            void library.setProgress(docId, {
+              chapterIndex: sentence.chapterIndex,
+              blockIndex: sentence.blockIndex,
+            }),
+          onFailure: (kind) => setReadAloudError(kind),
+        },
+        1
+      ),
+    [readAloudSentences, nativeSpeaker, library, docId]
+  );
+  useEffect(() => () => player.stop(), [player]);
+  const readAloud = useSyncExternalStore(player.subscribe, player.getState);
+  // While the walk owns the position, the scroll listener's own writes
+  // would fight it — the player is the progress truth while playing.
+  const readAloudPlaying = readAloud.phase === "playing";
+  const readAloudPlayingRef = useRef(readAloudPlaying);
+  readAloudPlayingRef.current = readAloudPlaying;
+  const readAloudSentence =
+    readAloud.at !== null ? (readAloudSentences[readAloud.at] ?? null) : null;
 
   // Per-chapter 生词本 states for the tints. Bulk reads land by merge:
   // keys the local map already holds win, so a popup patch (or a bulk read
@@ -252,6 +322,9 @@ export function EpubReader({
   const readingKey = `${docId}:${chapterIndex}`;
   useEffect(() => {
     const onScroll = () => {
+      // 听书 owns the position while it plays — the scroll listener
+      // stays quiet so the two writers never flap.
+      if (readAloudPlayingRef.current) return;
       const now = Date.now();
       if (now - scrollSaveAt.current < 400) return;
       scrollSaveAt.current = now;
@@ -445,6 +518,27 @@ export function EpubReader({
     });
     return () => cancelAnimationFrame(raf);
   }, [jumpTarget, chapterIndex]);
+
+  // 听书's follow (ticket 07): the displayed chapter follows the walk
+  // across chapter boundaries (silently — the walk itself owns the
+  // progress write), and the live sentence scrolls into view so the
+  // highlight stays findable without the reader's hands.
+  useEffect(() => {
+    if (readAloud.phase !== "playing" || !readAloudSentence) return;
+    if (readAloudSentence.chapterIndex !== chapterIndex) {
+      onChapter(readAloudSentence.chapterIndex);
+      window.scrollTo(0, 0);
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      document
+        .querySelector<HTMLElement>(
+          `[data-block-index='${readAloudSentence.blockIndex}']`
+        )
+        ?.scrollIntoView?.({ block: "center" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [readAloud.phase, readAloudSentence, chapterIndex, onChapter]);
 
   // The trigger: the cached settings start the task synchronously; the
   // registry refuses a second task for a running chapter. A fresh
@@ -698,6 +792,66 @@ export function EpubReader({
         <h1 className="reader-title">{book.title}</h1>
         {toolbarPosition === "top" ? toolsRow : null}
       </header>
+      {/* 听书控制条 (ticket 07): play/pause from the current chapter's
+          first sentence, sentence stepping, and the rate ladder. The
+          bar rides the face — its buttons inherit the 44px touch floor
+          and the palette tokens (ticket 06). */}
+      <div className="readaloud-bar" role="group" aria-label="听书">
+        <button
+          type="button"
+          className="reader-toggle"
+          onClick={() => {
+            setReadAloudError(null);
+            if (readAloud.phase === "playing") {
+              player.pause();
+              return;
+            }
+            const from =
+              readAloud.at ??
+              readAloudSentences.findIndex(
+                (sentence) => sentence.chapterIndex === chapterIndex
+              );
+            if (from >= 0) player.play(from);
+          }}
+        >
+          {readAloud.phase === "playing" ? "暂停朗读" : "听书"}
+        </button>
+        <button
+          type="button"
+          className="reader-toggle"
+          disabled={readAloud.at === null}
+          onClick={() => player.step(-1)}
+        >
+          上一句
+        </button>
+        <button
+          type="button"
+          className="reader-toggle"
+          disabled={readAloud.at === null}
+          onClick={() => player.step(1)}
+        >
+          下一句
+        </button>
+        <button
+          type="button"
+          className="reader-toggle"
+          onClick={() => {
+            const at = READALOUD_RATES.indexOf(
+              readAloud.rate as (typeof READALOUD_RATES)[number]
+            );
+            player.setRate(READALOUD_RATES[(at + 1) % READALOUD_RATES.length]!);
+          }}
+        >
+          语速 {readAloud.rate}×
+        </button>
+        {readAloudError ? (
+          <p className="reader-error" role="alert">
+            {readAloudError === "engine-missing"
+              ? "听书不可用：设备缺少可用的英语语音引擎。"
+              : "朗读失败，请重试。"}
+          </p>
+        ) : null}
+      </div>
       {settingsLoadFailed ? (
         <p className="reader-error" role="alert">
           设置读取失败，翻译按钮暂不可用。
@@ -736,6 +890,11 @@ export function EpubReader({
           translations={chapterTranslations ?? {}}
           showTranslation={showTranslation}
           markedBlocks={markedBlocks}
+          readingAloudBlock={
+            readAloudSentence && readAloudSentence.chapterIndex === chapterIndex
+              ? readAloudSentence.blockIndex
+              : null
+          }
           statusOf={(word) => stateOf(word)}
           onWordClick={setLookup}
           onOpenNote={() => setLookup(null)}

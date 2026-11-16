@@ -894,3 +894,23 @@ body {
    zero (no notch, no gesture bar, older WebViews). */
 /* The centered overlays sit inside the veil; the card's own bottom
    padding keeps its actions clear of the gesture bar. */
+
+/* 听书 (ticket 07): the control bar rides under the face's header row;
+   its buttons inherit the touch floor and the palette tokens. The
+   live sentence's highlight is a tint band plus the accent spine —
+   visible in both schemes without covering the glyphs. */
+.readaloud-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding-top: 0.25rem;
+}
+.readaloud-bar .reader-error {
+  margin: 0;
+}
+.reading-aloud {
+  background: var(--tint);
+  box-shadow: inset 3px 0 0 var(--accent);
+  border-radius: 0.25rem;
+}

@@ -45,6 +45,7 @@ import {
 } from "../store/storage-persistence";
 import { usePdfShelf, type PdfShelfEntry } from "./usePdfShelf";
 import { onSpeakOutcome } from "../speak/router";
+import type { ReadAloudSpeaker } from "../speak/readaloud";
 import { SpeakFailureFlag } from "../speak/SpeakFailureFlag";
 import type { SpeakFailure } from "../speak/speak-failure";
 import { ReaderLanding } from "./ReaderLanding";
@@ -127,6 +128,7 @@ export function ReaderPage({
   registry: injectedRegistry,
   backup: injectedBackup,
   uiSettings: injectedUiSettings,
+  readAloudSpeaker,
 }: {
   store?: VocabularyStore;
   library?: LibraryStore;
@@ -140,6 +142,9 @@ export function ReaderPage({
   registry?: ChapterTaskRegistry;
   backup?: BackupManager;
   uiSettings?: UiSettingsStore;
+  // The read-aloud speaker (ticket 07): forwarded to the EPUB face;
+  // tests inject a fake, the face defaults to the native adapter.
+  readAloudSpeaker?: ReadAloudSpeaker;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
   const [showIpa, setShowIpa] = useState(true);
@@ -510,6 +515,7 @@ export function ReaderPage({
           book={state.book}
           chapterIndex={state.chapterIndex}
           showIpa={showIpa}
+          {...(readAloudSpeaker ? { readAloudSpeaker } : {})}
           resolvedStore={resolvedStore}
           notes={notes}
           library={library}

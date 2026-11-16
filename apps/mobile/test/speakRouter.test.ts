@@ -9,7 +9,10 @@ import { SpeakRejectionError } from "../src/speak/speak-failure";
 // backends — the real wiring lives in the app binding, the real click
 // path is covered by the catcher test (speakPopupRedirect.test.tsx).
 // Fresh spies per test — a shared backend would leak calls across cases.
-const okNative = () => ({ speak: vi.fn(async () => undefined) });
+const okNative = () => ({
+  speak: vi.fn(async () => undefined),
+  stop: vi.fn(async () => undefined),
+});
 
 describe("createSpeakRouter", () => {
   it("on the native host the word goes to the plugin speaker, and success lands", async () => {
@@ -32,6 +35,7 @@ describe("createSpeakRouter", () => {
       speak: vi.fn(async () => {
         throw new SpeakRejectionError("engine-missing");
       }),
+      stop: vi.fn(async () => undefined),
     };
     const outcomes: string[] = [];
     const router = createSpeakRouter({
@@ -49,6 +53,7 @@ describe("createSpeakRouter", () => {
       speak: vi.fn(async () => {
         throw new SpeakRejectionError("synthesis-failed");
       }),
+      stop: vi.fn(async () => undefined),
     };
     const outcomes: string[] = [];
     const router = createSpeakRouter({
@@ -66,6 +71,7 @@ describe("createSpeakRouter", () => {
       speak: vi.fn(async () => {
         throw new Error("bridge exploded");
       }),
+      stop: vi.fn(async () => undefined),
     };
     const outcomes: string[] = [];
     const router = createSpeakRouter({
@@ -96,6 +102,7 @@ describe("createSpeakRouter", () => {
       speak: vi.fn(async () => {
         throw new SpeakRejectionError("engine-missing");
       }),
+      stop: vi.fn(async () => undefined),
     };
     const outcomes: string[] = [];
     const router = createSpeakRouter({

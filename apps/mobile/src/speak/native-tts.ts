@@ -10,13 +10,18 @@ export interface NativeTtsPlugin {
   isLanguageSupported(options: {
     lang: string;
   }): Promise<{ supported: boolean }>;
-  speak(options: { text: string; lang: string }): Promise<void>;
+  speak(options: { text: string; lang: string; rate?: number }): Promise<void>;
+  stop(): Promise<void>;
 }
 
-// What the router (and, later, the read-aloud layer) needs from a native
-// speaker. One word or sentence per call, en-US by the caller's choice.
+// What the router (ticket 09) and the read-aloud layer (ticket 07) need
+// from a native speaker. One utterance per call, en-US by the caller's
+// choice; speak resolves when the utterance FINISHES — the continuation
+// primitive continuous reading chains on. stop flushes the in-flight
+// utterance (pause/jump must not wait for a long sentence to land).
 export interface NativeSpeaker {
-  speak(text: string, lang: string): Promise<void>;
+  speak(text: string, lang: string, rate?: number): Promise<void>;
+  stop(): Promise<void>;
 }
 
 // The reader-facing classification lives here, at the plugin boundary: a
@@ -27,7 +32,7 @@ export function createNativeSpeaker(
   plugin: NativeTtsPlugin = TextToSpeech
 ): NativeSpeaker {
   return {
-    async speak(text: string, lang: string): Promise<void> {
+    async speak(text: string, lang: string, rate?: number): Promise<void> {
       let supported: boolean;
       try {
         supported = (await plugin.isLanguageSupported({ lang })).supported;
@@ -36,10 +41,15 @@ export function createNativeSpeaker(
       }
       if (!supported) throw new SpeakRejectionError("engine-missing");
       try {
-        await plugin.speak({ text, lang });
+        await plugin.speak(
+          rate === undefined ? { text, lang } : { text, lang, rate }
+        );
       } catch (detail) {
         throw new SpeakRejectionError("synthesis-failed", detail);
       }
+    },
+    stop() {
+      return plugin.stop();
     },
   };
 }

@@ -41,6 +41,7 @@ export function EpubChapter({
   translations,
   showTranslation,
   markedBlocks = new Set<number>(),
+  readingAloudBlock = null,
   statusOf,
   onWordClick,
   onOpenNote,
@@ -58,6 +59,9 @@ export function EpubChapter({
   // The chapter's bookmarked block indexes (ticket 10): the reader derives
   // them from the doc-wide rows; the chapter only paints the marker.
   markedBlocks?: ReadonlySet<number>;
+  // The sentence 听书 is on (ticket 07): null when the walk is off-chapter
+  // or idle — the chapter only paints the highlight.
+  readingAloudBlock?: number | null;
   statusOf: StatusReader;
   onWordClick: (click: WordClick) => void;
   onOpenNote: () => void;
@@ -124,7 +128,11 @@ export function EpubChapter({
           <div
             key={index}
             data-block-index={index}
-            className={markedBlocks.has(index) ? "block-marked" : undefined}
+            className={
+              `${markedBlocks.has(index) ? "block-marked" : ""}${
+                readingAloudBlock === index ? " reading-aloud" : ""
+              }`.trim() || undefined
+            }
           >
             <AnnotatedBlockView
               block={annotatedBlock(

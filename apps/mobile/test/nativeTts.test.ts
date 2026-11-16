@@ -18,6 +18,7 @@ function fakePlugin(overrides: Partial<NativeTtsPlugin> = {}): NativeTtsPlugin {
   return {
     isLanguageSupported: vi.fn(async () => ({ supported: true })),
     speak: vi.fn(async () => undefined),
+    stop: vi.fn(async () => undefined),
     ...overrides,
   };
 }

@@ -1,5 +1,5 @@
 # 07 听书 MVP:系统 TTS 连续朗读 EPUB
-Status: ready-for-agent(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
+Status: claimed (2026-11-16, Lane A)(2026-11-09 立票;第二批;/to-tickets 补全轮重编号,原 06)
 Blocked by: 06
 
 ## 目标
@@ -18,3 +18,11 @@ Blocked by: 06
 
 - 根 verify EXIT=0
 - 真机【人验】:EPUB 连读一章不卡断;调速/跳句即时生效;退出重进,阅读进度回位
+
+## Comments
+
+- 2026-11-16 领票。阻塞说明:06 实现已落地(849dbba,评审等配额 17:43 +
+  真机人验),本票控制条直接继承其 44px 底线与深色 token,先决面已实;
+  06 评审若有修笔属视觉层,不影响本票缝。另:票面「speechSynthesis 真机
+  实测」前置已被票 09 终审定案(WebView 内静默),原生 TTS 插件经 09 已
+  就位——本票直接走 speak router 原生面。
