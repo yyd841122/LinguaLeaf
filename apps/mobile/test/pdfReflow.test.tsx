@@ -234,6 +234,14 @@ describe("PDF reflow face (round 7)", () => {
     expect(reflowCss).not.toMatch(
       /\.pdf-reflow-line[^{]*\{[^}]*display:\s*block/
     );
+    // ⑨/A-5 review: the paragraph pen pins to its block's corner; the
+    // line pens stay in the TEXT FLOW — the absolute-position override
+    // must scope to the block's direct child only (the wide selector
+    // would yank every inline pen out of the flow and stack them).
+    expect(reflowCss).toMatch(
+      /\.pdf-reflow \.sentence-block > \.block-note-button\s*\{[^}]*position:\s*absolute/
+    );
+    expect(reflowCss).not.toMatch(/\.pdf-reflow \.block-note-button\s*\{/);
     // Tapping a word opens the same lookup popup seam.
     fireEvent.click(screen.getByText("Woke"));
     await screen.findByRole("dialog", { name: "词详情：Woke" });
@@ -336,9 +344,10 @@ describe("PDF reflow face (round 7)", () => {
 
   // mobile-pdf-reflow-defects 缺陷 1: the pen used to open the paragraph's
   // FIRST line blind — a mid-paragraph note showed 编辑笔记 over a blank
-  // editor (the 终审 probe reproduced it on the second line). The pen now
-  // targets the first line whose anchor still matches; other noted lines
-  // keep their own inline pens.
+  // editor (the 终审 probe reproduced it on the second line). The landed
+  // design: the paragraph pen writes the HEAD line (fresh-write entry),
+  // every other NOTED line keeps its own inline pen (the abandoned
+  // point-at-first-match shape stole the head's fresh-write entry).
   it("the pen opens the noted line, and mid-paragraph notes stay reachable", async () => {
     const { pdfNotes } = mount();
     const docId = await id();
@@ -558,4 +567,56 @@ describe("PDF reflow face (round 7)", () => {
       expect(screen.getByRole("button", { name: "适宽" })).toBeInTheDocument()
     );
   });
+});
+
+// The A-5 review's P1: a side line holding BOTH a matching note and a
+// drifted one (same lineIndex, stale lineText, another type) used to
+// keep its inline pen enabled — opening it and saving on the drifted
+// type's tab would upsert by (page, lineIndex, type) and re-stamp the
+// old note with the current line's text. Any drift on the line locks
+// its pen, exactly like the head's.
+it("a side line with mixed matched and drifted notes locks its pen", async () => {
+  const { pdfNotes } = mount();
+  const docId = await id();
+  // Line 1 (the paragraph's second line): a matching progress note …
+  await pdfNotes.save(
+    {
+      type: "progress",
+      docId,
+      page: 1,
+      lineIndex: 1,
+      lineText: "Second line here",
+    },
+    "匹配锚的进度"
+  );
+  // … and a drifted feeling note under the SAME lineIndex.
+  await pdfNotes.save(
+    {
+      type: "feeling",
+      docId,
+      page: 1,
+      lineIndex: 1,
+      lineText: "漂移前的旧行文本",
+    },
+    "错锚旧感受"
+  );
+  await pick();
+  await reflow();
+
+  // The drift alert fires (a note matches no rendered line text) …
+  expect(screen.getByText(/已有笔记与本页行文本不符/)).toBeInTheDocument();
+  // … and the side line's pen is LOCKED: no editor can open to save
+  // over the drifted entry. The head's pen stays writable (its line
+  // carries no mismatched note).
+  const pens = screen.getAllByRole("button", { name: "编辑笔记" });
+  expect(pens).toHaveLength(1);
+  const sidePen = pens[0]!;
+  expect(sidePen).toBeDisabled();
+  fireEvent.click(sidePen);
+  expect(screen.queryByRole("dialog", { name: "行笔记" })).toBeNull();
+  // The drifted row survives untouched.
+  const notes = await pdfNotes.list(docId);
+  expect(notes.find((note) => note.text === "错锚旧感受")?.lineText).toBe(
+    "漂移前的旧行文本"
+  );
 });

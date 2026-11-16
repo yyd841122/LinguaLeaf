@@ -1,6 +1,6 @@
 # mobile PDF/重排缺陷簇:段中笔记不可达 + 漂移保护缺失 + 重试断链 + 句末信号偏宽
 
-**Status:** claimed
+**Status:** done
 
 来自 mobile-app 03 独立终审发现 1/3/4/5/6(2026-11-16,threadId
 01a1e1ea-a7e2-72c1-83c8-a5dda0a47c67,verdict NO-GO;只读含内存探针):
@@ -34,3 +34,19 @@
   .sentence-block 直接子级,行级笔钮内联。新测试 5 片,五变异精确咬合
   (各自缺陷变异仅红对应测试);全量 verify 108 文件 1213 测试绿。
   真机人验项挂账等机检(段中笔钮、drift 告示、两处重试)。
+
+- 2026-11-16 Codex 审核(threadId 01a1e2d4-46a0-7e23-9f8f-56453720fb4e,
+  基线 4c9c57e→16a2b1b):缺陷 1/3/4/5 PASS;**NO-GO 一处 P1**——段中行
+  混有匹配+漂移两类笔记时内联笔钮仍启用,开编辑器在漂移类型页签保存即
+  按 (page,lineIndex,type) upsert 覆盖旧笔记(initial 过滤拦不住写入)。
+  修:内联笔钮禁用条件补 lineMismatch(line)(任一漂移即锁,与段首/画布
+  面同规),补混合锚回归测试;CSS 定位收窄补静态钉(正向窄选择器+反向
+  无宽选择器);测试陈旧设计注释更正为最终形状。双变异(lineMismatch
+  删/CSS 放宽)咬合。评审另记三条如实入档:①initial lineText 带与
+  notesFailed 禁用项在锁门后为不可达 belt(漂移行已不可开),保留作纵深
+  防御,mutant 存活属设计内;②重排面段中无笔记行无 fresh-write 入口
+  (本票只承诺「已有段中笔记可达」,逐行新写走画布面)——设计边界入档;
+  ③译文 exportAll 竞争留观已按 tracker 纪律另立 stub
+  .scratch/mobile-translation-export-race/。修笔 commit(本 commit),
+  verify 109 文件 1238 测试 EXIT=0。真机人验项(段中笔钮/drift 告示/
+  重试)挂账等机检。

@@ -382,6 +382,18 @@ export function PdfReflow({
                 note.lineIndex === first.lineIndex &&
                 note.lineText !== first.lineText
             );
+            // A side line's pen locks the same way the head's does: ANY
+            // drifted note on that line (a stale lineText under the same
+            // lineIndex) keeps the pen closed — opening it would upsert
+            // by (page, lineIndex, type) and re-stamp the drifted note
+            // with the current line's text (the review's P1: a matching
+            // sibling note used to enable the pen past the drifted one).
+            const lineMismatch = (line: ReflowLine): boolean =>
+              paraNotes.some(
+                (note) =>
+                  note.lineIndex === line.lineIndex &&
+                  note.lineText !== line.lineText
+              );
             const sideNotes = paraLines.filter(
               (line) => line.lineIndex !== first.lineIndex && lineHasNote(line)
             );
@@ -418,7 +430,9 @@ export function PdfReflow({
                       type="button"
                       className="block-note-button has-note"
                       aria-label="编辑笔记"
-                      disabled={saved === null || notesFailed}
+                      disabled={
+                        saved === null || notesFailed || lineMismatch(line)
+                      }
                       onClick={(event) => {
                         if (editorRef.current?.requestClose() === false) return;
                         onOpenNote();
