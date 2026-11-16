@@ -111,6 +111,12 @@ describe("OfflineDictionary — lookup (ticket 04 popup entry)", () => {
     expect(dictionary().resolveIpa("constructor")).toBeNull();
     expect(dictionary().resolveIpa("valueOf")).toBeNull();
     expect(dictionary().lookup("hasOwnProperty")).toBeNull();
+    // "constructor" survives the fold unchanged: lookup("constructor")
+    // on the bare index would read the inherited entries member (a
+    // truthy FUNCTION), pass the entry gate, and answer a hollow object
+    // instead of null — the entries table's own isolation pin (the A-4
+    // review's probe: every other word folds off the prototype).
+    expect(dictionary().lookup("constructor")).toBeNull();
 
     // And a dictionary that DOES bake the word answers from its own rows.
     const baked = new OfflineDictionary({
@@ -125,6 +131,10 @@ describe("OfflineDictionary — lookup (ticket 04 popup entry)", () => {
     expect(baked.lookup("constructing")?.lemma).toBe("constructor");
     expect(baked.lookup("constructing")?.translation).toBe("n. 构造器");
     expect(baked.stateKey("constructing")).toBe("constructor");
+    // The OWN constructor entry answers with lemma null (no inflection
+    // folds it): a bare index on lookup's inflections read would hand
+    // back the inherited member as the lemma (a function) instead.
+    expect(baked.lookup("constructor")?.lemma).toBeNull();
   });
 
   it("answers null when no entry exists — zero-write territory", () => {

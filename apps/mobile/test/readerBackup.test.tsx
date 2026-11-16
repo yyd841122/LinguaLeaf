@@ -267,3 +267,52 @@ async function pickBackupFile(payload: unknown): Promise<void> {
   Object.defineProperty(input, "files", { value: [file], configurable: true });
   fireEvent.change(input);
 }
+
+// The A-3 review's P2 (2026-11-16): the error page offers the backup
+// import too, but the recents effect's empty-only guard skipped the
+// re-read — a restore landed on the ERROR page left the stale chapter
+// row clickable there.
+describe("ReaderPage — 备份恢复在错误页也刷新书架 (A-3 review)", () => {
+  it("a restore landed while the error page is up refreshes the recents rows", async () => {
+    stubDictionaryOnly();
+    const stores = makeLandingStores();
+    await stores.library.saveDocument({
+      id: "doc:Title A",
+      title: "Title A",
+      book: { title: "Title A", chapters: [] },
+    });
+    renderLanding(undefined, stores);
+    expect(await screen.findByText("第 1 章")).toBeInTheDocument();
+
+    // A garbage book file lands on the error page (its card is a fact;
+    // the copy itself is not pinned — it is rewordable prose).
+    const bookInput = document.querySelector(
+      'input[type="file"]'
+    ) as HTMLInputElement;
+    Object.defineProperty(bookInput, "files", {
+      value: [new File(["garbage bytes"], "broken.epub")],
+      configurable: true,
+    });
+    fireEvent.change(bookInput);
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    // The restore lands while the error page is up: the row the error
+    // page renders must carry the restored position.
+    await pickBackupFile({
+      app: BACKUP_APP,
+      version: BACKUP_VERSION,
+      exportedAt: "2026-11-13T10:00:00.000Z",
+      books: [{ title: "Title A" }],
+      assets: {
+        vocabulary: {},
+        notes: [],
+        progress: { "Title A": { chapterIndex: 2, blockIndex: 5 } },
+        bookmarks: [],
+        translations: {},
+      },
+    });
+    expect(await screen.findByText(/导入完成/)).toBeInTheDocument();
+    expect(await screen.findByText("第 3 章")).toBeInTheDocument();
+    expect(screen.queryByText("第 1 章")).toBeNull();
+  });
+});

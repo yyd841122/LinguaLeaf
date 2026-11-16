@@ -83,7 +83,16 @@ const topmostVisibleSentenceIndex = (
 ): number => {
   if (!blocks) return 0;
   const anchorTop = readingAnchorTop();
-  let current = 0;
+  // Base = the chapter's FIRST sentence: when no sentence has crossed
+  // the anchor yet (a plain block leads the chapter and the first
+  // sentence still sits below the head), the plant still lands on a
+  // SENTENCE — the 落位契约. A constant-0 base planted the leading
+  // image's own coordinate (the review's probe); no sentence at all
+  // falls back to 0, the progress walk's chapter-top answer.
+  let current = Math.max(
+    0,
+    blocks.findIndex((b) => b.kind === "sentence")
+  );
   for (const block of document.querySelectorAll<HTMLElement>(
     "[data-block-index]"
   )) {
@@ -778,13 +787,15 @@ export function EpubReader({
                 </button>
               </p>
             ) : null}
-            {/* The panel's wait is its own state, not the snapshot: a
-                failure retires the wait line (the flag's error line
-                speaks instead) and the last landed rows stay listed. */}
-            {panelRowsLoading && !bookmarksSettle.failed ? (
-              <p className="reader-status">读取书签中…</p>
-            ) : bookmarkRows === null ? (
-              <p className="reader-status">读取书签中…</p>
+            {/* The panel's wait is its own state, not the snapshot: the
+                wait line shows only while NOTHING has landed and no
+                failure speaks — a failure with no snapshot shows the
+                flag alone (its retry is the way forward), and landed
+                rows stay listed through a retry's refetch. */}
+            {bookmarkRows === null ? (
+              bookmarksSettle.failed ? null : (
+                <p className="reader-status">读取书签中…</p>
+              )
             ) : bookmarkRows.length === 0 ? (
               <p className="reader-status">
                 还没有书签。点「在当前位置打书签」给当前阅读位置留个标记。
@@ -809,6 +820,11 @@ export function EpubReader({
                         type="button"
                         className="bookmark-delete"
                         aria-label={`删除书签：${title}`}
+                        // A pending (re)fetch locks the ops: a delete
+                        // landing mid-refetch races the list read — the
+                        // read started before it can resolve after it
+                        // and resurrect the row with its stale snapshot.
+                        disabled={panelRowsLoading}
                         onClick={() => removeBookmark(row.id)}
                       >
                         删除

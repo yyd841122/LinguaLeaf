@@ -148,6 +148,14 @@ async function openPanel() {
 
 const at = () => document.querySelector(".reader-position")!.textContent;
 
+// jsdom's attribute selectors match values case-insensitively (nwsapi);
+// exact-name queries narrow with the selector then compare getAttribute
+// (CODING_STANDARDS: exact-name attribute assertions; evidence gap ⑪).
+const wordEl = (name: string): HTMLElement | null =>
+  [...document.querySelectorAll<HTMLElement>("[data-word]")].find(
+    (el) => el.getAttribute("data-word") === name
+  ) ?? null;
+
 describe("PDF face bookmarks (ticket 03)", () => {
   it("opens empty, plants the current page once, and a replant stays one mark", async () => {
     const ctx = mount();
@@ -257,8 +265,7 @@ describe("PDF face bookmarks (ticket 03)", () => {
   it("long-pressing a word plants the mark on its line, lookup swallowed", async () => {
     const ctx = mount();
     await pick();
-    const wordAt = () =>
-      document.querySelector<HTMLElement>("[data-word='Woke']");
+    const wordAt = () => wordEl("Woke");
     await waitFor(() => expect(wordAt()).not.toBeNull());
     // The pen going enabled proves lineGeo landed — a press before that
     // races empty geometry and never plants (full-suite load flake).
@@ -281,7 +288,10 @@ describe("PDF face bookmarks (ticket 03)", () => {
     );
     const rows = await ctx.bookmarks.list(docId);
     expect(rows[0]).toMatchObject({ page: 1, line: 0, text: "Woke" });
-    // The swallowed click: no lookup popup came up with it.
+    // The swallowed click: the release's click is dispatched and must
+    // NOT open the popup (deleting the suppression reds here — from a
+    // resting state the null check below is vacuous).
+    fireEvent.click(wordAt()!);
     expect(screen.queryByRole("dialog", { name: "词详情：Woke" })).toBeNull();
     // The marker hangs on the line.
     expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
@@ -290,8 +300,7 @@ describe("PDF face bookmarks (ticket 03)", () => {
   it("a page flip or a zoom dismisses the anchored popup (EPUB parity)", async () => {
     mount();
     await pick();
-    const wordAt = () =>
-      document.querySelector<HTMLElement>("[data-word='Woke']");
+    const wordAt = () => wordEl("Woke");
     await waitFor(() => expect(wordAt()).not.toBeNull());
     fireEvent.click(wordAt()!);
     await screen.findByRole("dialog", { name: "词详情：Woke" });
@@ -350,7 +359,13 @@ describe("PDF face bookmarks (ticket 03)", () => {
     );
 
     await openPanel();
-    expect(await screen.findByText(/读取书签中/)).toBeInTheDocument();
+    // The plant lock is the pending signal (the mounted snapshot's rows
+    // stay listed — no spinner swap since the review fixes).
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "在当前位置打书签" })
+      ).toBeDisabled()
+    );
     // The open's read hangs; the mark must survive the open itself.
     expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
 
@@ -409,5 +424,116 @@ describe("PDF face bookmarks (ticket 03)", () => {
     // The failed refetch must not have blanked the face on close.
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
+  });
+});
+
+// Evidence gap ⑨'s shell half: the shell's height pins to the LAYOUT
+// viewport's clientHeight (never innerHeight — the ICB sits shorter) and
+// re-pins on resize. jsdom reports 0 for both, so the numbers ride a
+// mocked getter — the mutant "switch to innerHeight" reads a different
+// value, and "drop the resize listener" leaves the stale one.
+describe("PDF shell height (evidence gap ⑨)", () => {
+  it("pins --shell-h to clientHeight and re-pins on resize", async () => {
+    const docEl = document.documentElement;
+    const original = Object.getOwnPropertyDescriptor(docEl, "clientHeight");
+    Object.defineProperty(docEl, "clientHeight", {
+      get: () => 700,
+      configurable: true,
+    });
+    try {
+      mount();
+      await pick();
+      // waitFor: prior tests in this file leave their own --shell-h
+      // ("0px", jsdom's real clientHeight) — this mount's apply() must
+      // overwrite it; the wait rides the commit window under load.
+      await waitFor(
+        () => expect(docEl.style.getPropertyValue("--shell-h")).toBe("700px"),
+        { timeout: 3000 }
+      );
+
+      Object.defineProperty(docEl, "clientHeight", {
+        get: () => 800,
+        configurable: true,
+      });
+      window.dispatchEvent(new Event("resize"));
+      // Full-suite-load patience (the effect commit can lag seconds
+      // under a saturated worker — the 2026-11-13/15 flake window).
+      await waitFor(
+        () => expect(docEl.style.getPropertyValue("--shell-h")).toBe("800px"),
+        { timeout: 3000 }
+      );
+    } finally {
+      if (original) Object.defineProperty(docEl, "clientHeight", original);
+      else delete (docEl as { clientHeight?: number }).clientHeight;
+      docEl.style.removeProperty("--shell-h");
+    }
+  });
+});
+
+// The A-2 review's findings on the PDF face: the no-snapshot failure
+// branch and the retry-race op lock (same shape as the EPUB fixes).
+describe("PDF face bookmarks — 评审修笔 (A-2 review)", () => {
+  it("a failure with no landed snapshot shows the flag alone — no wait line", async () => {
+    const inner = createMemoryBookmarkStore();
+    const bookmarks: BookmarkStore = {
+      list: () => Promise.reject(new Error("idb down")),
+      add: (docId, target) => inner.add(docId, target),
+      remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
+    };
+    mount(bookmarks);
+    await pick();
+    await openPanel();
+    const flag = await screen.findByRole("alert");
+    expect(flag.textContent).toContain("书签操作失败");
+    expect(screen.queryByText(/读取书签中/)).toBeNull();
+  });
+
+  it("row ops stay locked while a retry's refetch is in flight", async () => {
+    const inner = createMemoryBookmarkStore();
+    const docId = await id();
+    await inner.add(docId, { page: 1, line: 0, text: "Woke" });
+    let calls = 0;
+    let releaseRetry!: () => void;
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    const bookmarks: BookmarkStore = {
+      list: () => {
+        calls += 1;
+        if (calls === 2) return Promise.reject(new Error("idb read died"));
+        if (calls === 3) return retryGate.then(() => inner.list(docId));
+        return inner.list(docId);
+      },
+      add: (docId, target) => inner.add(docId, target),
+      remove: (docId, id) => inner.remove(docId, id),
+      exportAll: () => inner.exportAll(),
+    };
+    mount(bookmarks);
+    await pick();
+    await openPanel();
+    // The open's read failed: flag speaks, the mount snapshot's row
+    // stays listed.
+    await screen.findByRole("alert");
+    expect(
+      screen.getByRole("button", { name: /^第 1 页/ })
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试读取书签" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^删除书签：第 1 页/ })
+      ).toBeDisabled()
+    );
+    expect(
+      screen.getByRole("button", { name: "在当前位置打书签" })
+    ).toBeDisabled();
+
+    releaseRetry();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^删除书签：第 1 页/ })
+      ).toBeEnabled()
+    );
   });
 });

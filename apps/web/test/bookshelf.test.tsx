@@ -5,6 +5,7 @@ import {
   render,
   screen,
 } from "@testing-library/react";
+import { Blob as NodeBlob } from "node:buffer";
 import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BookshelfPage } from "../src/BookshelfPage";
@@ -664,16 +665,40 @@ describe("BookshelfPage export (ticket 03)", () => {
   });
   // The whole-library backup (mobile-app ticket 05): the header action
   // downloads the backup route's attachment through the same blob+anchor
-  // helper, named by its Content-Disposition.
+  // helper, named by its Content-Disposition. The stubbed body is a REAL
+  // payload and the captured blob is run through the phone's validator —
+  // "{}" only proved the filename (evidence gap ⑦).
   it("the 导出备份 action downloads the backup route's file", async () => {
+    const backupPayload = JSON.stringify({
+      app: "lingualeaf-backup",
+      version: 1,
+      exportedAt: "2026-11-13T10:00:00.000Z",
+      books: [{ title: "The Way of the Test" }],
+      assets: {
+        vocabulary: {},
+        notes: [],
+        progress: {},
+        bookmarks: [],
+        translations: {},
+      },
+    });
     fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.endsWith("/api/export/backup")) {
-        return htmlResponse(
-          200,
-          "{}",
-          'attachment; filename="lingualeaf-backup-v1-20261113-1000.json"'
-        );
+        // A Node Blob (not jsdom's): the captured object URL's payload
+        // must be readable back — jsdom's Blob has no .text() and its
+        // FileReader rides a real macrotask this fake-timer suite
+        // freezes. The bytes are the assertion's subject, not the stub.
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({
+            "content-disposition":
+              'attachment; filename="lingualeaf-backup-v1-20261113-1000.json"',
+          }),
+          blob: async () =>
+            new NodeBlob([backupPayload], { type: "application/json" }),
+        } as unknown as Response;
       }
       if (url.endsWith("/api/books")) {
         return jsonResponse(200, shelfState);
@@ -690,6 +715,12 @@ describe("BookshelfPage export (ticket 03)", () => {
     expect(downloaded.map((entry) => entry.download)).toEqual([
       "lingualeaf-backup-v1-20261113-1000.json",
     ]);
+    // The bytes the reader would restore: they clear the phone gate.
+    const blob = createObjectURL.mock.calls[0]?.[0] as NodeBlob;
+    const bytes = JSON.parse(await blob.text());
+    const { validateBackupPayload } =
+      await import("../../../apps/mobile/src/backup/backup-format");
+    expect(() => validateBackupPayload(bytes)).not.toThrow();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 

@@ -63,9 +63,13 @@ export function ReaderLanding({
   );
   const dropDepth = useRef(0);
   const pdfRecent = shelf?.recent;
-  // The landing's recents: loaded whenever the picker shows.
+  // The landing's recents: loaded whenever the picker shows — and after
+  // a backup import that landed while the ERROR page was up (the error
+  // page offers the import too, so a restore there must refresh the
+  // rows the error page still renders; the A-3 review's probe showed
+  // the empty-only guard leaving the stale chapter clickable).
   useEffect(() => {
-    if (phase !== "empty") return;
+    if (phase !== "empty" && recentsRevision === 0) return;
     let cancelled = false;
     library
       .listDocuments()

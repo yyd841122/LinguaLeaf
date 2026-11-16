@@ -401,13 +401,15 @@ export function PdfReader({
                 </button>
               </p>
             ) : null}
-            {/* The panel's wait is its own state, not the snapshot: a
-                failure retires the wait line (the flag's error line
-                speaks instead) and the last landed rows stay listed. */}
-            {panelRowsLoading && !bookmarksSettle.failed ? (
-              <p className="reader-status">读取书签中…</p>
-            ) : bookmarkRows === null ? (
-              <p className="reader-status">读取书签中…</p>
+            {/* The panel's wait is its own state, not the snapshot: the
+                wait line shows only while NOTHING has landed and no
+                failure speaks — a failure with no snapshot shows the
+                flag alone, and landed rows stay listed through a
+                retry's refetch. */}
+            {bookmarkRows === null ? (
+              bookmarksSettle.failed ? null : (
+                <p className="reader-status">读取书签中…</p>
+              )
             ) : bookmarkRows.length === 0 ? (
               <p className="reader-status">
                 还没有书签。点「在当前位置打书签」钉住当前视线，或长按任意单词把签钉在那一句。
@@ -432,6 +434,11 @@ export function PdfReader({
                         type="button"
                         className="bookmark-delete"
                         aria-label={`删除书签：${label}`}
+                        // A pending (re)fetch locks the ops: a delete
+                        // landing mid-refetch races the list read — the
+                        // read started before it can resolve after it
+                        // and resurrect the row with its stale snapshot.
+                        disabled={panelRowsLoading}
                         onClick={() => removeBookmark(row.id)}
                       >
                         删除

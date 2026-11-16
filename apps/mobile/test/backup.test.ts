@@ -375,9 +375,14 @@ describe("backup manager + file adapter", () => {
 
   it("import rejects an over-limit note at the gate: nothing lands (zero-write)", async () => {
     // Seed the distinguishing state the payload would otherwise disturb:
-    // its own assets (note/progress/translation for Title A) must NOT land.
+    // its own assets (note/progress/translation for Title A) must NOT
+    // land — and the seeded values must differ from the payload's, or a
+    // pre-validation write of the same value reads as "untouched" (the
+    // A-1 review's probe: writing vocabulary or bookmarks before the
+    // gate stayed green when the seed matched the payload).
     const stores = makeStores();
-    await stores.store.setStatus("hello", "known");
+    await stores.store.setStatus("hello", "learning");
+    await stores.bookmarks.add("doc:Title A", { chapter: 7, block: 3 });
     await stores.notes.save(
       { docId: "doc:Title A", chapterIndex: 9, blockIndex: 9, type: "feeling" },
       "原有笔记"
@@ -392,11 +397,92 @@ describe("backup manager + file adapter", () => {
       type: "application/json",
     });
     await expect(manager.importBackup(file)).rejects.toThrow(/笔记段/);
-    expect(await stores.store.exportAll()).toEqual({ hello: "known" });
+    // Vocabulary: the payload would flip hello to "known" — still learning.
+    expect(await stores.store.exportAll()).toEqual({ hello: "learning" });
+    // Bookmarks: the payload would add {chapter:1,block:0} — only the
+    // seeded off-anchor mark stands.
+    expect(await stores.bookmarks.list("doc:Title A")).toEqual([
+      expect.objectContaining({ chapter: 7, block: 3 }),
+    ]);
     const notes = await stores.notes.list("doc:Title A");
     expect(notes).toHaveLength(1);
     expect(notes[0]).toMatchObject({ chapterIndex: 9, text: "原有笔记" });
     expect(await stores.library.exportProgress()).toEqual({});
     expect(await stores.translations.exportAll()).toEqual({});
+  });
+});
+
+// The merge's distinguishing fixtures (evidence gap ⑧): the old merge
+// test seeded only facts the payload OVERWRITES — a wipe-shaped import
+// (or one that dropped local-only rows) read identical to the merge.
+// These seed what must SURVIVE beside what the payload lands.
+describe("applyBackup merge keeps local-only facts (evidence gap ⑧)", () => {
+  it("keeps local-only vocab, other books' progress, off-position marks and lines", async () => {
+    const stores = makeStores();
+    // Local-only vocabulary (no payload row for it).
+    await stores.store.setStatus("localonly", "ignored");
+    // Another book's progress (the payload only carries Title A).
+    await stores.library.setProgress("doc:Other Book", {
+      chapterIndex: 4,
+      blockIndex: 2,
+    });
+    // An off-position bookmark on the SAME book (different anchor than
+    // the payload's) and a local translation line on another block.
+    await stores.bookmarks.add("doc:Title A", { chapter: 5, block: 1 });
+    await stores.translations.saveTranslations("doc:Title A", 0, [
+      { blockIndex: 9, translation: "本地行" },
+    ]);
+
+    const summary = await applyBackup(validPayload(), stores);
+    expect(summary).toMatchObject({ vocabulary: 1, progress: 1, bookmarks: 1 });
+
+    // Merge, not wipe: the local-only word stands beside the imported one.
+    expect(await stores.store.exportAll()).toEqual({
+      hello: "known",
+      localonly: "ignored",
+    });
+    // The other book's progress survived untouched.
+    expect(await stores.library.exportProgress()).toEqual({
+      "doc:Other Book": { chapterIndex: 4, blockIndex: 2 },
+      "doc:Title A": { chapterIndex: 2, blockIndex: 5 },
+    });
+    // Same-book anchors merge: the seeded off-position mark AND the
+    // imported one both stand.
+    expect(await stores.bookmarks.list("doc:Title A")).toHaveLength(2);
+    expect(await stores.translations.getChapter("doc:Title A", 0)).toEqual({
+      "1": "译文一行",
+      "9": "本地行",
+    });
+  });
+});
+
+// The export's full-state fixtures (evidence gap ⑧'s second half): all
+// three word states round-trip, a NON-first translation block lands at
+// its own index, and the built payload clears its own validator (the
+// builder and the gate share one ticket's format contract).
+describe("buildBackup full-state export (evidence gap ⑧)", () => {
+  it("carries every word state and non-first translation blocks, validator-clean", async () => {
+    const stores = makeStores();
+    await stores.store.setStatus("w1", "learning");
+    await stores.store.setStatus("w2", "known");
+    await stores.store.setStatus("w3", "ignored");
+    await stores.translations.saveTranslations("doc:Title A", 2, [
+      { blockIndex: 7, translation: "第七行译文" },
+    ]);
+
+    const payload = await buildBackup(stores, () =>
+      Date.parse("2026-11-13T10:00:00.000Z")
+    );
+    expect(payload.assets.vocabulary).toEqual({
+      w1: "learning",
+      w2: "known",
+      w3: "ignored",
+    });
+    // Chapter 2 block 7 — non-zero on both levels: the landing asserts
+    // the exact nested keys, not just "a translation exists".
+    expect(payload.assets.translations).toEqual({
+      "Title A": { "2": { "7": "第七行译文" } },
+    });
+    expect(() => validateBackupPayload(payload)).not.toThrow();
   });
 });

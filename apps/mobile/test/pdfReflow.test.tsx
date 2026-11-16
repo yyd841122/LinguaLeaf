@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PICKER_LABEL } from "./reader-picker";
 import {
   act,
@@ -184,6 +187,14 @@ async function reflow() {
   await screen.findByText("Woke");
 }
 
+// jsdom's attribute selectors match values case-insensitively (nwsapi);
+// exact-name queries narrow with the selector then compare getAttribute
+// (CODING_STANDARDS: exact-name attribute assertions; evidence gap ⑪).
+const wordEl = (name: string): HTMLElement | null =>
+  [...document.querySelectorAll<HTMLElement>("[data-word]")].find(
+    (el) => el.getAttribute("data-word") === name
+  ) ?? null;
+
 describe("PDF reflow face (round 7)", () => {
   it("renders the page's lines as EPUB-shaped text with IPA bands", async () => {
     mount();
@@ -207,6 +218,22 @@ describe("PDF reflow face (round 7)", () => {
     // paragraph, closed by its last line's para-end.
     const block = document.querySelector(".pdf-reflow .sentence-block")!;
     expect(block).toHaveClass("para-end");
+    // ⑨d: the flow stays a flow — line carriers are inline SPANs, and
+    // the stylesheet never block-ifies them (a display:block on the
+    // class would chop the paragraph back into hard lines).
+    const carriers = [...document.querySelectorAll(".pdf-reflow-line")];
+    expect(carriers.length).toBeGreaterThanOrEqual(2);
+    expect(carriers.every((el) => el.tagName === "SPAN")).toBe(true);
+    const reflowCss = readFileSync(
+      resolve(
+        dirname(fileURLToPath(import.meta.url)),
+        "../src/reader/reader.css"
+      ),
+      "utf8"
+    );
+    expect(reflowCss).not.toMatch(
+      /\.pdf-reflow-line[^{]*\{[^}]*display:\s*block/
+    );
     // Tapping a word opens the same lookup popup seam.
     fireEvent.click(screen.getByText("Woke"));
     await screen.findByRole("dialog", { name: "词详情：Woke" });
@@ -261,8 +288,7 @@ describe("PDF reflow face (round 7)", () => {
     const ctx = mount();
     await pick();
     await reflow();
-    const wordAt = () =>
-      document.querySelector<HTMLElement>("[data-word='Woke']");
+    const wordAt = () => wordEl("Woke");
     vi.useFakeTimers();
     try {
       fireEvent.pointerDown(wordAt()!);
@@ -273,6 +299,10 @@ describe("PDF reflow face (round 7)", () => {
     } finally {
       vi.useRealTimers();
     }
+    // The release's click is swallowed by the long press: dispatching it
+    // must NOT open the popup (deleting the suppression reds here).
+    fireEvent.click(wordAt()!);
+    expect(screen.queryByRole("dialog", { name: "词详情：Woke" })).toBeNull();
     const docId = await id();
     await waitFor(() =>
       expect(ctx.bookmarks.list(docId)).resolves.toHaveLength(1)
@@ -457,8 +487,7 @@ describe("PDF reflow face (round 7)", () => {
     mount();
     await pick();
     await reflow();
-    const wordAt = () =>
-      document.querySelector<HTMLElement>("[data-word='Second']");
+    const wordAt = () => wordEl("Second");
     vi.useFakeTimers();
     try {
       fireEvent.pointerDown(wordAt()!);
@@ -475,16 +504,58 @@ describe("PDF reflow face (round 7)", () => {
         "2 / 3"
       )
     );
-    fireEvent.click(screen.getByRole("button", { name: "书签" }));
-    await screen.findByRole("dialog", { name: "书签" });
-    fireEvent.click(screen.getByRole("button", { name: /^第 1 页/ }));
-    await waitFor(() =>
-      expect(document.querySelector(".reader-position")).toHaveTextContent(
-        "1 / 3"
-      )
+    // ⑨e: observe the jump's scroll — jsdom has no scrollIntoView, so
+    // the optional call is pinned through a recording stub.
+    const seen: HTMLElement[] = [];
+    const calls: unknown[][] = [];
+    const spy = vi.fn(function (this: HTMLElement, ...args: unknown[]) {
+      seen.push(this);
+      calls.push(args);
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: spy,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "书签" }));
+      await screen.findByRole("dialog", { name: "书签" });
+      fireEvent.click(screen.getByRole("button", { name: /^第 1 页/ }));
+      await waitFor(() =>
+        expect(document.querySelector(".reader-position")).toHaveTextContent(
+          "1 / 3"
+        )
+      );
+      expect(
+        document.querySelector(".sentence-block.block-marked")
+      ).not.toBeNull();
+      await waitFor(() => expect(seen.length).toBeGreaterThan(0), {
+        timeout: 3000,
+      });
+      // The planted line (1) centered — not the page top.
+      expect(seen[seen.length - 1]!.dataset.pdfLineIndex).toBe("1");
+      expect(calls[calls.length - 1]).toEqual([{ block: "center" }]);
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  // ⑨e: the zoom ladder belongs to the canvas face — the reflow text
+  // has no scale geometry to step (round 11), so the ladder hides there.
+  it("the zoom ladder is canvas-only", async () => {
+    mount();
+    await pick();
+    expect(screen.getByRole("button", { name: "适宽" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
     );
-    expect(
-      document.querySelector(".sentence-block.block-marked")
-    ).not.toBeNull();
+    await reflow();
+    expect(screen.queryByRole("button", { name: "适宽" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "75%" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "150%" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "原版" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "适宽" })).toBeInTheDocument()
+    );
   });
 });

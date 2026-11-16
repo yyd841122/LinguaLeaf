@@ -211,3 +211,37 @@ describe("real PDF render overlay contract", () => {
     expect(destroy).toHaveBeenCalledTimes(1);
   });
 });
+
+// The fit-width math (evidence gap ⑨): the fit reads the canvas's main
+// ancestor's clientWidth minus its padding — with no main ancestor
+// (every fixture above) the multiplier alone answers, so a deleted or
+// mis-measured fit stayed green. A real main fixture pins the numbers.
+describe("fit-width over a main ancestor", () => {
+  it("fills the content width minus padding, and the multiplier applies on top", async () => {
+    const f = fixture();
+    // A 400px main with 16px padding each side: 368px of content width
+    // over a 300-unit page → fit 368/300.
+    const main = document.createElement("main");
+    Object.defineProperty(main, "clientWidth", {
+      get: () => 400,
+      configurable: true,
+    });
+    main.style.paddingLeft = "16px";
+    main.style.paddingRight = "16px";
+    main.appendChild(f.overlay);
+    document.body.appendChild(main);
+    try {
+      await f.render(1);
+      expect(f.canvas.style.width).toBe("368px");
+      // The stored multiplier steps the fit: 0.75 × 368.
+      await f.render(0.75);
+      expect(f.canvas.style.width).toBe("276px");
+      // No main ancestor (jsdom's default): multiplier-only fallback.
+      main.removeChild(f.overlay);
+      await f.render(1);
+      expect(f.canvas.style.width).toBe("300px");
+    } finally {
+      main.remove();
+    }
+  });
+});

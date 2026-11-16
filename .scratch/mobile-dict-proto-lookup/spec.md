@@ -1,6 +1,6 @@
 # mobile 词典外部词键原型污染:constructor/toString 等真实词查错
 
-**Status:** needs-triage
+**Status:** claimed
 
 来自 mobile-app 02 独立终审发现 3+7(2026-11-16,threadId
 01a1e1db-a5d2-75f0-9f2f-1c7b4accd86b):
@@ -18,3 +18,10 @@
 ## Comments
 
 - 2026-11-16 立票。站点已现场核验(裸索引 + 原型链可达)。
+
+- 2026-11-16 Lane A 实现(Codex 审核排队,与 A-1~A-3 同批等配额):
+  commit 4c9c57e(基线 b8cdebd)。三表 Map 化(构造期 Object.entries 只收
+  自有键,取 CODING_STANDARDS 该条目的 Map 选项);fixture 补薄 runs,
+  既有 runs→run 测试即优先级钉。新测试 2 片,双变异心证:裸索引还原后
+  仅原型测试红;lookup 优先级翻转(form-first)后仅 runs 测试红。
+  全量 verify 108 文件 1208 测试绿。

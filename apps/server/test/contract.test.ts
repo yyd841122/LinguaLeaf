@@ -54,6 +54,7 @@ import {
   fetchBookmarks,
 } from "../../../apps/web/src/bookmarks";
 import { downloadAttachment } from "../../../apps/web/src/download";
+import { validateBackupPayload } from "../../../apps/mobile/src/backup/backup-format";
 import {
   createNote,
   fetchNotes,
@@ -849,6 +850,24 @@ describe("downloadAttachment over the real server (download.ts)", () => {
     await expect(
       downloadAttachment("/api/books/9999/export")
     ).rejects.toMatchObject({ status: 404 });
+  });
+
+  // Evidence gap ⑦: the backup route's REAL bytes must clear the phone's
+  // format gate — the web shelf test stubbed "{}" and only the filename
+  // was pinned, so a route emitting validator-rejecting JSON stayed green
+  // everywhere. The phone validator is borrowed here the way the web
+  // client helpers are.
+  it("delivers backup bytes the phone's validator accepts", async () => {
+    await startStack();
+    await uploadReadyBook(sampleBookPath);
+    await downloadAttachment("/api/export/backup");
+    expect(clicked[0]?.download).toMatch(
+      /^lingualeaf-backup-v1-\d{8}-\d{4}\.json$/
+    );
+    const blob = createObjectURLMock.mock.calls[0]?.[0] as Blob;
+    const payload = JSON.parse(await blob.text());
+    expect(() => validateBackupPayload(payload)).not.toThrow();
+    expect(payload.books).toEqual([{ title: "The Way of the Test" }]);
   });
 });
 

@@ -409,13 +409,17 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
 
     // Open (read #2 gated), close before it lands, reopen (read #3 lands).
     await openPanel();
-    // findBy, not getBy: under full-suite load the loading commit and the
-    // dialog commit can land a tick apart (2026-11-13 pre-commit flake;
-    // 11-15 the window itself needed 3s — the effect+commit lagged a
-    // full second behind the dialog under a saturated worker, stub 13).
-    expect(
-      await screen.findByText(/读取书签中/, {}, { timeout: 3000 })
-    ).toBeInTheDocument();
+    // The pending signal is the plant lock (rows from the mount read
+    // stay listed during the refetch — no spinner swap since the A-2
+    // review fixes); findBy patience for the full-suite load window
+    // (2026-11-13/15 flakes needed seconds under a saturated worker).
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole("button", { name: "在当前位置打书签" })
+        ).toBeDisabled(),
+      { timeout: 3000 }
+    );
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     const dialog = await openPanel();
     expect(await within(dialog).findByText("Chapter One")).toBeInTheDocument();
@@ -482,11 +486,17 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
       ).toBe(true)
     );
 
-    const dialog = await openPanel();
+    await openPanel();
     // The open's read hangs; the marker must survive the open itself.
-    expect(
-      await within(dialog).findByText(/读取书签中/, {}, { timeout: 3000 })
-    ).toBeInTheDocument();
+    // (The plant lock is the pending signal — the mounted snapshot's
+    // rows stay listed, no spinner swap.)
+    await waitFor(
+      () =>
+        expect(
+          screen.getByRole("button", { name: "在当前位置打书签" })
+        ).toBeDisabled(),
+      { timeout: 3000 }
+    );
     expect(
       document
         .querySelector("[data-block-index='1']")
@@ -587,5 +597,318 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
         .querySelector("[data-block-index='3']")
         ?.classList.contains("block-marked")
     ).toBe(false);
+  });
+});
+
+// The landing-position and scroll evidence (mobile-test-evidence-gaps
+// ②④⑤⑥): jsdom zeroes every rect, so the old assertions could only say
+// block >= 0 — a plant pinned to block 0 and a deleted scrollIntoView
+// both stayed green. These give the blocks distinguishable geometry and
+// observe the actual scroll call.
+describe("ReaderPage — 书签落点与滚动 (evidence gaps ②④⑤⑥)", () => {
+  const rectAt = (top: number): DOMRect =>
+    ({
+      top,
+      bottom: top + 20,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 20,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  // Chapter one renders two sentence blocks. Under this layout block 0
+  // sits below any plausible sticky-head anchor (never crossed) and
+  // block 1 has scrolled under it: the walk must land on block 1 — a
+  // constant-0 plant (or a head-blind walk) reds the exact assertion.
+  const layOutChapterOne = () => {
+    const blocks = [
+      ...document.querySelectorAll<HTMLElement>("[data-block-index]"),
+    ];
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    blocks[0]!.getBoundingClientRect = () => rectAt(500);
+    blocks[1]!.getBoundingClientRect = () => rectAt(-300);
+  };
+
+  it("plants on the exact topmost visible block under real-ish geometry (②)", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    await renderReadingFace(bookmarks);
+    layOutChapterOne();
+
+    const dialog = await openPanel();
+    await awaitEmptyList(dialog);
+    plantHere();
+
+    const rows = (await bookmarks.list(DOC_ID)).filter(isEpubRow);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.chapter).toBe(0);
+    expect(rows[0]!.block).toBe(1);
+  });
+
+  it("lists rows across chapters in reading order (⑤)", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    await renderReadingFace(bookmarks);
+
+    // Plant on chapter one, walk to chapter two, plant again.
+    const first = await openPanel();
+    await awaitEmptyList(first);
+    plantHere();
+    expect(await within(first).findByText("Chapter One")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
+    expect(await screen.findByText("More")).toBeInTheDocument();
+    const second = await openPanel();
+    plantHere();
+    expect(await within(second).findByText("Chapter Two")).toBeInTheDocument();
+
+    // Reading order: chapter one's row first, chapter two's second.
+    const titles = within(second)
+      .getAllByRole("button", { name: /^Chapter/ })
+      .map((button) => button.querySelector(".bookmark-title")?.textContent);
+    expect(titles).toEqual(["Chapter One", "Chapter Two"]);
+  });
+
+  it("a cross-chapter jump scrolls the planted block into view (④)", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    await renderReadingFace(bookmarks);
+    layOutChapterOne();
+
+    // Plant on chapter one's visible block (1) under the laid-out geometry.
+    const first = await openPanel();
+    await awaitEmptyList(first);
+    plantHere();
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    expect((await bookmarks.list(DOC_ID)).filter(isEpubRow)[0]!.block).toBe(1);
+
+    // Observe the scroll: jsdom has no scrollIntoView, so the optional
+    // call is pinned through a recording stub on the prototype.
+    const seen: HTMLElement[] = [];
+    const calls: unknown[][] = [];
+    const spy = vi.fn(function (this: HTMLElement, ...args: unknown[]) {
+      seen.push(this);
+      calls.push(args);
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: spy,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "目录" }));
+      fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
+      expect(await screen.findByText("More")).toBeInTheDocument();
+
+      const panel = await openPanel();
+      jumpToRow(panel, "Chapter One");
+      expect(screen.queryByRole("dialog", { name: "书签" })).toBeNull();
+      expect(await screen.findByText("Words")).toBeInTheDocument();
+      await waitFor(() => expect(seen.length).toBeGreaterThan(0), {
+        timeout: 3000,
+      });
+      // The jump centered the PLANTED block (1), not the chapter top.
+      expect(seen[seen.length - 1]!.dataset.blockIndex).toBe("1");
+      expect(calls[calls.length - 1]).toEqual([{ block: "center" }]);
+    } finally {
+      delete (Element.prototype as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  it("the marker is chapter-scoped: switching chapters shows no stale band (⑥)", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    await renderReadingFace(bookmarks);
+
+    const dialog = await openPanel();
+    await awaitEmptyList(dialog);
+    plantHere();
+    expect(await within(dialog).findByText("Chapter One")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector(".block-marked")).not.toBeNull()
+    );
+
+    // Chapter two carries its own blocks only: the chapter-one band must
+    // not bleed into it (the stale-mark regression this pins).
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
+    expect(await screen.findByText("More")).toBeInTheDocument();
+    expect(document.querySelectorAll(".block-marked")).toHaveLength(0);
+
+    // Back on chapter one the band returns — the mark survived, not leaked.
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chapter One" }));
+    await waitFor(() =>
+      expect(document.querySelector(".block-marked")).not.toBeNull()
+    );
+  });
+});
+
+// ⑥'s static half: the marker's visuals live in ::before (the 3px page
+// margin strip) and ::after (the ribbon) — jsdom applies no cascade, so
+// the declarations are reconciled against the stylesheet text (the
+// smoke rule's static-check form; deleting either pseudo's style reds).
+// node:fs直读, css?raw 被 vitest 桩成空串(dictionaryAsset 同款纪律)。
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+const readerCss = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), "../src/reader/reader.css"),
+  "utf8"
+);
+
+describe("block-marked visual declarations (evidence gap ⑥, static)", () => {
+  const ruleBody = (selector: string): string => {
+    const at = readerCss.indexOf(selector);
+    expect(at, `${selector} missing from reader.css`).toBeGreaterThanOrEqual(0);
+    const open = readerCss.indexOf("{", at);
+    const close = readerCss.indexOf("}", open);
+    return readerCss.slice(open + 1, close);
+  };
+
+  it("the mark anchors its own coordinate system", () => {
+    expect(ruleBody(".block-marked")).toContain("position: relative");
+  });
+
+  it("the page-margin strip rides the marked block's left edge", () => {
+    const strip = ruleBody(".block-marked::before");
+    expect(strip).toContain("width: 3px");
+    expect(strip).toContain("#6a4fa3");
+    expect(strip).toContain("left: -0.55rem");
+  });
+
+  it("the ribbon hangs below the block's right edge", () => {
+    const ribbon = ruleBody(".block-marked::after");
+    expect(ribbon).toContain("clip-path");
+    expect(ribbon).toContain("#6a4fa3");
+    expect(ribbon).toContain("bottom: -1.1rem");
+  });
+});
+
+// The A-2 review's three findings (2026-11-16): the retry race, the
+// no-snapshot failure branch, and the plain-block-leader plant.
+describe("ReaderPage — 书签面板评审修笔 (A-2 review)", () => {
+  const rectAt = (top: number): DOMRect =>
+    ({
+      top,
+      bottom: top + 20,
+      left: 0,
+      right: 300,
+      width: 300,
+      height: 20,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+
+  const wrapInner = (
+    inner: ReturnType<typeof createMemoryBookmarkStore>,
+    list: (docId: string) => Promise<BookmarkRow[]>
+  ): BookmarkStore => ({
+    list,
+    add: (docId, target) => inner.add(docId, target),
+    remove: (docId, id) => inner.remove(docId, id),
+    exportAll: () => inner.exportAll(),
+  });
+
+  it("a failure with no landed snapshot shows the flag alone — no wait line", async () => {
+    stubDictionaryOnly();
+    const bookmarks = wrapInner(createMemoryBookmarkStore(), () =>
+      Promise.reject(new Error("idb down"))
+    );
+    await renderReadingFace(bookmarks);
+    const dialog = await openPanel();
+    const flag = await within(dialog).findByRole("alert");
+    expect(flag.textContent).toContain("书签操作失败");
+    // The old shape kept the wait line beside the error (the null
+    // branch ignored the failure); the flag's retry is the way forward.
+    expect(within(dialog).queryByText(/读取书签中/)).toBeNull();
+  });
+
+  it("row ops stay locked while a retry's refetch is in flight", async () => {
+    stubDictionaryOnly();
+    const inner = createMemoryBookmarkStore();
+    await inner.add(DOC_ID, { chapter: 0, block: 1 });
+    let calls = 0;
+    let releaseRetry!: () => void;
+    const retryGate = new Promise<void>((resolve) => {
+      releaseRetry = resolve;
+    });
+    const bookmarks = wrapInner(inner, (docId) => {
+      calls += 1;
+      // 1: mount read lands (the markers). 2: the open's read fails
+      // (rows keep their snapshot, the flag speaks). 3: the retry's
+      // read — gated so the test can read the locked state mid-flight.
+      if (calls === 2) return Promise.reject(new Error("idb read died"));
+      if (calls === 3) return retryGate.then(() => inner.list(docId));
+      return inner.list(docId);
+    });
+    await renderReadingFace(bookmarks);
+    const dialog = await openPanel();
+    await within(dialog).findByRole("alert");
+    expect(within(dialog).getByText("Chapter One")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重试读取书签" }));
+    // Mid-refetch: the row stays listed (last truth) but its delete —
+    // and the plant — lock until the read lands, so no op can race the
+    // list read and resurrect a deleted row with its stale snapshot.
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "删除书签：Chapter One" })
+      ).toBeDisabled()
+    );
+    expect(
+      screen.getByRole("button", { name: "在当前位置打书签" })
+    ).toBeDisabled();
+
+    releaseRetry();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "删除书签：Chapter One" })
+      ).toBeEnabled()
+    );
+    expect(within(dialog).getAllByText("Chapter One")).toHaveLength(1);
+  });
+
+  it("a chapter led by a plain block plants the FIRST sentence, not the leader", async () => {
+    stubDictionaryOnly();
+    const bookmarks = createMemoryBookmarkStore();
+    const imageFirst = () =>
+      buildEpub({
+        title: "Image First",
+        docs: [
+          {
+            href: "text/i.xhtml",
+            body: `<h1>Img Chapter</h1><p><img src="../images/dot.png" alt="A red dot"/></p><p>The first sentence arrives.</p>`,
+          },
+        ],
+        images: [{ href: "images/dot.png" }],
+      });
+    await renderReadingFace(bookmarks, {
+      build: imageFirst,
+      title: "Image First",
+    });
+    // Geometry: the leading IMAGE has crossed the anchor; the chapter's
+    // first sentence still sits below it — no sentence is "visible" yet.
+    const blocks = [
+      ...document.querySelectorAll<HTMLElement>("[data-block-index]"),
+    ];
+    expect(blocks.length).toBeGreaterThanOrEqual(2);
+    blocks[0]!.getBoundingClientRect = () => rectAt(-300);
+    blocks[1]!.getBoundingClientRect = () => rectAt(500);
+
+    const dialog = await openPanel();
+    await awaitEmptyList(dialog);
+    plantHere();
+    // The plant targets the first SENTENCE (index 1), never the leading
+    // image's coordinate (0) — the 落位契约 holds at the chapter top.
+    const rows = (await bookmarks.list("doc:Image First")).filter(isEpubRow);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.block).toBe(1);
   });
 });

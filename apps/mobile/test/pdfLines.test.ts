@@ -252,3 +252,48 @@ describe("markParagraphBreaks", () => {
     ]);
   });
 });
+
+// The thresholds' boundary catchers (evidence gap ⑨): the four fixtures
+// above sit far from 1.45/1.05, so 1.45→1.4 (tighter, fires MORE) and
+// 1.05→1.12 (looser, fires LESS) both left every assertion unchanged.
+// These sit exactly between the mutant and the contract.
+describe("markParagraphBreaks — threshold boundaries", () => {
+  it("a raised gap just under 1.45×leading stays mid-paragraph (a 1.4 mutant fires it)", () => {
+    // Body leading 30; L2→L3 gap 42.3 sits between 1.40×30=42 and
+    // 1.45×30=42.5: the contract says NO break.
+    const lines = [
+      para(300, 40, 260, "body line one runs on,"),
+      para(270, 40, 260, "body line two runs on,"),
+      para(240, 40, 260, "body line three runs on,"),
+      para(197.7, 40, 260, "still the same paragraph,"),
+      para(167.7, 40, 260, "and it closes here, properly."),
+    ];
+    markParagraphBreaks(lines);
+    expect(lines[2]!.paraEnd).toBe(false);
+    // Sanity both sides of the line: 1.48×30=44.4 DOES fire (same body
+    // leading around it — a two-line fixture's cluster would be the gap
+    // itself).
+    const over = [
+      para(300, 40, 260, "body line one runs on,"),
+      para(270, 40, 260, "body line two runs on,"),
+      para(240, 40, 260, "body line three runs on,"),
+      para(195.6, 40, 260, "a fresh paragraph starts."),
+      para(165.6, 40, 260, "and keeps running here."),
+    ];
+    markParagraphBreaks(over);
+    expect(over[2]!.paraEnd).toBe(true);
+  });
+
+  it("an indent pair just over 1.05×leading breaks (a 1.12 mutant misses it)", () => {
+    // Indented next line with gap 32.4 sits between 1.05×30=31.5 and
+    // 1.12×30=33.6: the contract says BREAK.
+    const lines = [
+      para(300, 40, 260, "body line one runs on,"),
+      para(270, 40, 260, "body line two runs on,"),
+      para(240, 40, 260, "body line three runs on,"),
+      para(207.6, 50, 260, "indented continuation."),
+    ];
+    markParagraphBreaks(lines);
+    expect(lines[2]!.paraEnd).toBe(true);
+  });
+});
