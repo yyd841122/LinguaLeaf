@@ -18,6 +18,7 @@ import { createMemoryPdfPositionStore } from "../src/store/pdf-position-store";
 import { createMemoryNotesStore } from "../src/store/notes-store";
 import { createMemoryTranslationStore } from "../src/store/translation-store";
 import { createMemoryBookmarkStore } from "../src/store/bookmark-store";
+import { createMemoryUiSettingsStore } from "../src/store/ui-settings-store";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
 import {
   createMemoryPdfBytesBackend,
@@ -1845,5 +1846,37 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     expect(await screen.findByText("Woke")).toBeInTheDocument();
     expect(screen.queryByText("quiet")).not.toBeInTheDocument();
     expect(confirm).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("ReaderPage — theme wiring (redesign 01)", () => {
+  afterEach(() => {
+    // The hook stamps <html data-theme> — a document-level side effect
+    // RTL cleanup never touches; keep it from leaking into neighbours.
+    delete document.documentElement.dataset.theme;
+  });
+
+  it("applies the stored theme preference to the whole app", async () => {
+    // The wiring probe (Codex review finding 2): the hook tests pin
+    // useThemePreference in isolation, so deleting the one call site in
+    // ReaderPage left every suite green while the app itself lost its
+    // theme. This mounts the real page with a stored 夜间 preference and
+    // demands the attribute land on <html>.
+    const uiSettings = createMemoryUiSettingsStore();
+    await uiSettings.saveTheme("night");
+    render(
+      <ReaderPage
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+        notes={createMemoryNotesStore()}
+        library={createMemoryLibraryStore()}
+        translations={createMemoryTranslationStore()}
+        settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
+        uiSettings={uiSettings}
+      />
+    );
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("night")
+    );
   });
 });

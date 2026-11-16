@@ -99,6 +99,46 @@ describe("safe areas (ticket 06, static)", () => {
   });
 });
 
+// The named CSS color keywords worth guarding (the classic set —
+// anything a literal color could hide behind). Matched only inside a
+// declaration value (after a colon, before the next ;/{/}), so selector
+// text like `.pdf-stage canvas` never trips it.
+const namedColorInDeclaration =
+  /:[^;{}]*\b(red|orange|yellow|green|cyan|blue|purple|magenta|pink|brown|black|white|gray|grey|silver|gold|ivory|beige|teal|navy|maroon|olive|lime|aqua|fuchsia)\b/;
+
+// Strip the three theme blocks from bare css by exact spans — anything
+// between them and after the last one must be literal-free. (Removing
+// per-declaration instead would bless a token re-declared anywhere.)
+const withoutThemeBlocks = (css: string): string => {
+  const bareCss = bare(css);
+  const selectors = [
+    ":root",
+    ':root[data-theme="white"]',
+    ':root[data-theme="night"]',
+  ];
+  let cursor = 0;
+  let rest = "";
+  for (const selector of selectors) {
+    const at = bareCss.indexOf(selector, cursor);
+    expect(at, `${selector} missing`).toBeGreaterThanOrEqual(0);
+    const close = bareCss.indexOf("}", bareCss.indexOf("{", at));
+    expect(close, `${selector} close brace`).toBeGreaterThan(at);
+    rest += bareCss.slice(cursor, at);
+    cursor = close + 1;
+  }
+  return rest + bareCss.slice(cursor);
+};
+
+const sourceFiles = (): string[] =>
+  readdirSync(resolve(here, "../src"), { recursive: true })
+    .filter((name): name is string => typeof name === "string")
+    .filter(
+      (name) =>
+        (name.endsWith(".ts") || name.endsWith(".tsx")) &&
+        !name.endsWith(".d.ts")
+    )
+    .map((name) => resolve(here, "../src", name));
+
 describe("theme tokens (redesign 01, static)", () => {
   const TOKENS = [
     "accent",
@@ -164,21 +204,35 @@ describe("theme tokens (redesign 01, static)", () => {
     );
   });
 
-  it("the palette is the single color source — no scattered literals in declarations", () => {
-    const css = bare(readerCss);
-    // Hex and rgba() colors live only inside token declarations. The
-    // theme blocks are the one place a hex is written.
-    const withoutDeclarations = css.replace(
-      /--[\w-]+:\s*(#[0-9a-fA-F]{3,8}|rgba\([^)]*\));/g,
-      ""
-    );
-    expect(withoutDeclarations.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
-    expect(withoutDeclarations.match(/rgba\(/g) ?? []).toEqual([]);
-    // Keyword colors retired with the reskin: gray borders/text and the
-    // scheme-following canvas ground become tokens.
-    expect(withoutDeclarations).not.toMatch(
-      /(?:border[^;]*|color|background)\s*:\s*(?:gray|canvas)\b/
-    );
+  it("the palette is the single color source — no scattered literals of any syntax, in either app stylesheet", () => {
+    // Strip EXACTLY the three theme blocks, then nothing color-shaped
+    // may remain anywhere. Stripping every `--x: #hex` line instead (the
+    // first cut) left two gaps the Codex review's probe walked through:
+    // a component-local token re-declaration, and rgb()/named-keyword
+    // literals the declaration regex never listed.
+    const rest = withoutThemeBlocks(readerCss);
+    expect(rest.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
+    expect(
+      rest.match(/\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(/g) ?? []
+    ).toEqual([]);
+    // Named keyword colors ride the reskin's retirement too (gray
+    // borders/text, the scheme-following canvas ground became tokens).
+    // "transparent" stays allowed — absence of color, not a color value.
+    expect(rest).not.toMatch(namedColorInDeclaration);
+    // The shell sheet carries no color of its own either.
+    const shellRest = bare(shellCss);
+    expect(shellRest.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
+    expect(shellRest).not.toMatch(namedColorInDeclaration);
+    // And no source file smuggles a literal in through inline styles
+    // (6/8-digit hex or functional colors in TS/TSX).
+    for (const file of sourceFiles()) {
+      const ts = readFileSync(file, "utf8");
+      expect(
+        ts.match(/#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\b/g) ?? [],
+        file
+      ).toEqual([]);
+      expect(ts.match(/\b(?:rgba?|hsla?)\(/g) ?? [], file).toEqual([]);
+    }
   });
 
   it("the page ground rides tokens — body and the masking bands follow the theme", () => {
@@ -217,23 +271,39 @@ describe("theme tokens (redesign 01, static)", () => {
   });
 
   it("the PDF original page is white paper in every theme (纸就是纸)", () => {
-    // Page-anchored tokens, defined once on :root — never re-voiced by
-    // a theme block, so no theme can bleed onto the canvas page.
+    // The whole page-anchored group, defined once on :root — never
+    // re-voiced or even mentioned by a theme block, so no theme can
+    // bleed onto the canvas page or its overlays. (The first cut pinned
+    // only --pdf-page-paper; the Codex review's probe re-declared
+    // --pdf-ipa-ink inside night and stayed green.)
     const root = ruleBody(readerCss, ":root");
-    expect(root).toContain("--pdf-page-paper: #ffffff");
-    for (const block of [
-      ':root[data-theme="white"]',
-      ':root[data-theme="night"]',
-    ]) {
-      expect(ruleBody(readerCss, block)).not.toContain("--pdf-page-paper");
+    const PAGE_ANCHORED = [
+      "--pdf-page-paper",
+      "--pdf-word-tint",
+      "--pdf-ipa-chip",
+      "--pdf-ipa-chip-soft",
+      "--pdf-ipa-ink",
+    ];
+    for (const token of PAGE_ANCHORED) {
+      expect(root).toContain(`${token}:`);
+      for (const block of [
+        ':root[data-theme="white"]',
+        ':root[data-theme="night"]',
+      ]) {
+        expect(ruleBody(readerCss, block), token).not.toContain(token);
+      }
     }
+    expect(root).toContain("--pdf-page-paper: #ffffff");
     expect(ruleBody(readerCss, ".pdf-stage canvas")).toContain(
       "background: var(--pdf-page-paper)"
     );
     // The canvas overlays key to the page, not the theme: the IPA chip
-    // reads its own page-anchored ink.
+    // reads its own page-anchored ink on its own page-anchored chip.
     expect(ruleBody(readerCss, ".pdf-ipa")).toContain(
       "color: var(--pdf-ipa-ink)"
+    );
+    expect(ruleBody(readerCss, ".pdf-ipa")).toContain(
+      "background: var(--pdf-ipa-chip)"
     );
   });
 

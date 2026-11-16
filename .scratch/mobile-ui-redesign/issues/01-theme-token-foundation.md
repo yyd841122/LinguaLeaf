@@ -84,3 +84,19 @@ Status: ready-for-human(2026-11-16 实现完毕,待 Codex 审核与 verify 补�
   选择主题」的入口照 spec 归 02 票 Aa 面板(排版与主题同面板),本票的
   saveTheme 机制已备好四档,无代码改动。票面剩:Codex 审核 + caller
   verify 补跑。
+- 2026-11-17 Codex 独立审核(threadId 01a1e6bf-654a-70c2-a00d-6843dd4b0435,
+  gpt-6.1-sol · high · read-only,job review-mwjwubny-typuam):**GO**,无
+  High;3 项 Medium 全为测试证据缺口,当场修毕:
+  ①单一事实源静态测可绕(rgb()/命名色不在正则、组件局部 token 重声明
+  不拦)→ 改为**精确剥除三主题块后全语法扫描**(hex/rgb/hsl/hwb/lab/
+  lch/oklab/oklch + 命名色关键字,含 style.css 与 src/**/*.ts(x) 内联
+  面);②ReaderPage 的 useThemePreference 接线无探针(删掉调用全测仍
+  绿)→ 补集成测(存夜间偏好挂真页,断言 <html data-theme>);③页锚组
+  唯一性只钉 --pdf-page-paper → 扩为五 token 全组 not.toContain +
+  chip 消费断言。三变异(rgb 裸色/局部 token/夜间重声明 --pdf-ipa-ink)
+  注入实测各红一处,还原后 19/19 绿。变异心证表 12 项其余全有杀测
+  (night 块删除/夜间 accent 回退/恒白 pin 改 paper/v1 抛异常/默认改
+  paper/钉住后监听未拆/ipa 覆写删除/迁移残留 pdfToolbar/matchMedia 兜
+  底删除);对比度与 bundle 序声明现场复算属实。Codex 侧只读沙箱
+  pretest EROFS 跑不了套件,不背书历史计数——caller verify 见下条。
+  修笔后:mobile 44 文件 440 过 1 skip,tsc/eslint 零告警。
