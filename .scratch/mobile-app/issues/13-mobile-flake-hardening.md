@@ -23,3 +23,13 @@ settle 信号」体检修一遍(工单量:预计 ~10 处以内);或维持现状�
 加固(每例都是全量门一掷约 50% 的噪音)。
 
 来源:票 03 人验 round 7 期间第 3/4 例记档后立票。
+
+## Comments
+
+**2026-11-16 数据点(mobile-ipa-buttons 04 收官全量跑)**
+
+- 孤发 1 红:`pdfReaderNotes > restores markers after zoom/IPA rebuild`
+  的 note-popup `toBeNull()` 同步断言赶空窗;单跑绿 + 全量复跑绿(双
+  证),未改动该测试。同文件同族时敏断言是本票已知模式,清扫时此条
+  应一并 findBy 化。触发背景:全量并行 + 当日本会话新增 5 测(负载
+  边界又移)。
