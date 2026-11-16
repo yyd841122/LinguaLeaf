@@ -32,34 +32,41 @@ export type OfflineLookup = {
 // lemma). A word no table knows resolves to null: its slot stays empty
 // (缺词一律留空).
 export class OfflineDictionary {
-  private readonly data: BakedDictionary;
+  // The tables are keyed by EXTERNAL words — and "constructor" (like
+  // toString/valueOf/hasOwnProperty) is a real English word — so lookups
+  // go through Maps built from own keys only (Object.entries skips the
+  // prototype): a bare index on the JSON object would hit the inherited
+  // member and hand back a function where table data belongs (CODING_
+  // STANDARDS: lookup tables keyed by external strings probe with hasOwn
+  // — the Map is that rule's home turf).
+  private readonly ipa: Map<string, string>;
+  private readonly inflections: Map<string, string>;
+  private readonly entries: Map<string, { p: string; t: string }>;
 
   constructor(data: BakedDictionary) {
     // A truncated asset behaves as empty tables, not a crash: the first
     // lookup against a missing table answered `undefined[word]` and took
     // the import down (ticket 05's stub caught it; a machine-written
     // asset gets the same tolerance).
-    this.data = {
-      ipa: data.ipa ?? {},
-      inflections: data.inflections ?? {},
-      entries: data.entries ?? {},
-    };
+    this.ipa = new Map(Object.entries(data.ipa ?? {}));
+    this.inflections = new Map(Object.entries(data.inflections ?? {}));
+    this.entries = new Map(Object.entries(data.entries ?? {}));
   }
 
   resolveIpa(token: string): IpaResolution | null {
     const word = normalizeLookupToken(token);
     if (!word) return null;
-    const direct = this.data.ipa[word];
+    const direct = this.ipa.get(word);
     if (direct) return { ipa: direct, source: "form" };
-    const lemma = this.data.inflections[word];
+    const lemma = this.inflections.get(word);
     if (lemma) {
-      const viaLemma = this.data.ipa[lemma];
+      const viaLemma = this.ipa.get(lemma);
       if (viaLemma) return { ipa: viaLemma, source: "lemma" };
     }
-    const phonetic = this.data.entries[word]?.p;
+    const phonetic = this.entries.get(word)?.p;
     if (phonetic) return { ipa: phonetic, source: "form" };
     if (lemma) {
-      const lemmaPhonetic = this.data.entries[lemma]?.p;
+      const lemmaPhonetic = this.entries.get(lemma)?.p;
       if (lemmaPhonetic) return { ipa: lemmaPhonetic, source: "lemma" };
     }
     return null;
@@ -80,9 +87,9 @@ export class OfflineDictionary {
   lookup(token: string): OfflineLookup | null {
     const word = normalizeLookupToken(token);
     if (!word) return null;
-    const lemma = this.data.inflections[word] ?? null;
+    const lemma = this.inflections.get(word) ?? null;
     const entry =
-      (lemma ? this.data.entries[lemma] : undefined) ?? this.data.entries[word];
+      (lemma ? this.entries.get(lemma) : undefined) ?? this.entries.get(word);
     if (!entry) return null;
     const resolution = this.resolveIpa(word);
     return {
@@ -100,7 +107,7 @@ export class OfflineDictionary {
   // One rule for the popup's writes and the reading walk's tints.
   stateKey(token: string): string {
     const word = normalizeLookupToken(token);
-    return this.data.inflections[word] ?? word;
+    return this.inflections.get(word) ?? word;
   }
 }
 
