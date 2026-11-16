@@ -247,3 +247,14 @@ readerBookmarks.test.tsx 尾段 findByText 1000ms 顶满挂一次(5 文件并行
 即触发,非全量负载专属);单跑复绿 8/8。签名与 2026-11-13 pre-commit
 flake 记档相同,第二次再现——加固候选(去时敏或加长窗)挂起,票 03 的
 pin 测试(pdfReaderBookmarks 第 6 案)未受累。
+
+### 2026-11-16 Codex 独立终审(挂账补跑)
+
+threadId `01a1e1e2-b13e-7d73-b20d-c51c8a08fc1e`,verdict **NO-GO**,只读
+含内存探针。2 缺陷 + 3 缺口全走 follow-up:
+- 缺陷 1+2(面板加载清空正文记号 / 打签落位含 plain 块)→
+  `.scratch/mobile-bookmark-defects/`(编排侧现场核验站点)
+- 缺口 3+4+5(跳回滚动无断言 / 落位 fixture 全零 / 视觉样式无 catcher)
+  → 并入 `.scratch/mobile-test-evidence-gaps/` ④⑤⑥
+store 增删幂等持久化、失败旗、A→B→A 防复活均 PASS;两缺陷在翻 done
+的 eec9ac7 即已存在。10 维持 done,实项随 follow-up 票处置。

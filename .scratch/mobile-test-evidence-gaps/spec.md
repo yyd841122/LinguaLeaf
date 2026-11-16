@@ -18,3 +18,10 @@
 ## Comments
 
 - 2026-11-16 立票。
+
+- 2026-11-16 追加(来自 mobile-app 10 独立终审,threadId
+  01a1e1e2-b13e-7d73-b20d-c51c8a08fc1e):④跨章跳回不观测滚动,删
+  scrollIntoView 仍绿(readerBookmarks.test.tsx:193);⑤落位 fixture
+  rect 全零、只在第一章打签、面板无多行顺序案例(readerBookmarks.test.tsx
+  :156);⑥视觉仅断 .block-marked class,飘带/页边紫条样式可删仍绿、
+  换书换章无带可区分陈旧结果的直接回归(:248)。
