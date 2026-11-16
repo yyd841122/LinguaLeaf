@@ -80,3 +80,7 @@ Status: ready-for-human(2026-11-16 实现完毕,待 Codex 审核与 verify 补�
     属机制固有,真机观感归 04 票机检。收官时请维护者对此拍板确认。
   - 修笔后复验:theme/uiSettings 10 测过,tsc+eslint 零告警,全量
     见收官 verify 补跑。
+- 2026-11-17 维护者拍板:**默认偏好 = 跟随系统,确认**;「可以主动
+  选择主题」的入口照 spec 归 02 票 Aa 面板(排版与主题同面板),本票的
+  saveTheme 机制已备好四档,无代码改动。票面剩:Codex 审核 + caller
+  verify 补跑。
