@@ -99,9 +99,6 @@ body {
 }
 .reader-tools {
   display: flex;
-  /* Narrow-phone fallback: at ≥360px the eight controls fit one row;
-     below that they wrap instead of overflowing the viewport. */
-  flex-wrap: wrap;
   gap: 0.5rem;
   align-items: baseline;
 }

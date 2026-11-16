@@ -1,6 +1,6 @@
 # 01 — 音标不显示：Android 内置资产陈旧（丢失内核共享样式）
 
-Status: ready-for-human
+Status: done
 
 ## 现象
 
@@ -62,3 +62,10 @@ Status: ready-for-human
   不红」→ 守卫改每目录口径 + 门面措辞同步修正（原口径过度）；P3 空
   断言删除。已采纳。
 - 待人验：真机点「音标」两下（出现/消失）。
+
+**2026-11-16 真机机检（最终 APK,raw CDP,scripts/device-cdp-eval.mjs）**
+
+- 真机 360×748 WebView 打开 The Lighthouse Diary:`.ipa-word-ipa` 375 个
+  带 data（样例 ˈɑɡəst），aria-pressed=true；点「音标」off → 0 且
+  pressed=false，再点 on → 375 且 pressed=true。开关两翻可见工作。
+- 截屏 evidence/device-final-360.png。翻 done。

@@ -18,4 +18,4 @@
   整组被推出屏外竖排（412×915 实测 header 高 268px，听书组 left=462
   不可见）。→ 票 02。
 
-Status: in-progress
+Status: done
