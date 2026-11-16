@@ -1,3 +1,4 @@
+import { PICKER_LABEL } from "./reader-picker";
 import {
   act,
   fireEvent,
@@ -153,7 +154,7 @@ function mount(
 }
 
 async function pick() {
-  fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
+  fireEvent.change(screen.getByLabelText(PICKER_LABEL), {
     target: { files: [new File([source()], "same.pdf")] },
   });
   await screen.findByRole("heading", { name: "Same title" });
@@ -234,9 +235,7 @@ describe("PDF reflow face (round 7)", () => {
     await pick();
     await reflow();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
-    expect(
-      await screen.findByLabelText("选择 EPUB、PDF 或 Markdown 文件")
-    ).toBeInTheDocument();
+    expect(await screen.findByLabelText(PICKER_LABEL)).toBeInTheDocument();
   });
 
   it("long-pressing a word plants the mark on its line, marked block shows", async () => {

@@ -1,3 +1,4 @@
+import { PICKER_LABEL } from "./reader-picker";
 import { render, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { App } from "../src/App";
@@ -57,9 +58,7 @@ test("启动落在阅读页书架:应用名与文件选择入口可见", async (
   expect(
     screen.getByRole("heading", { level: 1, name: "LinguaLeaf" })
   ).toBeVisible();
-  expect(
-    screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件")
-  ).toBeInTheDocument();
+  expect(screen.getByLabelText(PICKER_LABEL)).toBeInTheDocument();
 });
 
 test("库里有书时 recents 列出书名与章进度", async () => {

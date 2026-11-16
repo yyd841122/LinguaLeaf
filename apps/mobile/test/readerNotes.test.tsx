@@ -1,3 +1,4 @@
+import { PICKER_LABEL } from "./reader-picker";
 import { NOTE_TYPES } from "../../server/src/wire";
 import {
   act,
@@ -257,9 +258,7 @@ describe("EPUB sentence-block notes", () => {
           "2 / 2"
         );
       if (action === "返回")
-        expect(
-          screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件")
-        ).toBeInTheDocument();
+        expect(screen.getByLabelText(PICKER_LABEL)).toBeInTheDocument();
     }
   );
 
@@ -545,7 +544,7 @@ describe("same-title import protection in the reader", () => {
       title: BOOK.title,
       docs: [{ href: "one.xhtml", body }],
     });
-    const input = screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件");
+    const input = screen.getByLabelText(PICKER_LABEL);
     fireEvent.change(input, {
       target: { files: [new File([bytes as BlobPart], "book.epub")] },
     });

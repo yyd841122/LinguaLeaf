@@ -1,3 +1,4 @@
+import { PICKER_LABEL } from "./reader-picker";
 import { WordLookupPopup as KernelPopup } from "@lingualeaf/reading-model/react";
 import {
   settleRaceSuite,
@@ -1790,7 +1791,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
 
   it("offers Markdown in the picker accept list", () => {
     renderWithSeams();
-    const input = screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件");
+    const input = screen.getByLabelText(PICKER_LABEL);
     // Exact value through getAttribute — jsdom's selector engine matches
     // attribute values case-insensitively (CODING_STANDARDS).
     expect(input.getAttribute("accept")).toBe(".epub,.pdf,.md,.markdown");

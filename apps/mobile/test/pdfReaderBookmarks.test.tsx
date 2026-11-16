@@ -1,3 +1,4 @@
+import { PICKER_LABEL } from "./reader-picker";
 import {
   act,
   fireEvent,
@@ -133,7 +134,7 @@ function mount(bookmarks: BookmarkStore = createMemoryBookmarkStore()) {
 }
 
 async function pick() {
-  fireEvent.change(screen.getByLabelText("选择 EPUB、PDF 或 Markdown 文件"), {
+  fireEvent.change(screen.getByLabelText(PICKER_LABEL), {
     target: { files: [new File([source()], "same.pdf")] },
   });
   await screen.findByRole("heading", { name: "Same title" });
