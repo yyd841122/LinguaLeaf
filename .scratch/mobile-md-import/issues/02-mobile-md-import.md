@@ -1,6 +1,6 @@
 # 02: 手机端导入 md 书(与 EPUB 面同权全链)
 
-**Status:** ready-for-human
+**Status:** done
 
 **What to build:** 手机书架的导入按钮选中 `.md` 文件,得到与 EPUB 书逐项同权的完整链:
 进书架、导入时离线词典注音、点词查详情(首次查词进生词本)、按章「翻译」按钮、
@@ -64,5 +64,22 @@ spec 的 6 步白话清单走通即为完成。
   无导航语义,正名「返回」(动作不变,不加重复按钮;PDF 面「打开」按用户
   点名范围不动);目录浮层头部加「返回」(35 章列表把底部关闭顶到折叠线下,
   退出不依赖滚动)。12 处测试查询同步(commit 0d524bd)。5 套件 97 绿。
-- 状态维持 ready-for-human:剩余人检点不变——caller `npm run verify` + 真机
-  6 步(切章断言按 round 1 修复后行为:落章首;章导航按 round 3:目录浮层)。
+- 2026-11-16 收官翻 done。**wrap-up**(Lane A 六步全走完):
+  - 实现:commits a11938a(功能)→ c8c8cee/d838e4a(双轴评审修笔)→
+    9306076(round 1 章滚动修复)→ 3479aea/3c5a7bb(round 2/3 目录演化)→
+    0d524bd(round 4 返回按钮)。ReaderPage 分流零改动(预期成立);
+    extension 孪生零 diff(分叉达成)。
+  - 评审:Codex read-only 审核 threadId 01a1df75-57b4-7692-94a3-70c3cd998549,
+    代码级发现两项当场修;内置双轴 review(Standards/Spec)零硬违规零缺失,
+    judgement calls 2 修 1 候选票 1 按决策压制。
+  - 测试证据:全量套件最后一次全量跑 107 文件 1184 绿(d838e4a pre-commit);
+    此后 round 1-4 各轮针对性面(readerPage/bookmarks/notes/translation/App
+    五件)97 绿 1 skip;新增回归:import-core md 语义 10 测、md 导入页级
+    4 测、章滚动浏览器场景(npm run browser-e2e:mobile)、目录浮层行为。
+  - 人检点:caller 2026-11-16 `npm run verify` 显式补跑通过;真机 6 步
+    (真机书《韭菜的自我修养》en.md,35 章/1209 句块)全过——含 round 1
+    切章落章首修复与 round 3/4 目录浮层、返回按钮的复验;两个预期怪相
+    (章 1 TOC raw 块、空 Appendix 章)确认为 web 同款语义,非 bug。
+  - 挂账候选(needs-triage,非本票):web 面章滚动同型洞
+    (.scratch/web-reading-chapter-scroll-reset/)、picker 常量批扫
+    (.scratch/test-picker-label-constant/)。

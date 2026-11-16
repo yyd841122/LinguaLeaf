@@ -1,6 +1,6 @@
 # 01: md 解析器下沉 import-core,server 改引用
 
-**Status:** ready-for-human
+**Status:** done
 
 **What to build:** markdown-it 与 md 解析三件套(readMarkdownBook / isMarkdownFilename /
 MARKDOWN_EXTENSION)从 server 迁入 `packages/import-core` 并导出;server 删本地模块、
@@ -40,5 +40,9 @@ server 的 md 导入端到端行为零变化、全链测试绿。本票无用户
   spec 偏差 = 委托断言多断 title/chapters 两行——裁定保留:它们钉的是注册表
   utf8 适配器本身(传对文件名、不丢章节),非 md 语义重复。Standards 轴本票
   范围零发现。
-- 状态翻 ready-for-human:待 caller 显式补跑 `npm run verify`(与票 02 共用
-  同一步),过后随收官 docs commit 翻 done。
+- 2026-11-16 收官翻 done。caller 2026-11-16 显式补跑 `npm run verify` 通过
+  (typecheck + 全量测试 + lint + locality checks + build 全链)。验收门五项
+  全数落档:导出三件套与依赖随迁 ✓、server 无本地模块改引 import-core ✓、
+  10 测试钉死决策 5 元素语义 ✓、format-readers 委托断言 ✓、全链绿 ✓。
+  实现 commit 48fa73c;Codex 审核 threadId 01a1df75-57b4-7692-94a3-70c3cd998549;
+  内置双轴评审零缺失。wrap-up 详见同目录 spec.md 与票 02。
