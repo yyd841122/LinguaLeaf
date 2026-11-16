@@ -130,6 +130,17 @@ body {
   line-height: 1.4;
   cursor: pointer;
   color: var(--ink);
+  /* Floor exemption (mobile-ipa-buttons 03): the pills return to their
+     pre-floor size — a dense secondary row, not a primary action. The
+     vertical-only hit bleed below keeps taps comfortable without
+     crossing the 0.25rem gaps between neighbours. */
+  min-height: 0;
+  position: relative;
+}
+.lookup-vocab-option::after {
+  content: "";
+  position: absolute;
+  inset: -0.35em 0;
 }
 .lookup-vocab-option:hover {
   background: var(--tint);

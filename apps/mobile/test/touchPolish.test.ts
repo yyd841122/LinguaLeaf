@@ -207,6 +207,17 @@ describe("EPUB head + 听书 compact row (mobile-ipa-buttons 02, static)", () =>
     expect(hit).toMatch(/inset:\s*-0\.35em -0\.35em/);
   });
 
+  it("the popup's 生词本 pills return to their pre-floor size (vertical-only hit bleed)", () => {
+    const pill = ruleBody(readerCss, ".lookup-vocab-option");
+    expect(pill).toContain("min-height: 0");
+    expect(pill).toContain("position: relative");
+    const hit = ruleBody(readerCss, ".lookup-vocab-option::after");
+    expect(hit).toContain('content: ""');
+    // Vertical only: a horizontal bleed would cross the row's 0.25rem
+    // gaps and pit neighbouring pills against each other.
+    expect(hit).toMatch(/inset:\s*-0\.35em 0/);
+  });
+
   it("the 听书 bar renders directly under the title, before the tools row (书名下方)", () => {
     const epub = readFileSync(
       resolve(here, "../src/reader/EpubReader.tsx"),
