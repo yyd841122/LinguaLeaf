@@ -114,4 +114,52 @@ describe("PDF bytes store", () => {
     });
     await expect(store.get(input.docId)).rejects.toThrow("缺失");
   });
+
+  it("renames one field of the committed record, preserving order and bytes (mobile-ipa-buttons 04)", async () => {
+    const backend = createMemoryPdfBytesBackend();
+    const store = createPdfBytesStore(backend, () => 7);
+    const input = await fixture();
+    await store.save(input);
+    await store.rename(input.docId, "  Candide 老实人  ");
+    expect(await store.list()).toEqual([
+      {
+        docId: input.docId,
+        title: "Candide 老实人",
+        size: input.blob.size,
+        storedAt: 7,
+      },
+    ]);
+    const record = await store.get(input.docId);
+    expect(record.title).toBe("Candide 老实人");
+    expect(await pdfFingerprint(await readPdfBlob(record.blob))).toBe(
+      input.docId
+    );
+  });
+  it("rejects renames for empty titles, unknown ids, corrupt records — and failed writes keep the old title", async () => {
+    const backend = createMemoryPdfBytesBackend();
+    const store = createPdfBytesStore(backend, () => 3);
+    const input = await fixture();
+    await store.save(input);
+    await expect(store.rename(input.docId, "   ")).rejects.toThrow("不能为空");
+    await expect(
+      store.rename("pdf:sha256-v1:" + "1".repeat(64), "New")
+    ).rejects.toThrow();
+    expect(
+      await store.list(),
+      "the failed renames must not touch the record"
+    ).toEqual([
+      { docId: input.docId, title: "Book", size: input.blob.size, storedAt: 3 },
+    ]);
+    vi.spyOn(backend, "get").mockResolvedValueOnce({
+      docId: input.docId,
+      title: "Book",
+      size: input.blob.size,
+      storedAt: 3,
+      blob: undefined,
+    });
+    await expect(store.rename(input.docId, "New")).rejects.toThrow("缺失");
+    vi.spyOn(backend, "put").mockRejectedValueOnce(new Error("abort"));
+    await expect(store.rename(input.docId, "New")).rejects.toThrow("abort");
+    expect((await store.get(input.docId)).title).toBe("Book");
+  });
 });

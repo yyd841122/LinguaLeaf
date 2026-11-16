@@ -908,7 +908,10 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     ).toBeInTheDocument();
     expect(screen.getByLabelText(PICKER_LABEL)).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Cached" }));
-    await screen.findByRole("heading", { name: "Same title" });
+    // The stored name ("Cached") heads the reopened face — the mocked
+    // session's metadata title ("Same title") no longer outranks it
+    // (mobile-ipa-buttons 04: rename outranks metadata on reopen).
+    await screen.findByRole("heading", { name: "Cached" });
   });
 
   it("rejects cached bytes under the wrong docId and retries after a Blob read failure", async () => {
@@ -945,7 +948,10 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     await screen.findByText("PDF 书架读取失败，请重试打开或选择同一个文件。");
     expect(pdf.openPdf).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Cached" }));
-    await screen.findByRole("heading", { name: "Same title" });
+    // The stored name ("Cached") heads the reopened face — the mocked
+    // session's metadata title ("Same title") no longer outranks it
+    // (mobile-ipa-buttons 04: rename outranks metadata on reopen).
+    await screen.findByRole("heading", { name: "Cached" });
   });
 
   it("refreshes the current picker when a save finishes after leaving reading", async () => {
@@ -1024,6 +1030,82 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     await land();
     expect(
       await screen.findByRole("button", { name: "Same title" })
+    ).toBeInTheDocument();
+  });
+
+  it("renames a shelf entry by hand: draft prefilled, empty locked, commit refreshes the row, cancel keeps the old title (mobile-ipa-buttons 04)", async () => {
+    const bytes = createPdfBytesStore(createMemoryPdfBytesBackend());
+    const docId = await id();
+    await bytes.save({
+      docId,
+      title: "www.i-enet.com",
+      blob: new Blob([source()]),
+    });
+    mount(undefined, undefined, undefined, bytes);
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "修改《www.i-enet.com》的书名",
+      })
+    );
+    const input = screen.getByLabelText("书名");
+    expect(input).toHaveValue("www.i-enet.com");
+    fireEvent.change(input, { target: { value: "   " } });
+    expect(screen.getByRole("button", { name: "保存" })).toBeDisabled();
+    fireEvent.change(input, { target: { value: "Candide 老实人" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(
+      await screen.findByRole("button", { name: "Candide 老实人" })
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "修改书名" })).toBeNull();
+    expect((await bytes.list()).map((entry) => entry.title)).toEqual([
+      "Candide 老实人",
+    ]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "修改《Candide 老实人》的书名" })
+    );
+    fireEvent.change(screen.getByLabelText("书名"), {
+      target: { value: "别的名字" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("dialog", { name: "修改书名" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Candide 老实人" })
+    ).toBeInTheDocument();
+    expect((await bytes.list()).map((entry) => entry.title)).toEqual([
+      "Candide 老实人",
+    ]);
+    // The reopened face carries the stored name, not the mocked session's
+    // metadata title (「Same title」): rename outranks metadata on reopen.
+    fireEvent.click(screen.getByRole("button", { name: "Candide 老实人" }));
+    expect(
+      await screen.findByRole("heading", { name: "Candide 老实人" })
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the rename overlay and draft on a failed save, then succeeds on retry", async () => {
+    const ctx = mount();
+    await pick();
+    await land();
+    vi.spyOn(ctx.bytes, "rename").mockRejectedValueOnce(
+      new Error("rename failed")
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: "修改《Same title》的书名",
+      })
+    );
+    fireEvent.change(screen.getByLabelText("书名"), {
+      target: { value: "New name" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("改名失败");
+    expect(
+      screen.getByRole("dialog", { name: "修改书名" })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("书名")).toHaveValue("New name");
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    expect(
+      await screen.findByRole("button", { name: "New name" })
     ).toBeInTheDocument();
   });
 

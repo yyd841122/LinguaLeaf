@@ -21,6 +21,11 @@ export interface PdfBytesStore {
   list(): Promise<PdfBytesMetadata[]>;
   get(docId: string): Promise<PdfBytesRecord>;
   save(input: { docId: string; title: string; blob: Blob }): Promise<void>;
+  // The shelf's manual rename (mobile-ipa-buttons 04): one field of the
+  // committed record changes — size/storedAt (the shelf's ordering) and
+  // the bytes stay exactly as they were. A missing/corrupt record refuses
+  // the rename; a failed write leaves the previous title intact.
+  rename(docId: string, title: string): Promise<void>;
   delete(docId: string): Promise<void>;
 }
 
@@ -124,6 +129,29 @@ export function createPdfBytesStore(
     },
     delete(docId) {
       return mutate(docId, () => backend.delete(docId));
+    },
+    rename(docId, title) {
+      const next = title.trim();
+      return mutate(docId, async () => {
+        if (!next) throw new Error("PDF 书名不能为空");
+        if (next.length > 120) throw new Error("PDF 书名过长");
+        // Whole-record read-then-write through the same queue: the
+        // integrity check is get()'s (blob present and sized), and the
+        // backend's atomic put keeps metadata and bytes moving together
+        // if the write half-fails.
+        const raw = await backend.get(docId);
+        const entry = metadata(raw);
+        if (
+          entry.docId !== docId ||
+          typeof raw !== "object" ||
+          raw === null ||
+          !("blob" in raw) ||
+          !(raw.blob instanceof Blob) ||
+          raw.blob.size !== entry.size
+        )
+          throw new Error("PDF 原书字节缺失或损坏");
+        await backend.put({ ...entry, title: next, blob: raw.blob });
+      });
     },
   };
 }

@@ -11,11 +11,13 @@ function PdfShelfRow({
   bytes,
   onOpen,
   onDeleted,
+  onRename,
 }: {
   entry: PdfShelfEntry;
   bytes: PdfBytesStore;
   onOpen: (entry: PdfShelfEntry) => void;
   onDeleted: (docId: string) => Promise<void>;
+  onRename: (entry: PdfShelfEntry) => void;
 }) {
   const owner = useOwner(entry.docId);
   const { run, failed } = useSettle(owner);
@@ -43,6 +45,17 @@ function PdfShelfRow({
         {entry.title}
       </button>
       <span className="reader-hint">第 {entry.page} 页</span>
+      {/* 手动改名 (mobile-ipa-buttons 04): a PDF's metadata title (a
+          watermark site, say) is what import stored — the reader fixes
+          the shelf label by hand. */}
+      <button
+        type="button"
+        aria-label={`修改《${entry.title}》的书名`}
+        disabled={deleting}
+        onClick={() => onRename(entry)}
+      >
+        改名
+      </button>
       <button
         type="button"
         aria-label={`从书架删除《${entry.title}》`}
@@ -107,6 +120,42 @@ export function PdfShelf({
   const [cleanupFailures, setCleanupFailures] = useState<Set<string>>(
     new Set()
   );
+  // The rename face (mobile-ipa-buttons 04): one overlay for the whole
+  // shelf, armed by a row's 改名 click. The draft is plain state — the
+  // store write is the only thing that rides a settle channel.
+  const [renaming, setRenaming] = useState<PdfShelfEntry | null>(null);
+  const [draft, setDraft] = useState("");
+  const [renamingBusy, setRenamingBusy] = useState(false);
+  const renameOwner = useOwner();
+  const renameSettle = useSettle(renameOwner);
+  useEffect(() => () => renameOwner.invalidate(), [renameOwner]);
+  const startRename = (entry: PdfShelfEntry) => {
+    // Intent-side clear (the channel's rule): a previous attempt's
+    // failure must not pre-judge the next one.
+    renameSettle.clear();
+    setDraft(entry.title);
+    setRenaming(entry);
+  };
+  const cancelRename = () => {
+    renameOwner.invalidate();
+    setRenaming(null);
+  };
+  const commitRename = async () => {
+    const entry = renaming;
+    if (!entry || renamingBusy || !draft.trim()) return;
+    setRenamingBusy(true);
+    const outcome = await renameSettle.run(bytes.rename(entry.docId, draft));
+    setRenamingBusy(false);
+    if (outcome.ok && outcome.fresh) {
+      setRenaming(null);
+      // The shelf's rows (and the reading face's title at its next open)
+      // read the stored record: one refresh retells them.
+      void refresh();
+    }
+    // A fresh failure raises the channel's flag — the overlay keeps the
+    // draft and offers 保存 again; a stale outcome belongs to an overlay
+    // the reader already left.
+  };
   const owner = useOwner();
   const { run } = useSettle(owner);
   useEffect(() => () => owner.invalidate(), [owner]);
@@ -144,6 +193,7 @@ export function PdfShelf({
             bytes={bytes}
             onOpen={onOpen}
             onDeleted={onDeleted}
+            onRename={startRename}
           />
         ))}
       </ol>
@@ -155,6 +205,51 @@ export function PdfShelf({
           onCleaned={() => cleaned(docId)}
         />
       ))}
+      {renaming ? (
+        <div className="overlay-veil" role="dialog" aria-label="修改书名">
+          <div className="overlay-card">
+            <h2 className="overlay-title">修改书名</h2>
+            <label className="settings-field">
+              <span className="settings-label">书名</span>
+              <input
+                type="text"
+                value={draft}
+                aria-label="书名"
+                // Commit on Enter matches the settings card's rhythm; the
+                // buttons remain the discoverable path.
+                onChange={(event) => setDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void commitRename();
+                }}
+              />
+            </label>
+            {renameSettle.failed ? (
+              <p className="reader-error" role="alert">
+                改名失败，请重试。
+              </p>
+            ) : null}
+            <div className="overlay-actions">
+              <button
+                type="button"
+                className="settings-save"
+                disabled={renamingBusy || !draft.trim()}
+                onClick={() => {
+                  void commitRename();
+                }}
+              >
+                保存
+              </button>
+              <button
+                type="button"
+                disabled={renamingBusy}
+                onClick={cancelRename}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

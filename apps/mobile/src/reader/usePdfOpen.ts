@@ -77,7 +77,13 @@ export function usePdfOpen({
     offline: OfflineDictionary,
     openTicket: ReturnType<typeof openOwner.mark>,
     save: boolean,
-    expectedDocId?: string
+    expectedDocId?: string,
+    // The shelf's stored name (mobile-ipa-buttons 04): a hand-renamed
+    // title outranks the PDF's own metadata on every reopen — otherwise
+    // 「www.i-enet.com」 would keep greeting the reader above a book the
+    // shelf already calls 《Candide 老实人》. Absent (fresh imports), the
+    // session's metadata-first title stands.
+    storedTitle?: string
   ) => {
     const bytes = await readPdfBlob(blob);
     const docId = await pdfFingerprint(bytes);
@@ -110,7 +116,7 @@ export function usePdfOpen({
           setPdfSaveError(null);
           onAccepted({
             docId,
-            title: session.title,
+            title: storedTitle ?? session.title,
             session,
             page: Math.min(session.pageCount, Math.max(1, position?.page ?? 1)),
             scale: position?.scale ?? 1,

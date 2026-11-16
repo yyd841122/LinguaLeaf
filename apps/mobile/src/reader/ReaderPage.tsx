@@ -405,7 +405,11 @@ export function ReaderPage({
         await dictionary,
         ticket,
         false,
-        entry.docId
+        entry.docId,
+        // The stored title is the reader's own name for the book — the
+        // metadata's 「www.i-enet.com」 lost its say when it was renamed
+        // on the shelf (mobile-ipa-buttons 04).
+        record.title
       );
     } catch {
       await runOpen(

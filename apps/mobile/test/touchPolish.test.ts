@@ -218,6 +218,16 @@ describe("EPUB head + 听书 compact row (mobile-ipa-buttons 02, static)", () =>
     expect(hit).toMatch(/inset:\s*-0\.35em 0/);
   });
 
+  it("the pager's flippers go compact with a both-axis hit area (mobile-ipa-buttons 04)", () => {
+    const flipper = ruleBody(readerCss, ".reader-pager button");
+    expect(flipper).toContain("min-height: 0");
+    expect(flipper).toContain("font-size: 0.85rem");
+    expect(flipper).toContain("position: relative");
+    const hit = ruleBody(readerCss, ".reader-pager button::after");
+    expect(hit).toContain('content: ""');
+    expect(hit).toMatch(/inset:\s*-0\.35em -0\.35em/);
+  });
+
   it("the 听书 bar renders directly under the title, before the tools row (书名下方)", () => {
     const epub = readFileSync(
       resolve(here, "../src/reader/EpubReader.tsx"),

@@ -177,7 +177,9 @@ body {
 }
 .pdf-shelf li {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  /* title | page hint | 改名 | delete — the rename entry joins the
+     row's trailing cluster (mobile-ipa-buttons 04). */
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
 }
 .pdf-shelf .reader-recent {
   overflow-wrap: anywhere;
@@ -276,6 +278,22 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-top: 2rem;
+}
+/* The pager's two flippers go compact (mobile-ipa-buttons 04): the
+   44px floor made the page-number strip a tall band on both faces.
+   Same exemption shape as the pens/听书/pills — visual ~28px, hit area
+   grown both axes (the two buttons flank the number with room to
+   spare, so a horizontal bleed cannot overlap anything). */
+.reader-pager button {
+  min-height: 0;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.7rem;
+  position: relative;
+}
+.reader-pager button::after {
+  content: "";
+  position: absolute;
+  inset: -0.35em -0.35em;
 }
 .reader-position {
   color: gray;
