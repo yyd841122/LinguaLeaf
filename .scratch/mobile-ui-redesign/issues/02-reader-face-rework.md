@@ -1,5 +1,5 @@
 # 02 阅读页改版(无框化 + 呼出菜单 + 排版 + PDF 面)
-Status: ready-for-agent(2026-11-16 立项;spec v2;合并原 02+03——交互与排版互相锁死,拆开会在整合时返工,评审 16 条拍板 e)
+Status: ready-for-human(2026-11-17 五切片实现完毕,待双轴评审 + Codex 审核 + verify 补跑;真机矩阵归 04;见 ## Comments)
 Blocked by: 01
 
 ## 目标
@@ -89,3 +89,31 @@ Blocked by: 01
   (summonMenu 先行,helper 已在 test/reader-picker.ts)。E 要点:全组合
   矩阵(字号×边距×行距×两开关,长音标/窄屏)、PDF 双视图矩阵、票面验收
   门逐条打勾、风格收口(style.css Georgia 死规则顺手)。
+
+- 2026-11-17 Lane A 实现完毕(五切片五 commit,基线 = ef62e7e 之后的
+  HEAD):A 存储(ui-settings v3 typography + learning-settings 逐书)→
+  B EPUB 呼出菜单/点按分区/撤常驻/锚点 96px 常量化 → C Aa 面板 + 排版
+  变量化 + 章首版式 → D PDF 面同构(物理页边缘带/页码面板/zoom 入菜单/
+  AaPanel 共享)→ E 全组合矩阵 + 收口。要点拍板与发现:
+  - **锚点**:readingAnchorTop 改常量 96px(原 .reader-head 活测的兜底
+    值)——菜单几何无关,「呼出/收起不改落点」由构造保证并有测试。
+  - **点按优先级实证**:NoteEditor 的 capture 阶段外点守卫 = 「弹窗 >
+    菜单背景点」的天然实现;脏稿期间无法呼出菜单属预期(测试按此写)。
+  - **设置入口过渡**:阅读面设置钮随工具行退役,书架设置承接至 08 我页
+    (未配置提示文案已改「返回书架,在 设置 里填写」)。
+  - **行距契约**:--reader-leading = 音标开 ? 2(kernel 双倍下限,评审
+    11 条) : 梯值;纯文字行归梯。音标 0.72×(--ipa-size em 化)、译文
+    muted、章首居中序号+通栏标题。
+  - **发现并收口**:reader.css 的 Georgia font-family 自打包序以来即
+    死规则(style.css 后位必胜),本票删除;1.7 行高移 shell body 单源。
+  - **waitFor 风暴教训**:重试回调内做 dismiss+summon 双 toggle 会引爆
+    MutationObserver 重试风暴(单测 20887 次重试实证),测试读菜单态
+    一律幂等(开过就不关)。
+  - 验证:mobile 48 文件 471 过 1 skip(每 commit pre-commit 全量链);
+    tsc/eslint 零告警。新测:readerMenu 4 + tapZones 3 + readerMenuFace
+    15(呼出/词优先/选中禁/边缘边界/逐书往返/锚点不变/Aa 变量+持久化/
+    主题即选/章首/180 态矩阵)+ uiSettings v3 10 + learning 5;迁移
+    六套旧 UI 测试(summonMenu/dismissMenu 幂等助手入 test/reader-picker)。
+  - 待办(caller):双轴 + Codex 审核 → verify 补跑;**视觉半场归 04 票
+    真机矩阵**(180 态 jsdom 只钉变量接线,不撞行/不溢出/长音标/窄屏
+    需真机);触摸拖动/长按的真机行为同归 04。
