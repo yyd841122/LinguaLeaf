@@ -1,4 +1,4 @@
-import { PICKER_LABEL } from "./reader-picker";
+import { PICKER_LABEL, summonMenu } from "./reader-picker";
 import { WordLookupPopup as KernelPopup } from "@lingualeaf/reading-model/react";
 import {
   settleRaceSuite,
@@ -107,9 +107,11 @@ describe("ReaderPage — the EPUB skeleton", () => {
     );
     await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
 
+    // Redesign 02: the sentence pens are the mounted signal (the
+    // resident title heading left with the header).
     expect(
-      await screen.findByRole("heading", { name: "Skeleton Book" })
-    ).toBeInTheDocument();
+      await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ })
+    ).not.toHaveLength(0);
     // First chapter's content, sentences split per 句子块 — the words ride
     // as clickable spans (the IPA line's segmentation, ticket 03).
     expect(await screen.findByText("Words")).toBeInTheDocument();
@@ -117,6 +119,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
     expect(screen.getByText("follows")).toBeInTheDocument();
     // The TOC knows both chapters; switching shows the other one.
     // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
@@ -141,6 +144,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
     expect(
       screen.queryByRole("navigation", { name: "章节列表" })
     ).not.toBeInTheDocument();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     const dialog = screen.getByRole("dialog", { name: "目录" });
     fireEvent.click(
@@ -153,6 +157,7 @@ describe("ReaderPage — the EPUB skeleton", () => {
     ).not.toBeInTheDocument();
     // From a later chapter the overlay is still the one list surface —
     // the round-2 pain point — and marks the chapter being read.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     const again = screen.getByRole("dialog", { name: "目录" });
     expect(
@@ -187,9 +192,11 @@ describe("ReaderPage — the EPUB skeleton", () => {
     ).toBeInTheDocument();
     // The error is a phase, not a dead end: a good file still imports.
     await pickFile(await fixtureFile("book.epub", await SAMPLE_EPUB()));
+    // Redesign 02: the sentence pens are the mounted signal (the
+    // resident title heading left with the header).
     expect(
-      await screen.findByRole("heading", { name: "Skeleton Book" })
-    ).toBeInTheDocument();
+      await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ })
+    ).not.toHaveLength(0);
   });
 
   it("declines unrecognized files with the unsupported copy", async () => {
@@ -298,6 +305,7 @@ describe("ReaderPage — the IPA line (ticket 03)", () => {
     await screen.findByText("Woke");
     expect(ipaValues()).toEqual(["woʊk", "rʌn", "təˈdeɪ"]);
 
+    await summonMenu();
     const toggle = screen.getByRole("button", { name: "音标" });
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(toggle);
@@ -870,9 +878,11 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
 
     // Read on into the second chapter, then leave to the picker.
     // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     // The landing lists the document with its position.
@@ -892,9 +902,11 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
     // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     const other = await buildEpub({
@@ -906,6 +918,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     await pickFile(await fixtureFile("b.epub", other));
     await screen.findByText("Other");
 
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     // Both recents listed; each shows its own chapter.
     expect(
@@ -916,6 +929,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     expect(await screen.findByText("Other")).toBeInTheDocument();
 
     // And the first book still restores to its own chapter.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
@@ -943,6 +957,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     // Both documents on the recents list.
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     const other = await buildEpub({
       title: "Other Book",
@@ -952,6 +967,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     });
     await pickFile(await fixtureFile("b.epub", other));
     await screen.findByText("Other");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     // Journey's open hangs; the reader picks Other while it is in flight.
@@ -993,6 +1009,7 @@ describe("ReaderPage — progress memory + recents (ticket 05)", () => {
     renderWithSeams({ library });
     await pickFile(await fixtureFile("a.epub", await TOC_EPUB()));
     await screen.findByText("First");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "Journey Book" })
@@ -1147,6 +1164,7 @@ describe("ReaderPage — the tint bulk read's races (settle-channel 02)", () => 
     // Chapter 1's bulk read hangs; the reader moves on to chapter 2,
     // whose own read hangs behind it.
     // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "South" }));
     await screen.findByText("Second");
@@ -1520,6 +1538,7 @@ describe("ReaderPage — annotated blocks characterization", () => {
       "woʊk"
     );
     expect(section.querySelector(".ipa-line, .translation-line")).toBeNull();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "音标" }));
     expect(
       section.querySelector(".ipa-word-ipa, .ipa-line, .translation-line")
@@ -1768,18 +1787,20 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     // chapter heading repeats the title (md's title ladder), so the query
     // pins the level-1 reader title.
     expect(
-      await screen.findByRole("heading", { name: "Deep Waters", level: 1 })
-    ).toBeInTheDocument();
+      await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ })
+    ).not.toHaveLength(0);
     // Sentence blocks carry the import-time IPA line — hits and the lemma
     // fallback (runs → run) in word order, misses stay plain.
     await screen.findByText("Woke");
     expect(ipaValues()).toEqual(["woʊk", "təˈdeɪ", "ˈkwaɪət", "rʌn"]);
     // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Shallows" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
 
     // The shelf lists the md book like any other, with its position.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(
       await screen.findByRole("button", { name: "Deep Waters" })
@@ -1806,6 +1827,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     renderWithSeams({ library });
     await pickFile(await tideMdFile("Woke early today."));
     await screen.findByText("Woke");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -1826,6 +1848,7 @@ describe("ReaderPage — markdown import (mobile-md-import 02)", () => {
     renderWithSeams({ library });
     await pickFile(await tideMdFile("Woke early today."));
     await screen.findByText("Woke");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
 
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);

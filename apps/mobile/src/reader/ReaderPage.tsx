@@ -78,6 +78,10 @@ import {
   type UiSettingsStore,
 } from "../store/ui-settings-store";
 import { useThemePreference } from "../theme";
+import {
+  createLearningSettingsStore,
+  type LearningSettingsStore,
+} from "../store/learning-settings-store";
 import "./reader.css";
 
 // The reader page's whole story: empty (choose or drop a file) → importing
@@ -129,6 +133,7 @@ export function ReaderPage({
   registry: injectedRegistry,
   backup: injectedBackup,
   uiSettings: injectedUiSettings,
+  learning: injectedLearning,
   readAloudSpeaker,
 }: {
   store?: VocabularyStore;
@@ -143,6 +148,7 @@ export function ReaderPage({
   registry?: ChapterTaskRegistry;
   backup?: BackupManager;
   uiSettings?: UiSettingsStore;
+  learning?: LearningSettingsStore;
   // The read-aloud speaker (ticket 07): forwarded to the EPUB face;
   // tests inject a fake, the face defaults to the native adapter.
   readAloudSpeaker?: ReadAloudSpeaker;
@@ -217,6 +223,12 @@ export function ReaderPage({
   // app — the resolved theme stamps <html data-theme> for every face
   // (shelf, EPUB, PDF, popups); ticket 02's Aa panel drives the choice.
   useThemePreference(uiSettings);
+  // 逐书学习开关 (redesign 02): one seam on the same storage; the
+  // faces load and save per book through it.
+  const learning = useMemo(
+    () => injectedLearning ?? createLearningSettingsStore(idbStorage),
+    [injectedLearning, idbStorage]
+  );
   const registry = injectedRegistry ?? chapterTasks;
   const persistencePromise = useRef<Promise<PersistenceResult> | null>(null);
   const [persistence, setPersistence] = useState<PersistenceResult | null>(
@@ -522,7 +534,7 @@ export function ReaderPage({
           docId={state.docId}
           book={state.book}
           chapterIndex={state.chapterIndex}
-          showIpa={showIpa}
+          learning={learning}
           {...(readAloudSpeaker ? { readAloudSpeaker } : {})}
           resolvedStore={resolvedStore}
           notes={notes}
@@ -536,8 +548,6 @@ export function ReaderPage({
           restoreRef={restoreRef}
           scrollSaveAt={scrollSaveAt}
           onChapter={(chapterIndex) => setState({ ...state, chapterIndex })}
-          onToggleIpa={() => setShowIpa((shown) => !shown)}
-          onOpenSettings={() => setSettingsOpen(true)}
           onReopen={() => setState({ phase: "empty" })}
         />
       ) : null}

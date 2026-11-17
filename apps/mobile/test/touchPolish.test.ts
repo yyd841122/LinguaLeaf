@@ -374,23 +374,23 @@ describe("EPUB head + 听书 compact row (mobile-ipa-buttons 02, static)", () =>
     expect(hit).toMatch(/inset:\s*-0\.35em -0\.35em/);
   });
 
-  it("the 听书 bar renders directly under the title, before the tools row (书名下方)", () => {
+  it("the EPUB face carries no resident chrome — the 听书 bar lives in the menu's panel (redesign 02)", () => {
     const epub = readFileSync(
       resolve(here, "../src/reader/EpubReader.tsx"),
       "utf8"
     );
-    const header = epub.indexOf('<header className="reader-head">');
-    const bar = epub.indexOf('className="readaloud-bar"', header);
-    const tools = epub.indexOf(
-      '{toolbarPosition === "top" ? toolsRow : null}',
-      header
-    );
-    expect(header).toBeGreaterThanOrEqual(0);
-    expect(bar, "听书 bar must live inside the header").toBeGreaterThan(header);
-    expect(tools, "tools row must live inside the header").toBeGreaterThan(
-      header
-    );
-    expect(bar).toBeLessThan(tools);
+    // 零常驻 chrome: the sticky header, the tools row and the pager are
+    // gone from the EPUB source; the bars exist only as ReaderMenu.
+    expect(epub).not.toContain('className="reader-head"');
+    expect(epub).not.toContain("reader-pager");
+    expect(epub).not.toContain("reader-tools");
+    const panel = epub.indexOf('panel === "readaloud"');
+    const bar = epub.indexOf('className="readaloud-bar"', panel);
+    expect(panel, "the 听书 panel must exist").toBeGreaterThanOrEqual(0);
+    expect(
+      bar,
+      "the 听书 bar must live inside the menu's panel"
+    ).toBeGreaterThan(panel);
   });
 });
 

@@ -978,6 +978,95 @@ body {
   border-color: var(--edge);
 }
 
+/* ── Redesign 02: the summonable menu + tap zones ────────────────── */
+
+/* The two menu bars (redesign 02): fixed chrome that exists only while
+   summoned — the reading face itself carries nothing resident. The
+   bars ride the theme's paper so they read as the page's own frame;
+   safe areas keep clear of the notch and the gesture bar. */
+.reader-menu-top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: max(var(--space-2), env(safe-area-inset-top)) var(--space-3);
+  background: var(--paper);
+  border-bottom: 1px solid var(--edge);
+}
+.reader-menu-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.reader-menu-progress {
+  color: var(--muted);
+  font-size: var(--text-s);
+}
+.reader-menu-bottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 15;
+  display: flex;
+  justify-content: space-around;
+  background: var(--paper);
+  border-top: 1px solid var(--edge);
+  padding: var(--space-2) var(--space-2)
+    max(var(--space-2), env(safe-area-inset-bottom));
+}
+/* The status lines (translation failure / unconfigured) speak inside
+   the menu, right above the row they explain. */
+.reader-menu-status {
+  position: fixed;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: 4.75rem;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.reader-menu-status .reader-error,
+.reader-menu-status .reader-hint {
+  margin: 0;
+  font-size: var(--text-s);
+}
+
+/* The edge tap strips (点按分区): invisible bands over the margin
+   gutters — as wide as the active margin step (Phase C wires the var;
+   the reference image's 22% is the default) — flipping chapters while
+   the menu is hidden. Below every popup and the menu; transparent, so
+   they own no pixels, only taps. */
+.reader-edge {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: var(--reader-margin, 22%);
+  z-index: 5;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.reader-edge-left {
+  left: 0;
+}
+.reader-edge-right {
+  right: 0;
+}
+.reader-edge:disabled {
+  /* A bound strip (章首/章末) keeps its band but refuses the tap —
+     the geometry never jumps when a chapter ends. */
+  cursor: default;
+}
+
 /* ── Ticket 06: touch, safe areas ─────────────────────────────────── */
 
 /* The in-text targets keep their visual size (their lines must not

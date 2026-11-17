@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { ReaderPage } from "../src/reader/ReaderPage";
+import { dismissMenu, summonMenu } from "./reader-picker";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { createChapterTaskRegistry } from "../src/translate/chapter-tasks";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
@@ -139,7 +140,11 @@ async function renderReadingFace(options?: {
       type: "application/epub+zip",
     })
   );
-  await screen.findByRole("heading", { name: "Skeleton Book" });
+  // Redesign 02: the pens are the mounted signal, and 翻译/译文 ride the
+  // summoned menu — summon once here; toggles and the trigger never
+  // close it.
+  await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+  await summonMenu();
   // The trigger's disabled state reads the runtime settings — the face
   // mounts before that read lands, so wait for the settled fact: enabled
   // with a key, the hint without one.
@@ -284,16 +289,21 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
     expect(screen.getByRole("button", { name: "翻译中 0%" })).toBeDisabled();
 
     // Away to chapter two, where the task is not running; the trigger
-    // there is a fresh, armed 翻译.
-    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    // there is a fresh, armed 翻译. The chapter list lives behind the
+    // menu's 目录 panel (redesign 02; the panel closes the bars).
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
+    // The panel closed the bars; the trigger lives in them.
+    await summonMenu();
     expect(await screen.findByRole("button", { name: "翻译" })).toBeEnabled();
     // Back to chapter one via the pager (the chapter list rides the
     // entry chapter only, 真机 md round 2): the running task is visible
     // again (the registry replays its percent to the re-armed
     // subscription).
+    // The edge strips exist only while the bars are hidden.
+    await dismissMenu();
     fireEvent.click(screen.getByRole("button", { name: "上一章" }));
+    await summonMenu();
     expect(
       await screen.findByRole("button", { name: "翻译中 0%" })
     ).toBeDisabled();
@@ -302,13 +312,16 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
     expect(await screen.findByText("第一句的译文。")).toBeInTheDocument();
   });
 
-  it("the settings overlay opens from the reading face and saving a key re-arms the trigger", async () => {
+  it("the settings overlay opens from the shelf (redesign 02 moved the face's entry) and saving a key re-arms the trigger", async () => {
     stubFetch(() => ({ status: 200, content: "1. 译。" }));
     await renderReadingFace();
 
     // Unconfigured: locked with the hint.
     expect(screen.getByRole("button", { name: "翻译" })).toBeDisabled();
 
+    // The face's 设置 button left with the resident toolbar — 返回 to
+    // the shelf, whose 设置 entry carries the interim until 08's 我页.
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.click(screen.getByRole("button", { name: "设置" }));
     const dialog = await screen.findByRole("dialog", { name: "翻译设置" });
     expect(dialog).toBeInTheDocument();
@@ -320,8 +333,13 @@ describe("ReaderPage — 按需翻译 (ticket 04)", () => {
     await screen.findByText("已保存");
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
-    // The reader face never remounted, yet the trigger re-read its
-    // settings: no reload, no lost state — the revision rides the close.
+    // Reopen the same book: the fresh mount reads the saved key and the
+    // trigger is armed.
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Skeleton Book" })
+    );
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+    await summonMenu();
     expect(await screen.findByRole("button", { name: "翻译" })).toBeEnabled();
     expect(screen.queryByRole("dialog", { name: "翻译设置" })).toBeNull();
   });

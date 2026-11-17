@@ -8,6 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { ReaderPage } from "../src/reader/ReaderPage";
+import { summonMenu } from "./reader-picker";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { createChapterTaskRegistry } from "../src/translate/chapter-tasks";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
@@ -142,10 +143,13 @@ async function renderReadingFace(
       type: "application/epub+zip",
     })
   );
-  await screen.findByRole("heading", { name: book.title });
+  // Redesign 02: the face's mounted signal is its sentence pens — the
+  // resident title heading is gone with the header.
+  await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
 }
 
 const openPanel = async () => {
+  await summonMenu();
   fireEvent.click(screen.getByRole("button", { name: "书签" }));
   return screen.findByRole("dialog", { name: "书签" });
 };
@@ -225,7 +229,9 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     plantHere();
     expect(await within(first).findByText("Chapter One")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    // The list lives behind 目录 (真机 md round 3): open the overlay first.
+    // The chapter list lives behind the menu's 目录 panel (redesign 02).
+    await summonMenu();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
@@ -237,7 +243,8 @@ describe("ReaderPage — 书签 (ticket 10)", () => {
     jumpToRow(second, "Chapter One");
     expect(screen.queryByRole("dialog", { name: "书签" })).toBeNull();
     expect(await screen.findByText("Words")).toBeInTheDocument();
-    expect(document.querySelector(".reader-position")?.textContent).toBe(
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")?.textContent).toBe(
       "1 / 2"
     );
 
@@ -658,6 +665,7 @@ describe("ReaderPage — 书签落点与滚动 (evidence gaps ②④⑤⑥)", ()
     // merge's byReadingOrder sort is under test (the store's own sort
     // would mask it after a refetch, so the final read is the CURRENT
     // panel, not a reopen).
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
@@ -667,6 +675,7 @@ describe("ReaderPage — 书签落点与滚动 (evidence gaps ②④⑤⑥)", ()
     expect(await within(second).findByText("Chapter Two")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter One" }));
     expect(await screen.findByText("Words")).toBeInTheDocument();
@@ -712,6 +721,7 @@ describe("ReaderPage — 书签落点与滚动 (evidence gaps ②④⑤⑥)", ()
       writable: true,
     });
     try {
+      await summonMenu();
       fireEvent.click(screen.getByRole("button", { name: "目录" }));
       fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
       expect(await screen.findByText("More")).toBeInTheDocument();
@@ -747,12 +757,14 @@ describe("ReaderPage — 书签落点与滚动 (evidence gaps ②④⑤⑥)", ()
     // Chapter two carries its own blocks only: the chapter-one band must
     // not bleed into it (the stale-mark regression this pins).
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter Two" }));
     expect(await screen.findByText("More")).toBeInTheDocument();
     expect(document.querySelectorAll(".block-marked")).toHaveLength(0);
 
     // Back on chapter one the band returns — the mark survived, not leaked.
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "目录" }));
     fireEvent.click(screen.getByRole("button", { name: "Chapter One" }));
     await waitFor(() =>

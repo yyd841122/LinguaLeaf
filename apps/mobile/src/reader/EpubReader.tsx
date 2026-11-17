@@ -50,6 +50,9 @@ import {
   type ReadAloudSpeaker,
 } from "../speak/readaloud";
 import { createNativeSpeaker } from "../speak/native-tts";
+import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
+import type { LearningSettingsStore } from "../store/learning-settings-store";
+import { isInteractiveTarget, selectionActive } from "./tapZones";
 
 // The settled-failure copy (ticket 04): a chapter whose every sentence
 // came back null. The Translator contract reports wrong key and network
@@ -59,15 +62,15 @@ const TRANSLATION_FAILURE_COPY =
   "翻译失败：无法连接翻译服务，或密钥无效。请检查网络与设置页中的配置，然后重试。";
 
 // The reading-walk anchor the progress save and the bookmark plant share:
-// the last block whose top has crossed under the sticky head's bottom —
-// measured live, not a constant: the head is tall in portrait (the title
-// wraps) and short in landscape, and the fixed landscape-height guess
-// named blocks still hidden behind the portrait head (人验 round 4). One
-// rule for both callers — a planted mark lands exactly where progress
-// would say the reader is, never a second opinion (ticket 10).
-const readingAnchorTop = (): number =>
-  document.querySelector<HTMLElement>(".reader-head")?.getBoundingClientRect()
-    .bottom ?? 96;
+// the last block whose top has crossed this line. Redesign 02 removed the
+// resident head it used to measure (.reader-head's live bottom — tall in
+// portrait, short in landscape), so the anchor is now a CONSTANT — the
+// old fallback value — deliberately independent of the summonable menu's
+// geometry: 菜单呼出/收起不改书签落点与阅读进度 is the ticket's acceptance
+// gate, and a constant cannot flinch. One rule for both callers — a
+// planted mark lands exactly where progress would say the reader is.
+const READING_ANCHOR_PX = 96;
+const readingAnchorTop = (): number => READING_ANCHOR_PX;
 const topmostVisibleBlockIndex = (): number => {
   const anchorTop = readingAnchorTop();
   let current = 0;
@@ -123,7 +126,6 @@ export function EpubReader({
   docId,
   book,
   chapterIndex,
-  showIpa,
   resolvedStore,
   notes,
   library,
@@ -136,15 +138,17 @@ export function EpubReader({
   restoreRef,
   scrollSaveAt,
   readAloudSpeaker,
+  learning,
   onChapter,
-  onToggleIpa,
-  onOpenSettings,
   onReopen,
 }: {
   docId: string;
   book: ExtBook;
   chapterIndex: number;
-  showIpa: boolean;
+  // 逐书学习开关 (redesign 02): the face loads its own 音标/译文
+  // defaults per book and saves every flip — the page-global ipa state
+  // is gone with the resident toolbar.
+  learning: LearningSettingsStore;
   resolvedStore: VocabularyStore | null;
   notes: NotesStore;
   library: LibraryStore;
@@ -166,8 +170,6 @@ export function EpubReader({
   // sentence boundaries.
   readAloudSpeaker?: ReadAloudSpeaker;
   onChapter: (index: number) => void;
-  onToggleIpa: () => void;
-  onOpenSettings: () => void;
   onReopen: () => void;
 }) {
   const closeNote = () => editorRef.current?.requestClose() !== false;
@@ -181,6 +183,46 @@ export function EpubReader({
   // the current chapter (null until the read lands), the running task's
   // percent (null when none), the display 开关, and the failure flag.
   const [showTranslation, setShowTranslation] = useState(true);
+  // 逐书学习开关 (redesign 02): both toggles default to the old global
+  // values (on) and load per book on mount; every flip persists at once.
+  const [showIpa, setShowIpa] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    learning
+      .load(docId)
+      .then((toggles) => {
+        if (cancelled) return;
+        setShowIpa(toggles.ipa);
+        setShowTranslation(toggles.translation);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [learning, docId]);
+  const toggleIpa = () => {
+    setShowIpa((shown) => {
+      void learning.save(docId, { ipa: !shown });
+      return !shown;
+    });
+  };
+  const toggleTranslation = () => {
+    setShowTranslation((shown) => {
+      void learning.save(docId, { translation: !shown });
+      return !shown;
+    });
+  };
+  // The summonable menu (redesign 02): hidden while reading (零常驻
+  // chrome), bars on a background tap, one panel at a time.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [panel, setPanel] = useState<
+    "toc" | "bookmarks" | "readaloud" | "aa" | null
+  >(null);
+  const openPanel = (next: NonNullable<typeof panel>) => {
+    setMenuOpen(false);
+    setPanel(next);
+  };
+  const closePanel = () => setPanel(null);
   const [chapterTranslations, setChapterTranslations] = useState<Record<
     number,
     string
@@ -201,8 +243,7 @@ export function EpubReader({
   // The bookmark face (ticket 10): the panel's rows (null until the open's
   // read lands), the read's retry counter, and the pending jump a row
   // click arms.
-  const [showBookmarks, setShowBookmarks] = useState(false);
-  const [showToc, setShowToc] = useState(false);
+
   const [bookmarkRows, setBookmarkRows] = useState<BookmarkRow[] | null>(null);
   // The panel's own loading surface, deliberately separate from the
   // shared snapshot: wiping bookmarkRows on open used to blank the
@@ -431,16 +472,6 @@ export function EpubReader({
     };
   }, [settings, settingsRevision, settingsAttempt]);
 
-  // 工具栏位置 (round 14): top (under the title) or a fixed bar at the
-  // viewport's bottom edge; the toggle rides the row itself (置底/置顶).
-  // Redesign 01 retired the persisted preference with the ui-settings
-  // migration (v1 → v2 carried the theme in its place); session state
-  // holds the choice until ticket 02 removes the toggle with the row.
-  const [toolbarPosition, setToolbarPosition] = useState<"top" | "bottom">(
-    "top"
-  );
-  const moveToolbar = () =>
-    setToolbarPosition(toolbarPosition === "top" ? "bottom" : "top");
   const bookmarksOwner = useOwner();
   const bookmarksSettle = useSettle(bookmarksOwner);
   const runBookmarks = bookmarksSettle.run;
@@ -466,7 +497,7 @@ export function EpubReader({
   // reading the last landed rows through an open, a slow read, or a
   // close before the read lands.
   useEffect(() => {
-    if (!showBookmarks) return;
+    if (panel !== "bookmarks") return;
     setPanelRowsLoading(true);
     void runBookmarks(bookmarks.list(docId), {
       onFresh: (rows) => {
@@ -478,14 +509,7 @@ export function EpubReader({
       bookmarksOwner.invalidate();
       setPanelRowsLoading(false);
     };
-  }, [
-    bookmarks,
-    docId,
-    showBookmarks,
-    bookmarkAttempt,
-    runBookmarks,
-    bookmarksOwner,
-  ]);
+  }, [bookmarks, docId, panel, bookmarkAttempt, runBookmarks, bookmarksOwner]);
 
   // A row click's jump: anchor the block once the chapter has rendered —
   // the restore-scroll effect's same rAF + data-block-index technique,
@@ -662,7 +686,7 @@ export function EpubReader({
   const jumpToBookmark = (row: EpubBookmarkRow) => {
     if (!closeNote()) return;
     setLookup(null);
-    setShowBookmarks(false);
+    closePanel();
     setJumpTarget({ chapter: row.chapter, block: row.block });
     if (row.chapter !== chapterIndex) goChapter(row.chapter);
   };
@@ -686,198 +710,124 @@ export function EpubReader({
     chapterTranslations === null ||
     settingsValue === null ||
     !isConfigured(settingsValue);
-  const toolsRow = (
-    <div
-      className={`reader-tools${toolbarPosition === "bottom" ? " reader-tools-fixed" : ""}`}
-    >
-      {/* 显示开关 (GLOSSARY): hides the transcription line while the
-          word units stay — clean reading and annotated reading
-          switch instantly. */}
-      <button
-        type="button"
-        className="reader-toggle"
-        aria-pressed={showIpa}
-        onClick={onToggleIpa}
-      >
-        音标
-      </button>
-      {/* The 译文行 显示开关 (GLOSSARY 译文行): same instant
-          show/hide over the settled translations. */}
-      <button
-        type="button"
-        className="reader-toggle"
-        aria-pressed={showTranslation}
-        onClick={() => setShowTranslation((shown) => !shown)}
-      >
-        译文
-      </button>
-      {/* 按需翻译 (GLOSSARY) trigger, one task per chapter (the
-          registry refuses a second); the percent rides the label. */}
-      <button
-        type="button"
-        className="reader-translate"
-        disabled={translateDisabled}
-        onClick={startTranslation}
-      >
-        {translateLabel}
-      </button>
-      <button
-        type="button"
-        className="reader-settings"
-        onClick={() => {
-          if (!closeNote()) return;
-          onOpenSettings();
-        }}
-      >
-        设置
-      </button>
-      {/* The chapter list lives behind the 目录 button in an overlay
-          (真机 md round 3): the inline nav was a screen-tall strip above
-          every page for a many-chapter book. One entry, every chapter;
-          the jump inherits goChapter's dirty-note guard. */}
-      <button
-        type="button"
-        className="reader-toggle"
-        onClick={() => {
-          if (!closeNote()) return;
-          setLookup(null);
-          setShowToc(true);
-        }}
-      >
-        目录
-      </button>
-      {/* 书签 (ticket 10): the panel plants a mark at the current
-          position, lists them in reading order, jumps back, deletes. */}
-      <button
-        type="button"
-        className="reader-bookmarks"
-        onClick={() => {
-          if (!closeNote()) return;
-          setLookup(null);
-          setShowBookmarks(true);
-        }}
-      >
-        书签
-      </button>
-      <button type="button" className="reader-toggle" onClick={moveToolbar}>
-        {toolbarPosition === "top" ? "置底" : "置顶"}
-      </button>
-      <button
-        type="button"
-        className="reader-reopen"
-        onClick={() => {
+
+  // The menu's item row (spec round 2 #2): toggles stay in the row and
+  // act instantly; panels swap the bars for their card.
+  const menuItems: ReaderMenuItem[] = [
+    { key: "toc", label: "目录" },
+    { key: "bookmarks", label: "书签" },
+    { key: "ipa", label: "音标", active: showIpa },
+    { key: "translation", label: "译文", active: showTranslation },
+    { key: "translate", label: translateLabel, disabled: translateDisabled },
+    { key: "readaloud", label: "听书" },
+    { key: "aa", label: "Aa" },
+  ];
+  const onMenuItem = (key: string) => {
+    if (key === "ipa") {
+      toggleIpa();
+      return;
+    }
+    if (key === "translation") {
+      toggleTranslation();
+      return;
+    }
+    if (key === "translate") {
+      startTranslation();
+      return;
+    }
+    if (!closeNote()) return;
+    setLookup(null);
+    if (
+      key === "toc" ||
+      key === "bookmarks" ||
+      key === "readaloud" ||
+      key === "aa"
+    ) {
+      openPanel(key);
+    }
+  };
+  // 点按分区 (redesign 02, spec review finding 13): a tap on the
+  // reading surface summons or dismisses the menu — but only a
+  // BACKGROUND tap. Words, pens and controls win (isInteractiveTarget);
+  // an active text selection is the reader's, not the menu's; and while
+  // a panel is up its veil owns every tap.
+  const onSurfaceTap = (event: React.MouseEvent<HTMLElement>) => {
+    if (panel !== null) return;
+    if (isInteractiveTarget(event.target)) return;
+    if (selectionActive()) return;
+    setMenuOpen((open) => !open);
+  };
+
+  return (
+    <main className="reader" aria-label="扩展阅读页" onClick={onSurfaceTap}>
+      {/*
+        The summonable chrome (redesign 02): no resident header — a
+        background tap (the container's onClick below) summons the bars;
+        词/笔钮/弹窗 taps never summon (the priority rule); the edge
+        strips flip chapters over the margin bands only while the menu
+        is hidden. The three status lines ride the menu so they speak
+        exactly when the reader eyes the 翻译 row.
+      */}
+      <ReaderMenu
+        open={menuOpen}
+        title={book.title}
+        progress={`${chapterIndex + 1} / ${book.chapters.length}`}
+        items={menuItems}
+        onBack={() => {
           if (!closeNote()) return;
           setLookup(null);
           onReopen();
         }}
-      >
-        {/* 返回, not 打开: the action is navigation back to the shelf,
-            and the navigation-shaped label is the discoverable one
-            (真机 md round 4 — the PDF face's own 打开 stays as is). */}
-        返回
-      </button>
-    </div>
-  );
-
-  return (
-    <main
-      className={`reader${toolbarPosition === "bottom" ? " reader-epub-bottom" : ""}`}
-      aria-label="扩展阅读页"
-    >
-      <header className="reader-head">
-        <h1 className="reader-title">{book.title}</h1>
-        {/* 听书控制条 (ticket 07): play/pause from the current chapter's
-          first sentence, sentence stepping, and the rate ladder. The
-          bar rides the face — its buttons inherit the palette tokens
-          (ticket 06) and the compact row (mobile-ipa-buttons 02):
-          directly under the title, below the touch floor visually with
-          a grown hit area, so the sticky head stays one slim band. */}
-        <div className="readaloud-bar" role="group" aria-label="听书">
-          <button
-            type="button"
-            className="reader-toggle"
-            onClick={() => {
-              setReadAloudError(null);
-              if (readAloud.phase === "playing") {
-                player.pause();
-                return;
-              }
-              const from =
-                readAloud.at ??
-                readAloudSentences.findIndex(
-                  (sentence) => sentence.chapterIndex === chapterIndex
-                );
-              if (from >= 0) player.play(from);
-            }}
-          >
-            {readAloud.phase === "playing" ? "暂停听书" : "听书"}
-          </button>
-          <button
-            type="button"
-            className="reader-toggle"
-            disabled={readAloud.at === null}
-            onClick={() => player.step(-1)}
-          >
-            上一句
-          </button>
-          <button
-            type="button"
-            className="reader-toggle"
-            disabled={readAloud.at === null}
-            onClick={() => player.step(1)}
-          >
-            下一句
-          </button>
-          <button
-            type="button"
-            className="reader-toggle"
-            onClick={() => {
-              const at = READALOUD_RATES.indexOf(
-                readAloud.rate as (typeof READALOUD_RATES)[number]
-              );
-              player.setRate(
-                READALOUD_RATES[(at + 1) % READALOUD_RATES.length]!
-              );
-            }}
-          >
-            语速 {readAloud.rate}×
-          </button>
-          {readAloudError ? (
+        onSelect={onMenuItem}
+      />
+      {menuOpen ? (
+        <div className="reader-menu-status">
+          {settingsLoadFailed ? (
             <p className="reader-error" role="alert">
-              {readAloudError === "engine-missing"
-                ? "听书不可用：设备缺少可用的英语语音引擎。"
-                : "听书失败，请重试。"}
+              设置读取失败，翻译按钮暂不可用。
+              <button
+                type="button"
+                onClick={() => setSettingsAttempt((value) => value + 1)}
+              >
+                重试读取设置
+              </button>
+            </p>
+          ) : null}
+          {settingsValue !== null && !isConfigured(settingsValue) ? (
+            <p className="reader-hint">
+              未配置翻译服务：返回书架，在 设置 里填写 API Key 后翻译可用。
+            </p>
+          ) : null}
+          {translationsSettle.failed ? (
+            <p className="reader-error" role="alert">
+              译文读取失败，无法确认已有译文。
+              <button
+                type="button"
+                onClick={() => setReadAttempt((value) => value + 1)}
+              >
+                重试读取译文
+              </button>
             </p>
           ) : null}
         </div>
-        {toolbarPosition === "top" ? toolsRow : null}
-      </header>
-      {settingsLoadFailed ? (
-        <p className="reader-error" role="alert">
-          设置读取失败，翻译按钮暂不可用。
+      ) : null}
+      {!menuOpen && panel === null ? (
+        <>
           <button
             type="button"
-            onClick={() => setSettingsAttempt((value) => value + 1)}
-          >
-            重试读取设置
-          </button>
-        </p>
-      ) : null}
-      {settingsValue !== null && !isConfigured(settingsValue) ? (
-        <p className="reader-hint">
-          未配置翻译服务，暂时无法翻译；在设置页填写 API Key 后此按钮恢复可用。
-        </p>
-      ) : null}
-      {translationsSettle.failed ? (
-        <p className="reader-error" role="alert">
-          译文读取失败，无法确认已有译文。
+            className="reader-edge reader-edge-left"
+            aria-label="上一章"
+            disabled={chapterIndex === 0}
+            onClick={() => goChapter(chapterIndex - 1)}
+          />
           <button
             type="button"
-            onClick={() => setReadAttempt((value) => value + 1)}
-          >
-            重试读取译文
-          </button>
-        </p>
+            className="reader-edge reader-edge-right"
+            aria-label="下一章"
+            disabled={chapterIndex === book.chapters.length - 1}
+            onClick={() => goChapter(chapterIndex + 1)}
+          />
+        </>
       ) : null}
       {chapter ? (
         <EpubChapter
@@ -915,7 +865,7 @@ export function EpubReader({
           onClose={() => setFailure(null)}
         />
       ) : null}
-      {showBookmarks ? (
+      {panel === "bookmarks" ? (
         <div className="overlay-veil" role="dialog" aria-label="书签">
           <div className="overlay-card bookmark-card">
             <h2 className="overlay-title">书签</h2>
@@ -994,20 +944,20 @@ export function EpubReader({
               </ul>
             )}
             <div className="overlay-actions">
-              <button type="button" onClick={() => setShowBookmarks(false)}>
+              <button type="button" onClick={closePanel}>
                 关闭
               </button>
             </div>
           </div>
         </div>
       ) : null}
-      {showToc ? (
+      {panel === "toc" ? (
         <div className="overlay-veil" role="dialog" aria-label="目录">
           <div className="overlay-card">
             {/* 返回 rides the card head: with a many-chapter list the
                 bottom 关闭 sits below the fold, and the way out must not
                 require scrolling (真机 md round 4). */}
-            <button type="button" onClick={() => setShowToc(false)}>
+            <button type="button" onClick={closePanel}>
               返回
             </button>
             <h2 className="overlay-title">目录</h2>
@@ -1019,7 +969,7 @@ export function EpubReader({
                       type="button"
                       aria-current={index === chapterIndex ? "true" : undefined}
                       onClick={() => {
-                        setShowToc(false);
+                        closePanel();
                         goChapter(index);
                       }}
                     >
@@ -1030,33 +980,102 @@ export function EpubReader({
               </ol>
             </nav>
             <div className="overlay-actions">
-              <button type="button" onClick={() => setShowToc(false)}>
+              <button type="button" onClick={closePanel}>
                 关闭
               </button>
             </div>
           </div>
         </div>
       ) : null}
-      <footer className="reader-pager">
-        <button
-          type="button"
-          disabled={chapterIndex === 0}
-          onClick={() => goChapter(chapterIndex - 1)}
-        >
-          上一章
-        </button>
-        <span className="reader-position">
-          {chapterIndex + 1} / {book.chapters.length}
-        </span>
-        <button
-          type="button"
-          disabled={chapterIndex === book.chapters.length - 1}
-          onClick={() => goChapter(chapterIndex + 1)}
-        >
-          下一章
-        </button>
-      </footer>
-      {toolbarPosition === "bottom" ? toolsRow : null}
+      {panel === "readaloud" ? (
+        <div className="overlay-veil" role="dialog" aria-label="听书">
+          <div className="overlay-card">
+            <h2 className="overlay-title">听书</h2>
+            {/* The 听书 bar whole (ticket 07): the resident row became
+                the menu's 二级面板 — same controls, same classes, one
+                home (spec round 2 #2). */}
+            <div className="readaloud-bar" role="group" aria-label="听书控制">
+              <button
+                type="button"
+                className="reader-toggle"
+                onClick={() => {
+                  setReadAloudError(null);
+                  if (readAloud.phase === "playing") {
+                    player.pause();
+                    return;
+                  }
+                  const from =
+                    readAloud.at ??
+                    readAloudSentences.findIndex(
+                      (sentence) => sentence.chapterIndex === chapterIndex
+                    );
+                  if (from >= 0) player.play(from);
+                }}
+              >
+                {readAloud.phase === "playing" ? "暂停听书" : "听书"}
+              </button>
+              <button
+                type="button"
+                className="reader-toggle"
+                disabled={readAloud.at === null}
+                onClick={() => player.step(-1)}
+              >
+                上一句
+              </button>
+              <button
+                type="button"
+                className="reader-toggle"
+                disabled={readAloud.at === null}
+                onClick={() => player.step(1)}
+              >
+                下一句
+              </button>
+              <button
+                type="button"
+                className="reader-toggle"
+                onClick={() => {
+                  const at = READALOUD_RATES.indexOf(
+                    readAloud.rate as (typeof READALOUD_RATES)[number]
+                  );
+                  player.setRate(
+                    READALOUD_RATES[(at + 1) % READALOUD_RATES.length]!
+                  );
+                }}
+              >
+                语速 {readAloud.rate}×
+              </button>
+              {readAloudError ? (
+                <p className="reader-error" role="alert">
+                  {readAloudError === "engine-missing"
+                    ? "听书不可用：设备缺少可用的英语语音引擎。"
+                    : "听书失败，请重试。"}
+                </p>
+              ) : null}
+            </div>
+            <div className="overlay-actions">
+              <button type="button" onClick={closePanel}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {panel === "aa" ? (
+        <div className="overlay-veil" role="dialog" aria-label="排版与主题">
+          <div className="overlay-card">
+            <h2 className="overlay-title">排版与主题</h2>
+            {/* Slice C lands the ladders (字号/边距/行距) and the theme
+                picker here — the menu shell ships first so the face's
+                chrome contract settles early. */}
+            <p className="reader-hint">排版与主题设置即将上线。</p>
+            <div className="overlay-actions">
+              <button type="button" onClick={closePanel}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

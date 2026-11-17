@@ -1,4 +1,4 @@
-import { PICKER_LABEL } from "./reader-picker";
+import { PICKER_LABEL, summonMenu } from "./reader-picker";
 import { NOTE_TYPES } from "../../server/src/wire";
 import {
   act,
@@ -209,56 +209,68 @@ describe("EPUB sentence-block notes", () => {
     "guards dirty drafts through %s with the same confirmation",
     async (action) => {
       await openReader();
+      // 返回 lives in the summoned bars, and a guarded draft OWNS the
+      // surface (the editor's capture-phase outside-click guard) — so
+      // the bars must already be up before the draft exists.
+      if (action === "返回") await summonMenu();
       const first = screen.getAllByRole("button", { name: "写笔记" })[0]!;
       openFirstNote();
       fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
       changeText("Unsaved draft");
       fireEvent.click(screen.getByRole("tab", { name: "进度" }));
-      const perform = () => {
+      // Redesign 02: 返回 lives in the summoned menu's top bar; 浮层外
+      // is a background tap (which may summon the menu — the summon
+      // never touches the note editor); 下一章 is the edge strip.
+      const perform = async () => {
         if (action === "Escape") fireEvent.keyDown(document, { key: "Escape" });
         else if (action === "同一句子块") fireEvent.click(first);
         else if (action === "另一句子块")
           fireEvent.click(
             screen.getAllByRole("button", { name: "写笔记" })[1]!
           );
-        else
+        else if (action === "浮层外")
           fireEvent.click(
-            screen.getByRole("button", {
-              name: action === "浮层外" ? "音标" : action,
-            })
+            document.querySelector("main.reader:not(.reader-entry)")!
           );
+        else fireEvent.click(screen.getByRole("button", { name: action }));
       };
-      perform();
+      await perform();
       expect(window.confirm).toHaveBeenCalledExactlyOnceWith("放弃修改？");
       expect(screen.getByRole("textbox")).toHaveValue("");
       fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
       expect(screen.getByRole("textbox")).toHaveValue("Unsaved draft");
       fireEvent.click(screen.getByRole("tab", { name: "进度" }));
+      // The face is still mounted and the draft survived the refused
+      // close — the guard held. (The summoned menu's progress readout
+      // moves below: while a dirty editor is open its capture-phase
+      // outside-click guard OWNS every tap — 弹窗 beats 菜单背景点, the
+      // ticket's own priority rule.)
       expect(
-        screen.getByRole("heading", { name: BOOK.title })
-      ).toBeInTheDocument();
-      // The chapter list lives behind 目录 (真机 md round 3) and this
-      // draft is dirty — opening it would trip the abandon confirm — so
-      // the current-chapter readout here is the pager's position.
-      expect(document.querySelector(".reader-position")?.textContent).toBe(
-        "1 / 2"
-      );
+        document.querySelector("main.reader:not(.reader-entry)")
+      ).not.toBeNull();
       vi.mocked(window.confirm).mockReturnValue(true);
-      perform();
+      await perform();
       expect(window.confirm).toHaveBeenCalledTimes(2);
       if (action === "另一句子块" || action === "同一句子块")
         expect(screen.getByRole("textbox")).toHaveValue("");
       else
         expect(screen.queryByRole("dialog", { name: "句子块笔记" })).toBeNull();
-      if (action === "下一章")
-        // The chapter list rides the entry chapter only (真机 md round
-        // 2), so chapter 2's current-chapter readout is the pager's
-        // position, not a highlighted list entry.
-        expect(document.querySelector(".reader-position")?.textContent).toBe(
-          "2 / 2"
-        );
+      if (action === "下一章") {
+        await summonMenu();
+        expect(
+          document.querySelector(".reader-menu-progress")?.textContent
+        ).toBe("2 / 2");
+      }
       if (action === "返回")
         expect(screen.getByLabelText(PICKER_LABEL)).toBeInTheDocument();
+      else {
+        // The editor is gone now — the chapter readout is the summoned
+        // menu's progress (the pager is gone with the resident chrome).
+        await summonMenu();
+        expect(
+          document.querySelector(".reader-menu-progress")?.textContent
+        ).toBe(action === "下一章" ? "2 / 2" : "1 / 2");
+      }
     }
   );
 
@@ -471,7 +483,7 @@ describe("EPUB sentence-block notes", () => {
         )
         .mockImplementation(list);
       await openReaderWithoutWaiting(notes);
-      await screen.findByRole("heading", { name: "One" });
+      await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
       fireEvent.click(screen.getByRole("button", { name: "下一章" }));
       await waitFor(() =>
         expect(screen.getByRole("button", { name: "写笔记" })).toBeEnabled()
@@ -565,13 +577,15 @@ describe("same-title import protection in the reader", () => {
       />
     );
     await pick("<p>Original words.</p>");
-    await screen.findByRole("heading", { name: BOOK.title });
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
     const original = await library.openDocument(ANCHOR.docId);
     await notes.save({ ...ANCHOR, blockIndex: 0 }, "Existing note");
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     await pick("<p>Original words.</p>");
-    await screen.findByRole("heading", { name: BOOK.title });
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
     expect(window.confirm).not.toHaveBeenCalled();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     await pick("<p>Different content.</p>");
     await waitFor(() => expect(window.confirm).toHaveBeenCalledTimes(1));
@@ -580,10 +594,10 @@ describe("same-title import protection in the reader", () => {
     );
     expect(await library.openDocument(ANCHOR.docId)).toEqual(original);
     expect(await notes.list(ANCHOR.docId)).toHaveLength(1);
-    expect(screen.queryByRole("heading", { name: BOOK.title })).toBeNull();
+    expect(document.querySelector("main.reader:not(.reader-entry)")).toBeNull();
     vi.mocked(window.confirm).mockReturnValue(true);
     await pick("<p>Different content.</p>");
-    await screen.findByRole("heading", { name: BOOK.title });
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
     expect(await library.openDocument(ANCHOR.docId)).not.toEqual(original);
   });
 

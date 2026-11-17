@@ -7,6 +7,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { ReaderPage } from "../src/reader/ReaderPage";
+import { summonMenu } from "./reader-picker";
 import { buildEpub } from "@lingualeaf/import-core/testing";
 import { createChapterTaskRegistry } from "../src/translate/chapter-tasks";
 import { createMemoryTranslateSettingsStore } from "../src/store/translate-settings-store";
@@ -112,7 +113,12 @@ async function renderFace(speaker: ReadAloudSpeaker, library: LibraryStore) {
     configurable: true,
   });
   fireEvent.change(input);
-  await screen.findByRole("heading", { name: "Readaloud Book" });
+  // Redesign 02: the resident 听书 row became the menu's 二级面板 —
+  // summon the bars and open the panel once; its controls stay put.
+  await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+  await summonMenu();
+  fireEvent.click(screen.getByRole("button", { name: "听书" }));
+  await screen.findByRole("dialog", { name: "听书" });
 }
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -286,18 +292,22 @@ describe("EPUB face 听书 — navigation races (07 review)", () => {
     const library = createMemoryLibraryStore();
     await renderFace(fake.speaker, library);
 
+    // Play from the panel, then close it — the edge strips exist only
+    // with no menu and no panel up (redesign 02).
     fireEvent.click(screen.getByRole("button", { name: "听书" }));
     await waitFor(() => expect(fake.calls.length).toBe(1));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     // Walk holds chapter one's first sentence; the reader taps 下一章.
     // The follow effect pulls the face back to the walk's chapter
     // (possibly within the same commit — the transient chapter-two
     // view is not observable); the assertion that matters: the saved
     // progress is NOT stranded at chapter two's top.
     fireEvent.click(screen.getByRole("button", { name: "下一章" }));
-    // The face is back on the walk's chapter (the pager names it; the
-    // sentence text itself is split across word spans).
+    // The face is back on the walk's chapter (the summoned menu's
+    // progress names it; the sentence text is split across word spans).
+    await summonMenu();
     await waitFor(() =>
-      expect(document.querySelector(".reader-position")?.textContent).toBe(
+      expect(document.querySelector(".reader-menu-progress")?.textContent).toBe(
         "1 / 2"
       )
     );
@@ -345,13 +355,17 @@ describe("EPUB face 听书 — navigation races (07 review)", () => {
       expect(screen.getByRole("button", { name: "听书" })).toBeInTheDocument()
     );
     fireEvent.click(screen.getByRole("button", { name: "上一句" }));
+    // The panel's veil owns the surface while it is up — close it
+    // before summoning the bars (弹窗 > 菜单背景点).
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 
     // The paused cursor is back in chapter one: the face followed it
     // (not stuck on chapter two) and its sentence carries the highlight.
-    // (The pager's position readout names the chapter; the sentence text
+    // (The menu's progress readout names the chapter; the sentence text
     // itself is split across word spans.)
+    await summonMenu();
     await waitFor(() =>
-      expect(document.querySelector(".reader-position")?.textContent).toBe(
+      expect(document.querySelector(".reader-menu-progress")?.textContent).toBe(
         "1 / 2"
       )
     );
