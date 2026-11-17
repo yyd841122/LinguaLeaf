@@ -239,10 +239,10 @@ describe("theme tokens (redesign 01, static)", () => {
     const body = ruleBody(readerCss, "body");
     expect(body).toContain("background: var(--paper)");
     expect(body).toContain("color: var(--ink)");
-    expect(ruleBody(readerCss, ".reader-head")).toContain(
+    expect(ruleBody(readerCss, ".reader-menu-top")).toContain(
       "background: var(--paper)"
     );
-    expect(ruleBody(readerCss, ".reader-tools-fixed")).toContain(
+    expect(ruleBody(readerCss, ".reader-menu-bottom")).toContain(
       "background: var(--paper)"
     );
   });
@@ -364,14 +364,10 @@ describe("EPUB head + 听书 compact row (mobile-ipa-buttons 02, static)", () =>
     expect(hit).toMatch(/inset:\s*-0\.35em 0/);
   });
 
-  it("the pager's flippers go compact with a both-axis hit area (mobile-ipa-buttons 04)", () => {
-    const flipper = ruleBody(readerCss, ".reader-pager button");
-    expect(flipper).toContain("min-height: 0");
-    expect(flipper).toContain("font-size: 0.85rem");
-    expect(flipper).toContain("position: relative");
-    const hit = ruleBody(readerCss, ".reader-pager button::after");
-    expect(hit).toContain('content: ""');
-    expect(hit).toMatch(/inset:\s*-0\.35em -0\.35em/);
+  it("the edge strips own the flip taps — invisible bands as wide as the margin step (redesign 02)", () => {
+    const strip = ruleBody(readerCss, ".reader-edge");
+    expect(strip).toContain("width: var(--reader-margin");
+    expect(strip).toContain("background: transparent");
   });
 
   it("the EPUB face carries no resident chrome — the 听书 bar lives in the menu's panel (redesign 02)", () => {

@@ -51,6 +51,7 @@ import {
 } from "../speak/readaloud";
 import { createNativeSpeaker } from "../speak/native-tts";
 import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
+import { AaPanel } from "./AaPanel";
 import type { LearningSettingsStore } from "../store/learning-settings-store";
 import { isInteractiveTarget, selectionActive } from "./tapZones";
 import {
@@ -1098,89 +1099,11 @@ export function EpubReader({
       {panel === "aa" ? (
         <div className="overlay-veil" role="dialog" aria-label="排版与主题">
           <div className="overlay-card aa-card">
-            <h2 className="overlay-title">排版与主题</h2>
-            {/* 字号: a stepper over the five-step ladder (spec round 2
-                #4); the readout names the current size. */}
-            <div className="aa-row" role="group" aria-label="字号">
-              <button
-                type="button"
-                aria-label="减小字号"
-                disabled={typography.fontStep === 0}
-                onClick={() =>
-                  onTypography({
-                    fontStep: Math.max(0, typography.fontStep - 1),
-                  })
-                }
-              >
-                A－
-              </button>
-              <span className="aa-value">
-                {FONT_STEPS[typography.fontStep]}
-              </span>
-              <button
-                type="button"
-                aria-label="增大字号"
-                disabled={typography.fontStep === FONT_STEPS.length - 1}
-                onClick={() =>
-                  onTypography({
-                    fontStep: Math.min(
-                      FONT_STEPS.length - 1,
-                      typography.fontStep + 1
-                    ),
-                  })
-                }
-              >
-                A＋
-              </button>
-            </div>
-            {/* 边距/行距: the reference image's wide margin and 1.75
-                leading are the defaults (档 2 / 档 1). */}
-            <div className="aa-row" role="group" aria-label="边距">
-              {MARGIN_STEPS.map((value, index) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={typography.marginStep === index}
-                  onClick={() => onTypography({ marginStep: index })}
-                >
-                  {["窄", "适中", "宽"][index]}
-                </button>
-              ))}
-            </div>
-            <div className="aa-row" role="group" aria-label="行距">
-              {LINE_STEPS.map((value, index) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={typography.lineStep === index}
-                  onClick={() => onTypography({ lineStep: index })}
-                >
-                  {value}
-                </button>
-              ))}
-            </div>
-            {/* 主题 (redesign 01's mechanism, driven live): the resolved
-                theme follows the pick immediately; 跟随系统 keeps the
-                system's word. */}
-            <div className="aa-row" role="group" aria-label="主题">
-              {(
-                [
-                  ["system", "跟随系统"],
-                  ["paper", "暖纸"],
-                  ["white", "白"],
-                  ["night", "夜间"],
-                ] as const
-              ).map(([value, label]) => (
-                <button
-                  type="button"
-                  key={value}
-                  aria-pressed={theme.preference === value}
-                  onClick={() => theme.save(value)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <AaPanel
+              typography={typography}
+              onTypography={onTypography}
+              theme={theme}
+            />
             <div className="overlay-actions">
               <button type="button" onClick={closePanel}>
                 关闭

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PICKER_LABEL } from "./reader-picker";
+import { PICKER_LABEL, dismissMenu, summonMenu } from "./reader-picker";
 import {
   act,
   fireEvent,
@@ -179,10 +179,13 @@ async function pick() {
   fireEvent.change(screen.getByLabelText(PICKER_LABEL), {
     target: { files: [new File([source()], "same.pdf")] },
   });
-  await screen.findByRole("heading", { name: "Same title" });
+  await waitFor(() =>
+    expect(document.querySelector("main.reader-shell")).not.toBeNull()
+  );
 }
 
 async function reflow() {
+  await summonMenu();
   fireEvent.click(screen.getByRole("button", { name: "重排" }));
   await screen.findByText("Woke");
 }
@@ -248,44 +251,11 @@ describe("PDF reflow face (round 7)", () => {
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
   });
 
-  it("moves the toolbar below the pager in-session (round 14; the persisted choice retired with redesign 01, the toggle leaves with ticket 02)", async () => {
-    const ui = createMemoryUiSettingsStore();
-    const ctx = mount(
-      createMemoryBookmarkStore(),
-      createMemoryPdfPositionStore(),
-      ui
-    );
-    await pick();
-    await reflow();
-    // Top by default: the row lives inside the header, no bottom marker.
-    expect(document.querySelector(".reader-tools-bottom")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "置底" }));
-    const tools = document.querySelector(".reader-tools-bottom");
-    expect(tools).not.toBeNull();
-    const pager = document.querySelector(".reader-pager")!;
-    expect(
-      pager.compareDocumentPosition(tools!) & Node.DOCUMENT_POSITION_FOLLOWING
-    ).toBeTruthy();
-    // The ui-settings migration (v1 → v2) retired the pdfToolbar item:
-    // the record carries the theme only, so a fresh tree starts at the
-    // default — the toggle itself goes away with ticket 02's rework.
-    await waitFor(() =>
-      expect(ui.load()).resolves.toMatchObject({ theme: "system" })
-    );
-    ctx.view.unmount();
-    render(ctx.tree());
-    await pick();
-    expect(document.querySelector(".reader-tools-bottom")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "置底" }));
-    expect(document.querySelector(".reader-tools-bottom")).not.toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "置顶" }));
-    expect(document.querySelector(".reader-tools-bottom")).toBeNull();
-  });
-
   it("返回 goes back to the shelf (round 12)", async () => {
     mount();
     await pick();
     await reflow();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     expect(await screen.findByLabelText(PICKER_LABEL)).toBeInTheDocument();
   });
@@ -422,6 +392,8 @@ describe("PDF reflow face (round 7)", () => {
     mount();
     await pick();
     failLineRead = true;
+    await summonMenu();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "重排" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("页面文本读取失败");
@@ -505,9 +477,11 @@ describe("PDF reflow face (round 7)", () => {
     } finally {
       vi.useRealTimers();
     }
+    await dismissMenu();
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await summonMenu();
     await waitFor(() =>
-      expect(document.querySelector(".reader-position")).toHaveTextContent(
+      expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
         "2 / 3"
       )
     );
@@ -528,10 +502,11 @@ describe("PDF reflow face (round 7)", () => {
       fireEvent.click(screen.getByRole("button", { name: "书签" }));
       await screen.findByRole("dialog", { name: "书签" });
       fireEvent.click(screen.getByRole("button", { name: /^第 1 页/ }));
+      await summonMenu();
       await waitFor(() =>
-        expect(document.querySelector(".reader-position")).toHaveTextContent(
-          "1 / 3"
-        )
+        expect(
+          document.querySelector(".reader-menu-progress")
+        ).toHaveTextContent("1 / 3")
       );
       expect(
         document.querySelector(".sentence-block.block-marked")
@@ -552,6 +527,7 @@ describe("PDF reflow face (round 7)", () => {
   it("the zoom ladder is canvas-only", async () => {
     mount();
     await pick();
+    await summonMenu();
     expect(screen.getByRole("button", { name: "适宽" })).toHaveAttribute(
       "aria-pressed",
       "true"

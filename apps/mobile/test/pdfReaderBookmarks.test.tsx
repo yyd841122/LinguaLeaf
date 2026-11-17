@@ -1,4 +1,4 @@
-import { PICKER_LABEL } from "./reader-picker";
+import { PICKER_LABEL, dismissMenu, summonMenu } from "./reader-picker";
 import {
   act,
   fireEvent,
@@ -138,15 +138,25 @@ async function pick() {
   fireEvent.change(screen.getByLabelText(PICKER_LABEL), {
     target: { files: [new File([source()], "same.pdf")] },
   });
-  await screen.findByRole("heading", { name: "Same title" });
+  await waitFor(() =>
+    expect(document.querySelector("main.reader-shell")).not.toBeNull()
+  );
 }
 
 async function openPanel() {
+  await summonMenu();
   fireEvent.click(screen.getByRole("button", { name: "书签" }));
   await screen.findByRole("dialog", { name: "书签" });
 }
 
-const at = () => document.querySelector(".reader-position")!.textContent;
+// The page readout rides the summoned menu's progress (redesign 02).
+const at = async (): Promise<string> => {
+  // Idempotent and mutation-free once open: waitFor retries this, and
+  // a toggle (dismiss + summon per retry) storms the MutationObserver
+  // that drives the retry loop — open once, then just read.
+  if (!document.querySelector(".reader-menu-top")) await summonMenu();
+  return document.querySelector(".reader-menu-progress")!.textContent!;
+};
 
 // jsdom's attribute selectors match values case-insensitively (nwsapi);
 // exact-name queries narrow with the selector then compare getAttribute
@@ -189,8 +199,9 @@ describe("PDF face bookmarks (ticket 03)", () => {
     fireEvent.click(screen.getByRole("button", { name: "在当前位置打书签" }));
     await screen.findByRole("button", { name: /^第 1 页/ });
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await dismissMenu();
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await waitFor(() => expect(at()).toBe("2 / 3"));
+    await waitFor(async () => expect(await at()).toBe("2 / 3"));
     await openPanel();
     fireEvent.click(screen.getByRole("button", { name: "在当前位置打书签" }));
     await screen.findByRole("button", { name: /^第 2 页/ });
@@ -214,14 +225,16 @@ describe("PDF face bookmarks (ticket 03)", () => {
     fireEvent.click(screen.getByRole("button", { name: "在当前位置打书签" }));
     await screen.findByRole("button", { name: /^第 1 页/ });
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await dismissMenu();
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    await dismissMenu();
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
-    await waitFor(() => expect(at()).toBe("3 / 3"));
+    await waitFor(async () => expect(await at()).toBe("3 / 3"));
     // Page 3 carries no mark — the strip follows the planted page only.
     expect(document.querySelector(".pdf-bookmark-mark")).toBeNull();
     await openPanel();
     fireEvent.click(screen.getByRole("button", { name: /^第 1 页/ }));
-    await waitFor(() => expect(at()).toBe("1 / 3"));
+    await waitFor(async () => expect(await at()).toBe("1 / 3"));
     expect(screen.queryByRole("dialog", { name: "书签" })).toBeNull();
     // The marker rides the rows: gone on the unplanted page 3, back on 1.
     expect(document.querySelector(".pdf-bookmark-mark")).not.toBeNull();
@@ -304,12 +317,14 @@ describe("PDF face bookmarks (ticket 03)", () => {
     await waitFor(() => expect(wordAt()).not.toBeNull());
     fireEvent.click(wordAt()!);
     await screen.findByRole("dialog", { name: "词详情：Woke" });
+    await dismissMenu();
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     expect(screen.queryByRole("dialog", { name: "词详情：Woke" })).toBeNull();
     // The new page's overlay carries a fresh word; a zoom dismisses too.
     await waitFor(() => expect(wordAt()).not.toBeNull());
     fireEvent.click(wordAt()!);
     await screen.findByRole("dialog", { name: "词详情：Woke" });
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "150%" }));
     expect(screen.queryByRole("dialog", { name: "词详情：Woke" })).toBeNull();
   });

@@ -211,11 +211,6 @@ body {
   border-bottom: 1px solid var(--edge);
   padding-bottom: 0.6rem;
 }
-.reader-tools {
-  display: flex;
-  gap: 0.5rem;
-  align-items: baseline;
-}
 .reader-toggle[aria-pressed="true"] {
   font-weight: bold;
   color: var(--accent);
@@ -392,32 +387,6 @@ body {
 .reader-toc button[aria-current="true"] {
   font-weight: bold;
   text-decoration: underline;
-}
-.reader-pager {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 2rem;
-}
-/* The pager's two flippers go compact (mobile-ipa-buttons 04): the
-   44px floor made the page-number strip a tall band on both faces.
-   Same exemption shape as the pens/听书/pills — visual ~28px, hit area
-   grown both axes (the two buttons flank the number with room to
-   spare, so a horizontal bleed cannot overlap anything). */
-.reader-pager button {
-  min-height: 0;
-  font-size: 0.85rem;
-  padding: 0.2rem 0.7rem;
-  position: relative;
-}
-.reader-pager button::after {
-  content: "";
-  position: absolute;
-  inset: -0.35em -0.35em;
-}
-.reader-position {
-  color: var(--muted);
-  font-size: 0.9rem;
 }
 /* Note button and popup styling mirrors apps/web/src/style.css's kernel
    NoteButton host styles. The extension editor is single-type and local. */
@@ -877,8 +846,8 @@ body {
 }
 .pdf-reflow .original-line {
   margin: 0;
-  font-size: 1.05rem;
-  line-height: 1.7;
+  font-size: var(--original-size, 1.05rem);
+  line-height: var(--reader-leading, 1.7);
   /* The long-press plant (round 4) must not open Android text
      selection — the selection UI pans the VISUAL viewport (view-level,
      invisible to the DOM), which is what shoved the header off-screen
@@ -911,31 +880,13 @@ body {
   padding-bottom: max(1rem, env(safe-area-inset-bottom));
   box-sizing: border-box;
 }
-.reader-shell .reader-head {
-  position: static;
-  flex: none;
-  /* Compact two-row head (round 12): the title owns row one at full
-     width (ellipsis only for the genuinely long), the face's controls
-     own row two spread edge to edge — the room still goes to reading,
-     but the title reads whole. */
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.5rem;
-  padding-bottom: 0.5rem;
-}
-.reader-shell .reader-title {
-  font-size: 1.15rem;
-  line-height: 1.3;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.reader-shell .reader-tools {
-  justify-content: space-between;
-}
 .reader-shell .pdf-reflow {
   flex: 1;
   min-height: 0;
+  /* The margin ladder rides the reflow face like the EPUB column
+     (redesign 02); the canvas face keeps its own fit geometry. */
+  padding-left: var(--reader-margin, 6%);
+  padding-right: var(--reader-margin, 6%);
   overflow-y: auto;
   /* The wrapped lines never overflow horizontally; a stray IPA chip's
      nowrap must not reopen a horizontal pan. */
@@ -946,32 +897,10 @@ body {
   min-height: 0;
   overflow: auto;
 }
-.reader-shell .reader-pager {
-  flex: none;
-  margin: 0.5rem 0 0;
-}
-/* The toolbar's bottom home (round 14): right under the page number. */
-.reader-shell .reader-tools-bottom {
-  margin: 0.5rem 0 0;
-}
-
 /* The EPUB face's bottom toolbar (round 14): the body-scroll layout
    pins it as a fixed bar at the viewport's bottom edge (the shell's
    in-flow trick belongs to the PDF face only), and the chapter region
    yields the bar's height. */
-.reader-epub-bottom {
-  padding-bottom: 5.5rem;
-}
-.reader-tools-fixed {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 30;
-  background: var(--paper);
-  border-top: 1px solid var(--edge);
-  padding: 0.5rem 1rem;
-}
 
 /* Kernel-shared surfaces, re-voiced app-side for EVERY theme (the
    ticket-06 dark override, generalized by redesign 01): the kernel

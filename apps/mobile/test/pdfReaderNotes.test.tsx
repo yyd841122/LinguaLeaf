@@ -1,4 +1,4 @@
-import { PICKER_LABEL } from "./reader-picker";
+import { PICKER_LABEL, summonMenu } from "./reader-picker";
 import { NOTE_TYPES, type NoteType } from "../../server/src/wire";
 import {
   act,
@@ -133,7 +133,9 @@ async function pick(tail = "A") {
   fireEvent.change(screen.getByLabelText(PICKER_LABEL), {
     target: { files: [new File([source(tail)], "same.pdf")] },
   });
-  await screen.findByRole("heading", { name: "Same title" });
+  await waitFor(() =>
+    expect(document.querySelector("main.reader-shell")).not.toBeNull()
+  );
 }
 async function enabled() {
   await waitFor(() =>
@@ -159,10 +161,11 @@ async function save(value: string) {
   expect(await screen.findByRole("status")).toHaveTextContent("已存");
   fireEvent.click(screen.getByRole("button", { name: "关闭" }));
 }
-function reopen() {
-  if (!screen.queryByRole("button", { name: "打开" }))
-    console.log("DEBUG-MAIN-HTML:", document.body.innerHTML.slice(0, 2500));
-  fireEvent.click(screen.getByRole("button", { name: "打开" }));
+// The face's way back to the shelf is the summoned menu's 返回 (the
+// resident 打开 button left with the toolbar, redesign 02).
+async function reopen() {
+  await summonMenu();
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
 }
 
 describe("PDF line notes, reattachment and position", () => {
@@ -197,6 +200,7 @@ describe("PDF line notes, reattachment and position", () => {
       fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     };
     assertSiblings();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "150%" }));
     await enabled();
     assertSiblings();
@@ -285,13 +289,15 @@ describe("PDF line notes, reattachment and position", () => {
     await save("A first page");
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     await enabled();
+    await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "150%" }));
     await enabled();
     await save("A second page");
-    reopen();
+    await reopen();
     await pick("B");
     await enabled();
-    expect(document.querySelector(".reader-position")).toHaveTextContent(
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
       "1 / 3"
     );
     expect(screen.getByRole("button", { name: "适宽" })).toHaveAttribute(
@@ -302,10 +308,11 @@ describe("PDF line notes, reattachment and position", () => {
     await save("B first page");
     fireEvent.click(screen.getByRole("button", { name: "75%" }));
     await enabled();
-    reopen();
+    await reopen();
     await pick();
     await enabled();
-    expect(document.querySelector(".reader-position")).toHaveTextContent(
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
       "2 / 3"
     );
     expect(screen.getByRole("button", { name: "150%" })).toHaveAttribute(
@@ -328,6 +335,7 @@ describe("PDF line notes, reattachment and position", () => {
     await pick();
     await enabled();
     await save("Keep marker");
+    await summonMenu();
     for (const action of ["150%", "音标", "音标", "75%"]) {
       const old = document.querySelector("[data-pdf-note]")!;
       fireEvent.click(screen.getByRole("button", { name: action }));
@@ -418,7 +426,7 @@ describe("PDF line notes, reattachment and position", () => {
     "下一页",
     "150%",
     "音标",
-    "打开",
+    "返回",
     "关闭",
     "Escape",
     "另一行",
@@ -427,6 +435,12 @@ describe("PDF line notes, reattachment and position", () => {
     mount();
     await pick();
     await enabled();
+    // The bars must be up BEFORE the draft exists — a guarded draft owns
+    // the surface (the editor's capture-phase guard, 弹窗 > 菜单背景点),
+    // so a post-draft summon cannot land. 下一页 keeps the bars hidden
+    // (the strip only exists then).
+    const barsActions = new Set(["150%", "音标", "返回"]);
+    if (barsActions.has(action)) await summonMenu();
     openNote();
     fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
     text("Draft");
@@ -445,15 +459,21 @@ describe("PDF line notes, reattachment and position", () => {
     fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
     expect(screen.getByRole("textbox")).toHaveValue("Draft");
     fireEvent.click(screen.getByRole("tab", { name: "进度" }));
-    expect(document.querySelector(".reader-position")).toHaveTextContent(
-      "1 / 3"
-    );
     vi.mocked(window.confirm).mockReturnValue(true);
     perform();
     expect(window.confirm).toHaveBeenCalledTimes(2);
     if (action === "另一行")
       expect(screen.getByRole("textbox")).toHaveValue("");
     else expect(screen.queryByRole("dialog")).toBeNull();
+    if (action !== "返回") {
+      // The editor is gone now — the page readout is the menu's. The
+      // 下一页 case landed on page 2 (the confirmed close freed the
+      // flip); everything else is still page 1.
+      await summonMenu();
+      expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
+        action === "下一页" ? "2 / 3" : "1 / 3"
+      );
+    }
   });
 
   it("keeps quota/overlength/100-note drafts for retry, including failed deletes", async () => {
@@ -576,7 +596,7 @@ describe("PDF ownership", () => {
       mount(notes);
       await pick();
       // Return to the same identity in a fresh session before the first read answers.
-      reopen();
+      await reopen();
       await pick();
       await enabled();
       expect(screen.getByRole("button", { name: "编辑笔记" })).toHaveClass(
@@ -644,7 +664,7 @@ describe("PDF ownership", () => {
       text("A pending");
       fireEvent.click(screen.getByRole("button", { name: "保存" }));
       vi.mocked(window.confirm).mockReturnValue(true);
-      reopen();
+      await reopen();
       await pick("B");
       await enabled();
       openNote();
@@ -730,7 +750,7 @@ describe("PDF ownership", () => {
     await pick();
     await enabled();
     expect(candidates[2]!.doc.destroy).not.toHaveBeenCalled();
-    reopen();
+    await reopen();
     expect(candidates[2]!.doc.destroy).toHaveBeenCalledTimes(1);
   });
 });
@@ -794,7 +814,8 @@ describe("PDF shelf admission and byte ownership", () => {
     });
     const ctx = mount();
     await pick();
-    fireEvent.click(screen.getByRole("button", { name: "打开" }));
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
     ctx.view.rerender(ctx.tree());
     expect(persist).toHaveBeenCalledTimes(1);
     expect(
@@ -810,7 +831,8 @@ function shelfRow(docId: string) {
   ].find((node) => node.getAttribute("data-pdf-doc-id") === docId);
 }
 async function land() {
-  fireEvent.click(screen.getByRole("button", { name: "打开" }));
+  await summonMenu();
+  fireEvent.click(screen.getByRole("button", { name: "返回" }));
   await screen.findByLabelText("PDF 书架");
 }
 
@@ -869,7 +891,10 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     expect(screen.getByRole("button", { name: "EPUB" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cached" }));
     await enabled();
-    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
+      "3 / 3"
+    );
     expect(screen.getByRole("button", { name: "150%" })).toHaveAttribute(
       "aria-pressed",
       "true"
@@ -910,8 +935,17 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cached" }));
     // The stored name ("Cached") heads the reopened face — the mocked
     // session's metadata title ("Same title") no longer outranks it
-    // (mobile-ipa-buttons 04: rename outranks metadata on reopen).
-    await screen.findByRole("heading", { name: "Cached" });
+    // (mobile-ipa-buttons 04: rename outranks metadata on reopen). The
+    // open is async: the face must be up before the bars can summon.
+    await waitFor(() =>
+      expect(document.querySelector("main.reader-shell")).not.toBeNull()
+    );
+    await summonMenu();
+    await waitFor(() =>
+      expect(document.querySelector(".reader-menu-title")?.textContent).toBe(
+        "Cached"
+      )
+    );
   });
 
   it("rejects cached bytes under the wrong docId and retries after a Blob read failure", async () => {
@@ -950,8 +984,17 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cached" }));
     // The stored name ("Cached") heads the reopened face — the mocked
     // session's metadata title ("Same title") no longer outranks it
-    // (mobile-ipa-buttons 04: rename outranks metadata on reopen).
-    await screen.findByRole("heading", { name: "Cached" });
+    // (mobile-ipa-buttons 04: rename outranks metadata on reopen). The
+    // open is async: the face must be up before the bars summon.
+    await waitFor(() =>
+      expect(document.querySelector("main.reader-shell")).not.toBeNull()
+    );
+    await summonMenu();
+    await waitFor(() =>
+      expect(document.querySelector(".reader-menu-title")?.textContent).toBe(
+        "Cached"
+      )
+    );
   });
 
   it("refreshes the current picker when a save finishes after leaving reading", async () => {
@@ -1077,9 +1120,15 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     // The reopened face carries the stored name, not the mocked session's
     // metadata title (「Same title」): rename outranks metadata on reopen.
     fireEvent.click(screen.getByRole("button", { name: "Candide 老实人" }));
-    expect(
-      await screen.findByRole("heading", { name: "Candide 老实人" })
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(document.querySelector("main.reader-shell")).not.toBeNull()
+    );
+    await summonMenu();
+    await waitFor(() =>
+      expect(document.querySelector(".reader-menu-title")?.textContent).toBe(
+        "Candide 老实人"
+      )
+    );
   });
 
   it("keeps the rename overlay and draft on a failed save, then succeeds on retry", async () => {
@@ -1184,8 +1233,6 @@ describe("PDF shelf entries, failure tiers and mutation ordering", () => {
     await pick("B");
     await act(async () => gate.reject(new Error("late quota")));
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(
-      screen.getByRole("heading", { name: "Same title" })
-    ).toBeInTheDocument();
+    expect(document.querySelector("main.reader-shell")).not.toBeNull();
   });
 });

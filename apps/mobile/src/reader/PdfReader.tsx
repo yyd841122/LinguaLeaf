@@ -32,6 +32,17 @@ import { formatPlantedAt } from "./bookmark-view";
 import { NoteEditor, type NoteEditorHandle } from "./NoteEditor";
 import { PdfReflow } from "./PdfReflow";
 import type { PdfViewMode } from "../store/pdf-position-store";
+import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
+import { AaPanel } from "./AaPanel";
+import { isInteractiveTarget, selectionActive } from "./tapZones";
+import type { LearningSettingsStore } from "../store/learning-settings-store";
+import {
+  FONT_STEPS,
+  LINE_STEPS,
+  MARGIN_STEPS,
+  type ThemePreference,
+  type Typography,
+} from "../store/ui-settings-store";
 
 // The PDF reading view (ticket 06): one page on canvas at a time — a big
 // book is progressive by shape — with the proven word/IPA overlay. Word
@@ -53,11 +64,13 @@ export function PdfReader({
   page,
   scale,
   lookup,
-  showIpa,
+  learning,
+  typography,
+  onTypography,
+  theme,
   initialView = "canvas",
   onPage,
   onScale,
-  onToggleIpa,
   onWordClick,
   onReopen,
 }: {
@@ -72,13 +85,19 @@ export function PdfReader({
   page: number;
   scale: number;
   lookup: IpaLookup;
-  showIpa: boolean;
+  // 逐书学习开关 + 排版/主题 (redesign 02): the EPUB face's same seams.
+  learning: LearningSettingsStore;
+  typography: Typography;
+  onTypography: (steps: Partial<Typography>) => void;
+  theme: {
+    preference: ThemePreference;
+    save: (next: ThemePreference) => void;
+  };
   // The face the doc reopens into (persisted per doc in the position
   // store; canvas — the coordinate-overlay gate's form — is the default).
   initialView?: PdfViewMode;
   onPage: (page: number) => void;
   onScale: (scale: number) => void;
-  onToggleIpa: () => void;
   onWordClick: (click: WordClick) => void;
   onReopen: () => void;
 }) {
@@ -116,104 +135,100 @@ export function PdfReader({
       document.body.style.overflow = "";
     };
   }, []);
-  // 工具栏位置 (round 14): under the title, or below the page number —
-  // the toggle riding the row itself (置底/置顶). Redesign 01 retired the
-  // persisted preference with the ui-settings migration (v1 → v2 carried
-  // the theme in its place); the choice lives in session state until
-  // ticket 02 removes the toggle with the whole tools row.
-  const [toolbarPosition, setToolbarPosition] = useState<"top" | "bottom">(
-    "top"
-  );
-  const moveToolbar = () =>
-    setToolbarPosition(toolbarPosition === "top" ? "bottom" : "top");
-
-  // The tools row renders under the title (top) or below the page
-  // number (bottom) — one element, two homes (round 14).
-  const toolsRow = (
-    <div
-      className={`reader-tools${toolbarPosition === "bottom" ? " reader-tools-bottom" : ""}`}
-    >
-      {/* 返回: the shelf is the face's only previous page — the same
-          reopen channel as 打开, under the navigation-shaped name. */}
-      <button
-        type="button"
-        className="reader-toggle"
-        onClick={() => navigate(onReopen)}
-      >
-        返回
-      </button>
-      <button
-        type="button"
-        className="reader-toggle"
-        aria-pressed={showIpa}
-        onClick={() => navigate(onToggleIpa)}
-      >
-        音标
-      </button>
-      {/* The zoom ladder is the canvas face's fit-width control —
-          the reflow text has no scale geometry to step (round 11:
-          hidden there, the header gives the room back to reading). */}
-      {view === "canvas" &&
-        [0.75, 1, 1.5].map((zoom) => (
-          <button
-            key={zoom}
-            type="button"
-            className="reader-toggle"
-            aria-pressed={scale === zoom}
-            onClick={() => {
-              if (zoom !== scale) navigate(() => onScale(zoom));
-            }}
-          >
-            {/* 100% is fit-width (round 5): the multiplier reads as
-                a percentage of the screen's content width. */}
-            {zoom === 1 ? "适宽" : `${zoom * 100}%`}
-          </button>
-        ))}
-      <button
-        type="button"
-        className="reader-toggle"
-        aria-pressed={view === "reflow"}
-        onClick={() =>
-          navigate(() =>
-            setView((mode) => (mode === "reflow" ? "canvas" : "reflow"))
-          )
-        }
-      >
-        {view === "reflow" ? "原版" : "重排"}
-      </button>
-      <button
-        type="button"
-        className="reader-bookmarks"
-        onClick={() => {
-          if (editorRef.current?.requestClose() === false) return;
-          // The note channel doubles as the dismissal channel: its
-          // host handler clears the anchored popup, exactly what the
-          // EPUB twin's button does to its own lookup before the
-          // veil goes up.
-          onOpenNote();
-          setShowBookmarks(true);
-        }}
-      >
-        书签
-      </button>
-      <button type="button" className="reader-toggle" onClick={moveToolbar}>
-        {toolbarPosition === "top" ? "置底" : "置顶"}
-      </button>
-      <button
-        type="button"
-        className="reader-reopen"
-        onClick={() => navigate(onReopen)}
-      >
-        打开
-      </button>
-    </div>
-  );
+  // The summonable menu (redesign 02): the resident header, tools row
+  // and pager are gone — the bars summon on a background tap, the page
+  // flips ride the edge strips, and the zoom ladder + the 原版/重排
+  // switch live in the menu's own row (spec round 2 #2's PDF 减法: keep
+  // 音标 in both views, no 译文, no 听书).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [panel, setPanel] = useState<"pages" | "bookmarks" | "aa" | null>(null);
+  const openPanel = (next: NonNullable<typeof panel>) => {
+    setMenuOpen(false);
+    setPanel(next);
+  };
+  const closePanel = () => setPanel(null);
+  // 逐书学习开关 (redesign 02): 音标 defaults on (the old global value)
+  // and loads per book; every flip persists at once.
+  const [showIpa, setShowIpa] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    learning
+      .load(docId)
+      .then((toggles) => {
+        if (!cancelled) setShowIpa(toggles.ipa);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [learning, docId]);
+  const toggleIpa = () => {
+    setShowIpa((shown) => {
+      void learning.save(docId, { ipa: !shown });
+      return !shown;
+    });
+  };
+  // 点按分区 (spec review finding 13): a background tap summons or
+  // dismisses; words/pens/controls win; a selection is the reader's; a
+  // panel's veil owns everything.
+  const onSurfaceTap = (event: React.MouseEvent<HTMLElement>) => {
+    if (panel !== null) return;
+    if (isInteractiveTarget(event.target)) return;
+    if (selectionActive()) return;
+    setMenuOpen((open) => !open);
+  };
+  const menuItems: ReaderMenuItem[] = [
+    { key: "pages", label: "页码" },
+    { key: "bookmarks", label: "书签" },
+    { key: "ipa", label: "音标", active: showIpa },
+    ...(view === "canvas"
+      ? [0.75, 1, 1.5].map((zoom): ReaderMenuItem => ({
+          key: `zoom:${zoom}`,
+          // 100% reads as fit-width (round 5).
+          label: zoom === 1 ? "适宽" : `${zoom * 100}%`,
+          active: scale === zoom,
+        }))
+      : []),
+    { key: "view", label: view === "reflow" ? "原版" : "重排" },
+    { key: "aa", label: "Aa" },
+  ];
+  const onMenuItem = (key: string) => {
+    if (key === "ipa") {
+      navigate(toggleIpa);
+      return;
+    }
+    if (key.startsWith("zoom:")) {
+      const zoom = Number(key.slice("zoom:".length));
+      if (zoom !== scale) navigate(() => onScale(zoom));
+      return;
+    }
+    if (key === "view") {
+      navigate(() =>
+        setView((mode) => (mode === "reflow" ? "canvas" : "reflow"))
+      );
+      return;
+    }
+    if (editorRef.current?.requestClose() === false) return;
+    onOpenNote();
+    if (key === "bookmarks" || key === "aa" || key === "pages") {
+      openPanel(key);
+    }
+  };
+  // The page-nav panel's draft (目录面板 = 页导航, spec round 2 #2).
+  const [pageDraft, setPageDraft] = useState(String(page));
+  useEffect(() => setPageDraft(String(page)), [page]);
+  const jumpToDraft = () => {
+    const target = Number(pageDraft);
+    if (!Number.isInteger(target)) return;
+    const clamped = Math.min(Math.max(target, 1), session.pageCount);
+    closePanel();
+    if (clamped !== page) navigate(() => onPage(clamped));
+  };
 
   // The bookmark seam (ticket 03): planted page marks for this document.
   // Same channel discipline as the EPUB face — one owner carries the
   // list, the plant and the remove; the mount read is silent (markers
   // best-effort) while a fresh panel open refetches and flags failures.
-  const [showBookmarks, setShowBookmarks] = useState(false);
   const [bookmarkRows, setBookmarkRows] = useState<PdfBookmarkRow[] | null>(
     null
   );
@@ -240,7 +255,7 @@ export function PdfReader({
     return () => bookmarksOwner.invalidate();
   }, [bookmarks, docId, runBookmarks, bookmarksOwner]);
   useEffect(() => {
-    if (!showBookmarks) return;
+    if (panel !== "bookmarks") return;
     setPanelRowsLoading(true);
     void runBookmarks(bookmarks.list(docId), {
       onFresh: (rows) => {
@@ -252,14 +267,7 @@ export function PdfReader({
       bookmarksOwner.invalidate();
       setPanelRowsLoading(false);
     };
-  }, [
-    bookmarks,
-    docId,
-    showBookmarks,
-    bookmarkAttempt,
-    runBookmarks,
-    bookmarksOwner,
-  ]);
+  }, [bookmarks, docId, panel, bookmarkAttempt, runBookmarks, bookmarksOwner]);
   // 打书签: the plant lands on a LINE, and the store's same-position
   // idempotence makes a replant one mark.
   const plantBookmarkAt = (line: number, text: string) => {
@@ -294,7 +302,7 @@ export function PdfReader({
   // brings the row's line into view (either face, after its read lands).
   const jumpToBookmark = (row: PdfBookmarkRow) => {
     if (editorRef.current?.requestClose() === false) return;
-    setShowBookmarks(false);
+    closePanel();
     setJumpLine({ page: row.page, line: row.line });
     if (row.page !== page) navigate(() => onPage(row.page));
   };
@@ -309,11 +317,46 @@ export function PdfReader({
     // slack that shoved the whole shell up. The shell pins the header
     // and the pager, locks the root scroller, and each face scrolls in
     // its own region — the header cannot move under any gesture.
-    <main className="reader reader-shell" aria-label="扩展阅读页">
-      <header className="reader-head">
-        <h1 className="reader-title">{title}</h1>
-        {toolbarPosition === "top" ? toolsRow : null}
-      </header>
+    <main
+      className="reader reader-shell"
+      aria-label="扩展阅读页"
+      onClick={onSurfaceTap}
+      style={
+        {
+          // The reflow face reads the typography ladder; the canvas
+          // face's page is its own geometry (纸就是纸).
+          "--original-size": FONT_STEPS[typography.fontStep],
+          "--reader-margin": MARGIN_STEPS[typography.marginStep],
+          "--reader-leading": showIpa ? "2" : LINE_STEPS[typography.lineStep],
+        } as React.CSSProperties
+      }
+    >
+      <ReaderMenu
+        open={menuOpen}
+        title={title}
+        progress={`${page} / ${session.pageCount}`}
+        items={menuItems}
+        onBack={() => navigate(onReopen)}
+        onSelect={onMenuItem}
+      />
+      {!menuOpen && panel === null ? (
+        <>
+          <button
+            type="button"
+            className="reader-edge reader-edge-left"
+            aria-label="上一页"
+            disabled={page <= 1}
+            onClick={() => navigate(() => onPage(page - 1))}
+          />
+          <button
+            type="button"
+            className="reader-edge reader-edge-right"
+            aria-label="下一页"
+            disabled={page >= session.pageCount}
+            onClick={() => navigate(() => onPage(page + 1))}
+          />
+        </>
+      ) : null}
       {/* Both faces read the same rows, armed jump and plant channel —
           the marks made in one face read true in the other. */}
       {view === "reflow" ? (
@@ -354,7 +397,7 @@ export function PdfReader({
           onWordClick={onWordClick}
         />
       )}
-      {showBookmarks ? (
+      {panel === "bookmarks" ? (
         <div className="overlay-veil" role="dialog" aria-label="书签">
           <div className="overlay-card bookmark-card">
             <h2 className="overlay-title">书签</h2>
@@ -433,33 +476,55 @@ export function PdfReader({
               </ul>
             )}
             <div className="overlay-actions">
-              <button type="button" onClick={() => setShowBookmarks(false)}>
+              <button type="button" onClick={closePanel}>
                 关闭
               </button>
             </div>
           </div>
         </div>
       ) : null}
-      <footer className="reader-pager">
-        <button
-          type="button"
-          disabled={page <= 1}
-          onClick={() => navigate(() => onPage(page - 1))}
-        >
-          上一页
-        </button>
-        <span className="reader-position">
-          {page} / {session.pageCount}
-        </span>
-        <button
-          type="button"
-          disabled={page >= session.pageCount}
-          onClick={() => navigate(() => onPage(page + 1))}
-        >
-          下一页
-        </button>
-      </footer>
-      {toolbarPosition === "bottom" ? toolsRow : null}
+      {panel === "pages" ? (
+        <div className="overlay-veil" role="dialog" aria-label="页码">
+          <div className="overlay-card">
+            <h2 className="overlay-title">页码</h2>
+            <div className="aa-row" role="group" aria-label="跳转页码">
+              <input
+                type="number"
+                min={1}
+                max={session.pageCount}
+                value={pageDraft}
+                aria-label="页码"
+                onChange={(event) => setPageDraft(event.target.value)}
+              />
+              <span className="aa-value">/ {session.pageCount}</span>
+              <button type="button" onClick={jumpToDraft}>
+                跳转
+              </button>
+            </div>
+            <div className="overlay-actions">
+              <button type="button" onClick={closePanel}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {panel === "aa" ? (
+        <div className="overlay-veil" role="dialog" aria-label="排版与主题">
+          <div className="overlay-card aa-card">
+            <AaPanel
+              typography={typography}
+              onTypography={onTypography}
+              theme={theme}
+            />
+            <div className="overlay-actions">
+              <button type="button" onClick={closePanel}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

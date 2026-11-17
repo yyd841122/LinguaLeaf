@@ -156,7 +156,6 @@ export function ReaderPage({
   readAloudSpeaker?: ReadAloudSpeaker;
 } = {}) {
   const [state, setState] = useState<ReaderState>({ phase: "empty" });
-  const [showIpa, setShowIpa] = useState(true);
   // The translation settings overlay (ticket 04): opened from the
   // landing or the reading face; the revision counter bumps on close so
   // the reading face re-reads its configured fact without a remount.
@@ -530,7 +529,10 @@ export function ReaderPage({
             page={state.page}
             scale={state.scale}
             lookup={state.lookup}
-            showIpa={showIpa}
+            learning={learning}
+            typography={typography}
+            onTypography={stepTypography}
+            theme={theme}
             initialView={state.view ?? "canvas"}
             // A page flip or a zoom is itself a position fact — the
             // anchored popup's coordinates died with the old view (the
@@ -543,7 +545,6 @@ export function ReaderPage({
               setLookup(null);
               setState({ ...state, scale });
             }}
-            onToggleIpa={() => setShowIpa((shown) => !shown)}
             onWordClick={setLookup}
             onReopen={() => {
               if (!closeNote()) return;
