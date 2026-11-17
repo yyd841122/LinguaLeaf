@@ -1,5 +1,5 @@
 # 02 阅读页改版(无框化 + 呼出菜单 + 排版 + PDF 面)
-Status: ready-for-human(2026-11-17 五切片实现完毕,待双轴评审 + Codex 审核 + verify 补跑;真机矩阵归 04;见 ## Comments)
+Status: done(2026-11-17 收官:Codex NO-GO→修笔全清(High 双重边距 + 5 Med + Low 记档)+ verify 补跑 EXIT=0(抓到一处负载时敏断言当场加固);真机矩阵归 04;见 ## Comments)
 Blocked by: 01
 
 ## 目标
@@ -154,3 +154,8 @@ Blocked by: 01
     P3 10 票换皮统一落——记档待维护者确认。
   修后:mobile 48 文件 **479 过 1 skip**(较审核前 +8 测),tsc/eslint
   零告警。审核未认证历史计数(只读跑不了套件),以本条为准。
+- 2026-11-17 收官:caller `npm run verify` **EXIT=0**(全量链含 build)。
+  首跑抓一处负载时敏断言(pdfReaderNotes Escape 关闭编辑器同步查
+  queryBy 赶空窗,全量并行下晚一拍),改 waitFor 后复跑过——正合第四轮
+  17「触及的测试随票修时序」。翻 done。余项:04 票真机矩阵(视觉半场/
+  触摸真行为/无误触);底栏图标行(Low)随 P3 10 票换皮,待维护者确认。
