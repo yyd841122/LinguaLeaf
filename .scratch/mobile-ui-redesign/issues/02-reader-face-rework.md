@@ -133,3 +133,24 @@ Blocked by: 01
   循环**(字面量数组每渲染新 identity;全量套件 5000ms 超时三处,单跑
   复现后 stash 二分定位)——deps 注释钉死教训。修后全 mobile 48 文件
   471 过 1 skip,tsc/eslint 零告警。
+- 2026-11-17 Codex 独立审核(threadId 01a1e729-50b8-7ea3-b8b3-47d909e06096,
+  gpt-6.1-sol · high · read-only,job review-mwk0z3ww-1tedf4):**NO-GO**——
+  1 High + 5 Medium + 1 Low,逐条裁定全部成立,当场修毕:
+  - **High·PDF 重排双重边距**:外层 .reader 与内层 .pdf-reflow 都吃
+    --reader-margin,22%² 正文仅 ~31% 屏宽——撤内层 padding,单容器承担。
+  - **Med·拖动/长按取消翻页未实现**:「真拖动不产 click」是假设——抽
+    ReaderEdge 组件(pointerdown 起跟踪,漂移>12px / >500ms /
+    pointercancel 皆判取消 + 选中守卫),两面消费,flipGuard 退役。
+  - **Med·原版改边距不重算适宽**:PdfPage key 增 marginStep,边距变即
+    重挂重适配。
+  - **Med·逐书开关晚到读覆盖用户选择**:touched 键集守卫,读回不得
+    覆写已动过的键 + 延迟读竞态测试。
+  - **Med·证据缺口五项**:锚点测试升三向区分几何(-300/90/110,锚 0 与
+    锚 150 变异均实测红);重开非零块 + scrollIntoView spy;滑杆脏稿
+    矩阵(拒/纳);页码面板 clamp + 跳转;首末页 disabled;选中点活边
+    缘不翻;A→B→A 异书逐书(Second Book 独立 docId);load 每挂载恰一
+    次(keys-in-deps 教训的有界断言)。
+  - **Low·底栏图标行未实现**:文字钮(可访问名齐全)先行,图标表达随
+    P3 10 票换皮统一落——记档待维护者确认。
+  修后:mobile 48 文件 **479 过 1 skip**(较审核前 +8 测),tsc/eslint
+  零告警。审核未认证历史计数(只读跑不了套件),以本条为准。

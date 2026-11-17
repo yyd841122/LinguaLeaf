@@ -35,6 +35,7 @@ import type { PdfViewMode } from "../store/pdf-position-store";
 import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
 import { AaPanel } from "./AaPanel";
 import { useReaderMenu } from "./useReaderMenu";
+import { ReaderEdge } from "./ReaderEdge";
 import { useLearningToggles } from "./useLearningToggles";
 import type { LearningSettingsStore } from "../store/learning-settings-store";
 import {
@@ -141,7 +142,7 @@ export function PdfReader({
   // flips ride the edge strips, and the zoom ladder + the 原版/重排
   // switch live in the menu's own row (spec round 2 #2's PDF 减法: keep
   // 音标 in both views, no 译文, no 听书).
-  const { menuOpen, panel, openPanel, closePanel, onSurfaceTap, flipGuard } =
+  const { menuOpen, panel, openPanel, closePanel, onSurfaceTap } =
     useReaderMenu();
   // 逐书学习开关 (redesign 02): the shared per-book hook — 音标 only
   // (the PDF face has no 译文), default on (the old global value).
@@ -314,19 +315,17 @@ export function PdfReader({
       />
       {!menuOpen && panel === null ? (
         <>
-          <button
-            type="button"
-            className="reader-edge reader-edge-left"
-            aria-label="上一页"
+          <ReaderEdge
+            side="left"
+            label="上一页"
             disabled={page <= 1}
-            onClick={flipGuard(() => navigate(() => onPage(page - 1)))}
+            onFlip={() => navigate(() => onPage(page - 1))}
           />
-          <button
-            type="button"
-            className="reader-edge reader-edge-right"
-            aria-label="下一页"
+          <ReaderEdge
+            side="right"
+            label="下一页"
             disabled={page >= session.pageCount}
-            onClick={flipGuard(() => navigate(() => onPage(page + 1)))}
+            onFlip={() => navigate(() => onPage(page + 1))}
           />
         </>
       ) : null}
@@ -352,7 +351,7 @@ export function PdfReader({
         />
       ) : (
         <PdfPage
-          key={`${page}:${scale}:${showIpa}`}
+          key={`${page}:${scale}:${showIpa}:${typography.marginStep}`}
           ref={stage}
           docId={docId}
           session={session}

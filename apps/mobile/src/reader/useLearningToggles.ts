@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   LearningSettingsStore,
   LearningToggles,
@@ -22,6 +22,10 @@ export function useLearningToggles<K extends LearningKey>(
   const initial = () =>
     Object.fromEntries(keys.map((key) => [key, true])) as Record<K, boolean>;
   const [toggles, setToggles] = useState<Record<K, boolean>>(initial);
+  // The late-init race (the Codex review's Medium): the per-book read
+  // can still be in flight while the reader flips a toggle — the stale
+  // answer must not clobber the choice that already beat it.
+  const touched = useRef(new Set<K>());
   useEffect(() => {
     let cancelled = false;
     learning
@@ -30,7 +34,8 @@ export function useLearningToggles<K extends LearningKey>(
         if (cancelled) return;
         setToggles((current) => {
           const next = { ...current };
-          for (const key of keys) next[key] = value[key];
+          for (const key of keys)
+            if (!touched.current.has(key)) next[key] = value[key];
           return next;
         });
       })
@@ -44,6 +49,7 @@ export function useLearningToggles<K extends LearningKey>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [learning, docId]);
   const toggle = (key: K) => {
+    touched.current.add(key);
     const next = !toggles[key];
     setToggles((current) => ({ ...current, [key]: next }));
     void learning.save(docId, { [key]: next });

@@ -15,9 +15,6 @@ export function useReaderMenu(): {
   // pens and controls win; an active selection is the reader's; and
   // while a panel is up its veil owns every tap.
   onSurfaceTap: (event: React.MouseEvent<HTMLElement>) => void;
-  // 选择文字期间禁翻 (same finding): an active selection swallows the
-  // flip — the reader is mid-gesture, not navigating.
-  flipGuard: (flip: () => void) => () => void;
 } {
   const [menuOpen, setMenuOpen] = useState(false);
   const [panel, setPanel] = useState<string | null>(null);
@@ -32,9 +29,5 @@ export function useReaderMenu(): {
     if (selectionActive()) return;
     setMenuOpen((open) => !open);
   };
-  const flipGuard = (flip: () => void) => () => {
-    if (selectionActive()) return;
-    flip();
-  };
-  return { menuOpen, panel, openPanel, closePanel, onSurfaceTap, flipGuard };
+  return { menuOpen, panel, openPanel, closePanel, onSurfaceTap };
 }

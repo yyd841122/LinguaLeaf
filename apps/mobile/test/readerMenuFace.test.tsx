@@ -1,11 +1,12 @@
 import {
+  act,
   fireEvent,
   render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { dismissMenu, summonMenu } from "./reader-picker";
 import { buildEpub } from "@lingualeaf/import-core/testing";
@@ -52,6 +53,19 @@ const SAMPLE_EPUB = () =>
       {
         href: "text/two.xhtml",
         body: "<h2>Chapter Two</h2><p>More words live here.</p>",
+      },
+    ],
+  });
+
+// Three sentences in one chapter: the anchor test's distinguishing
+// geometry needs a third block between the candidate anchors.
+const ANCHOR_EPUB = () =>
+  buildEpub({
+    title: "Anchor Book",
+    docs: [
+      {
+        href: "text/one.xhtml",
+        body: "<h1>Only Chapter</h1><p>First sentence stands high. Second sits between. Third lies below.</p>",
       },
     ],
   });
@@ -262,25 +276,30 @@ describe("EPUB anchor independence (redesign 02 acceptance)", () => {
       />
     );
     await pickFile(
-      new File([(await SAMPLE_EPUB()) as BlobPart], "book.epub", {
+      new File([(await ANCHOR_EPUB()) as BlobPart], "book.epub", {
         type: "application/epub+zip",
       })
     );
     await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
-    // Block 0 sits below the constant anchor, block 1 above it: the
-    // walk must land on block 1 whatever the menu's geometry.
+    // Three-way distinguishing geometry (the Codex review's probe): a
+    // block above every candidate anchor, one at 90 (inside 96, outside
+    // 0), one at 110 (inside head-geometry mutants, outside 96). The
+    // constant-96 walk must pick block 1; an anchor-0 mutant picks 0, a
+    // head-measured (~150) mutant picks 2.
     const blocks = [
       ...document.querySelectorAll<HTMLElement>("[data-block-index]"),
     ];
-    blocks[0]!.getBoundingClientRect = () => rectAt(500);
-    blocks[1]!.getBoundingClientRect = () => rectAt(-300);
+    expect(blocks.length).toBeGreaterThanOrEqual(3);
+    blocks[0]!.getBoundingClientRect = () => rectAt(-300);
+    blocks[1]!.getBoundingClientRect = () => rectAt(90);
+    blocks[2]!.getBoundingClientRect = () => rectAt(110);
 
     await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "书签" }));
     fireEvent.click(
       await screen.findByRole("button", { name: "在当前位置打书签" })
     );
-    const rowsOpen = await bookmarks.list("doc:Skeleton Book");
+    const rowsOpen = await bookmarks.list("doc:Anchor Book");
     expect(rowsOpen).toHaveLength(1);
     expect(rowsOpen[0]).toMatchObject({ chapter: 0, block: 1 });
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
@@ -292,7 +311,7 @@ describe("EPUB anchor independence (redesign 02 acceptance)", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "在当前位置打书签" })
     );
-    expect(await bookmarks.list("doc:Skeleton Book")).toHaveLength(1);
+    expect(await bookmarks.list("doc:Anchor Book")).toHaveLength(1);
   });
 });
 
@@ -521,6 +540,206 @@ describe("EPUB 目录面板 — 章节进度滑杆与重开位置 (redesign 02)"
     await summonMenu();
     expect(document.querySelector(".reader-menu-progress")?.textContent).toBe(
       "2 / 2"
+    );
+    // The non-zero-block half (the Codex review's gap): save a block-1
+    // position under laid-out geometry, reopen, and observe the restore
+    // scroll land ON that block — deleting the restore scroll reds here.
+    const seen: HTMLElement[] = [];
+    const spy = vi.fn(function (this: HTMLElement) {
+      seen.push(this);
+    });
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: spy,
+      configurable: true,
+      writable: true,
+    });
+    try {
+      // Chapter ONE carries two sentence blocks (chapter two has one);
+      // flip back so the saved block is genuinely non-zero.
+      await dismissMenu();
+      fireEvent.click(screen.getByRole("button", { name: "上一章" }));
+      expect(await screen.findByText("Words")).toBeInTheDocument();
+      const chapterBlocks = [
+        ...document.querySelectorAll<HTMLElement>("[data-block-index]"),
+      ];
+      chapterBlocks[0]!.getBoundingClientRect = () =>
+        ({ top: 500, bottom: 520 }) as DOMRect;
+      chapterBlocks[1]!.getBoundingClientRect = () =>
+        ({ top: -300, bottom: -280 }) as DOMRect;
+      fireEvent.scroll(window);
+      await waitFor(async () =>
+        expect(await progressOf()).toMatchObject({
+          chapterIndex: 0,
+          blockIndex: 1,
+        })
+      );
+      await summonMenu();
+      fireEvent.click(screen.getByRole("button", { name: "返回" }));
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Skeleton Book" })
+      );
+      await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+      await waitFor(() => {
+        expect(seen.at(-1)?.dataset.blockIndex).toBe("1");
+      });
+    } finally {
+      Object.defineProperty(Element.prototype, "scrollIntoView", {
+        value: undefined,
+        configurable: true,
+      });
+    }
+  });
+});
+
+describe("EPUB 滑杆脏稿守卫与翻带手势 (redesign 02, Codex 评审)", () => {
+  it("the slider trips the abandon confirm like a chapter flip: refuse keeps the draft, accept jumps", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    try {
+      await openBook();
+      // The bars must predate the draft (the editor's capture guard owns
+      // the surface while dirty); they stay up through the note flow.
+      await summonMenu();
+      fireEvent.click(screen.getAllByRole("button", { name: "写笔记" })[0]!);
+      fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
+      fireEvent.change(screen.getByRole("textbox", { name: "笔记正文" }), {
+        target: { value: "Unsaved" },
+      });
+      fireEvent.click(screen.getByRole("tab", { name: "进度" }));
+      // The 目录 item itself carries the guard: refused, the panel never
+      // opens and the draft lives.
+      fireEvent.click(screen.getByRole("button", { name: "目录" }));
+      expect(window.confirm).toHaveBeenCalledExactlyOnceWith("放弃修改？");
+      expect(screen.getByRole("textbox")).toHaveValue("");
+      fireEvent.click(screen.getByRole("tab", { name: "疑问" }));
+      expect(screen.getByRole("textbox")).toHaveValue("Unsaved");
+      fireEvent.click(screen.getByRole("tab", { name: "进度" }));
+      // Accepted, the editor dies and the panel opens; the slider jumps
+      // with NO further confirm.
+      vi.mocked(window.confirm).mockReturnValue(true);
+      fireEvent.click(screen.getByRole("button", { name: "目录" }));
+      const slider = await screen.findByRole("slider", {
+        name: "章节进度滑杆",
+      });
+      fireEvent.change(slider, { target: { value: "2" } });
+      expect(window.confirm).toHaveBeenCalledTimes(2);
+      expect(await screen.findByText("More")).toBeInTheDocument();
+    } finally {
+      confirm.mockRestore();
+    }
+  });
+
+  it("an active selection kills a LIVE edge tap (选择文字期间禁翻)", async () => {
+    await openBook();
+    const line = document.querySelector(".original-line")!;
+    const range = document.createRange();
+    range.selectNodeContents(line);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const edge = screen.getByRole("button", { name: "下一章" });
+    fireEvent.pointerDown(edge, { clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(edge, { clientX: 10, clientY: 10 });
+    fireEvent.click(edge);
+    expect(screen.queryByText("More")).toBeNull();
+  });
+
+  it("a drifting drag or a pointercancel on the edge never flips; a clean tap does", async () => {
+    await openBook();
+    const edge = screen.getByRole("button", { name: "下一章" });
+    fireEvent.pointerDown(edge, { clientX: 10, clientY: 10 });
+    fireEvent.pointerMove(edge, { clientX: 40, clientY: 10 });
+    fireEvent.pointerUp(edge, { clientX: 40, clientY: 10 });
+    fireEvent.click(edge);
+    expect(screen.queryByText("More")).toBeNull();
+    fireEvent.pointerDown(edge, { clientX: 10, clientY: 10 });
+    fireEvent.pointerCancel(edge);
+    fireEvent.click(edge);
+    expect(screen.queryByText("More")).toBeNull();
+    fireEvent.pointerDown(edge, { clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(edge, { clientX: 10, clientY: 10 });
+    fireEvent.click(edge);
+    expect(await screen.findByText("More")).toBeInTheDocument();
+  });
+});
+
+describe("EPUB 逐书开关 — 竞态与换书 (redesign 02, Codex 评审)", () => {
+  it("a toggle made before the per-book read lands is never clobbered by the late answer", async () => {
+    let release!: (value: { ipa: boolean; translation: boolean }) => void;
+    const gate = new Promise<{ ipa: boolean; translation: boolean }>(
+      (resolve) => {
+        release = resolve;
+      }
+    );
+    const learning: LearningSettingsStore = {
+      load: () => gate,
+      save: async () => undefined,
+    };
+    await openBook(learning);
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "音标" }));
+    expect(screen.getByRole("button", { name: "音标" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+    await act(async () => {
+      release({ ipa: true, translation: true });
+    });
+    expect(screen.getByRole("button", { name: "音标" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
+    );
+  });
+
+  it("the per-book read runs once per mount (the keys-in-deps lesson, bounded)", async () => {
+    const learning = createMemoryLearningSettingsStore();
+    const spy = vi.spyOn(learning, "load");
+    await openBook(learning);
+    await summonMenu();
+    await dismissMenu();
+    await summonMenu();
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it("different books keep different toggles across an A→B→A round trip", async () => {
+    await openBook();
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "音标" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    // B is a DIFFERENT title — same title would be the same docId.
+    await pickFile(
+      new File(
+        [
+          (await buildEpub({
+            title: "Second Book",
+            docs: [
+              {
+                href: "text/one.xhtml",
+                body: "<h1>Only Chapter</h1><p>Another book entirely.</p>",
+              },
+            ],
+          })) as BlobPart,
+        ],
+        "second.epub",
+        { type: "application/epub+zip" }
+      )
+    );
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+    await summonMenu();
+    expect(screen.getByRole("button", { name: "音标" })).toHaveAttribute(
+      "aria-pressed",
+      "true"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    await pickFile(
+      new File([(await SAMPLE_EPUB()) as BlobPart], "book.epub", {
+        type: "application/epub+zip",
+      })
+    );
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+    await summonMenu();
+    expect(screen.getByRole("button", { name: "音标" })).toHaveAttribute(
+      "aria-pressed",
+      "false"
     );
   });
 });

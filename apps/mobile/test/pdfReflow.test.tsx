@@ -594,3 +594,35 @@ it("a side line with mixed matched and drifted notes locks its pen", async () =>
     "漂移前的旧行文本"
   );
 });
+
+describe("PDF 页码面板与边缘边界 (redesign 02, Codex 评审)", () => {
+  it("the page panel clamps out-of-range drafts and jumps on 跳转", async () => {
+    mount();
+    await pick();
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "页码" }));
+    const input = await screen.findByRole("spinbutton", { name: "页码" });
+    fireEvent.change(input, { target: { value: "99" } });
+    fireEvent.click(screen.getByRole("button", { name: "跳转" }));
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
+      "3 / 3"
+    );
+  });
+
+  it("the edge strips disable at the book's ends", async () => {
+    mount();
+    await pick();
+    await dismissMenu();
+    expect(screen.getByRole("button", { name: "上一页" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "下一页" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    fireEvent.click(screen.getByRole("button", { name: "下一页" }));
+    expect(screen.getByRole("button", { name: "下一页" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "上一页" })).toBeEnabled();
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")).toHaveTextContent(
+      "3 / 3"
+    );
+  });
+});

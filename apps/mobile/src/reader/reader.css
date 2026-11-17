@@ -884,10 +884,10 @@ body {
 .reader-shell .pdf-reflow {
   flex: 1;
   min-height: 0;
-  /* The margin ladder rides the reflow face like the EPUB column
-     (redesign 02); the canvas face keeps its own fit geometry. */
-  padding-left: var(--reader-margin, 6%);
-  padding-right: var(--reader-margin, 6%);
+  /* NO side padding here: the shell IS a .reader — the margin ladder
+    already pads it (the Codex review's High: padding both layers
+    squared 22% down to ~31% content width). The canvas face keeps its
+    own fit geometry (recomputed on margin changes via the face key). */
   overflow-y: auto;
   /* The wrapped lines never overflow horizontally; a stray IPA chip's
      nowrap must not reopen a horizontal pan. */

@@ -53,6 +53,7 @@ import { createNativeSpeaker } from "../speak/native-tts";
 import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
 import { AaPanel } from "./AaPanel";
 import { useReaderMenu } from "./useReaderMenu";
+import { ReaderEdge } from "./ReaderEdge";
 import { useLearningToggles } from "./useLearningToggles";
 import type { LearningSettingsStore } from "../store/learning-settings-store";
 import {
@@ -216,7 +217,7 @@ export function EpubReader({
   // The summonable menu (redesign 02): the shared state machine — hidden
   // while reading (零常驻 chrome), bars on a background tap, one panel at
   // a time (this face's panels: toc/bookmarks/readaloud/aa).
-  const { menuOpen, panel, openPanel, closePanel, onSurfaceTap, flipGuard } =
+  const { menuOpen, panel, openPanel, closePanel, onSurfaceTap } =
     useReaderMenu();
   const [chapterTranslations, setChapterTranslations] = useState<Record<
     number,
@@ -817,19 +818,17 @@ export function EpubReader({
       ) : null}
       {!menuOpen && panel === null ? (
         <>
-          <button
-            type="button"
-            className="reader-edge reader-edge-left"
-            aria-label="上一章"
+          <ReaderEdge
+            side="left"
+            label="上一章"
             disabled={chapterIndex === 0}
-            onClick={flipGuard(() => goChapter(chapterIndex - 1))}
+            onFlip={() => goChapter(chapterIndex - 1)}
           />
-          <button
-            type="button"
-            className="reader-edge reader-edge-right"
-            aria-label="下一章"
+          <ReaderEdge
+            side="right"
+            label="下一章"
             disabled={chapterIndex === book.chapters.length - 1}
-            onClick={flipGuard(() => goChapter(chapterIndex + 1))}
+            onFlip={() => goChapter(chapterIndex + 1)}
           />
         </>
       ) : null}
