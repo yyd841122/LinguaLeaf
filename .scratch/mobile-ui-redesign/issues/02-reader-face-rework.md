@@ -74,3 +74,18 @@ Blocked by: 01
     兜底 96px);音标 = ReaderPage 全局 state 默认开;译文 = EpubReader
     局部 state 默认开;PdfReader 工具行 :128-250(音标 aria-pressed
     :148、置底钮 moveToolbar)。
+
+- 2026-11-17 进度:切片 A/B/C 已落地(commits:切片 A 排版档位入 v3 +
+  learning store;切片 B EPUB 呼出菜单/点按分区/撤常驻/锚点 96px 常量化/
+  逐书开关;切片 C Aa 面板 + 排版 CSS 变量化 + 章首版式入 EpubChapter)。
+  mobile 48 文件 469 过 1 skip 全绿。**剩:切片 D(PDF 面)+ E(矩阵
+  验收 + 票面逐条)**。D 要点:PdfReader 撤常驻头/工具行/页码行(pager
+  一并撤,页码入菜单顶栏);ReaderMenu items = 目录(页导航面板:页码
+  输入+跳转)/书签/音标/Aa + zoom 阶梯(0.75/适宽/1.5)+ 原版/重排切换;
+  无译文/无听书;边缘带 = 物理页(两视图同);音标逐书化(learning 注入,
+  ReaderPage 的 showIpa/onToggleIpa 对 PdfReader 退役,全局态删);
+  .reader-shell 的 .reader-tools 死规则与 touchPolish PDF 断言随撤;
+  pdfReflow/pdfReaderBookmarks/pdfReaderNotes/pdfRendering 测试迁移
+  (summonMenu 先行,helper 已在 test/reader-picker.ts)。E 要点:全组合
+  矩阵(字号×边距×行距×两开关,长音标/窄屏)、PDF 双视图矩阵、票面验收
+  门逐条打勾、风格收口(style.css Georgia 死规则顺手)。
