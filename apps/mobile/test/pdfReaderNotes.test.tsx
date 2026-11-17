@@ -354,7 +354,10 @@ describe("PDF line notes, reattachment and position", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("已删除");
     expect(await notes.list(await id())).toEqual([]);
     fireEvent.keyDown(document, { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
+    // Load-flake hardening (the verify full run's catch): the editor's
+    // close settles a tick late under parallel load — wait for it
+    // instead of querying in the same breath.
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getAllByRole("button", { name: "写笔记" })[0]).toHaveFocus();
   });
 
