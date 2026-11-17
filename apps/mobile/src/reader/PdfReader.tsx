@@ -34,7 +34,8 @@ import { PdfReflow } from "./PdfReflow";
 import type { PdfViewMode } from "../store/pdf-position-store";
 import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
 import { AaPanel } from "./AaPanel";
-import { isInteractiveTarget, selectionActive } from "./tapZones";
+import { useReaderMenu } from "./useReaderMenu";
+import { useLearningToggles } from "./useLearningToggles";
 import type { LearningSettingsStore } from "../store/learning-settings-store";
 import {
   FONT_STEPS,
@@ -140,50 +141,14 @@ export function PdfReader({
   // flips ride the edge strips, and the zoom ladder + the 原版/重排
   // switch live in the menu's own row (spec round 2 #2's PDF 减法: keep
   // 音标 in both views, no 译文, no 听书).
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [panel, setPanel] = useState<"pages" | "bookmarks" | "aa" | null>(null);
-  const openPanel = (next: NonNullable<typeof panel>) => {
-    setMenuOpen(false);
-    setPanel(next);
-  };
-  const closePanel = () => setPanel(null);
-  // 逐书学习开关 (redesign 02): 音标 defaults on (the old global value)
-  // and loads per book; every flip persists at once.
-  const [showIpa, setShowIpa] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    learning
-      .load(docId)
-      .then((toggles) => {
-        if (!cancelled) setShowIpa(toggles.ipa);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [learning, docId]);
-  const toggleIpa = () => {
-    setShowIpa((shown) => {
-      void learning.save(docId, { ipa: !shown });
-      return !shown;
-    });
-  };
-  // 点按分区 (spec review finding 13): a background tap summons or
-  // dismisses; words/pens/controls win; a selection is the reader's; a
-  // panel's veil owns everything.
-  // 选择文字期间禁翻 (spec review finding 13): an active selection
-  // swallows the flip — the reader is mid-gesture, not navigating.
-  const flipGuard = (flip: () => void) => () => {
-    if (selectionActive()) return;
-    flip();
-  };
+  const { menuOpen, panel, openPanel, closePanel, onSurfaceTap, flipGuard } =
+    useReaderMenu();
+  // 逐书学习开关 (redesign 02): the shared per-book hook — 音标 only
+  // (the PDF face has no 译文), default on (the old global value).
+  const learningToggles = useLearningToggles(learning, docId, ["ipa"] as const);
+  const showIpa = learningToggles.toggles.ipa;
+  const toggleIpa = () => learningToggles.toggle("ipa");
 
-  const onSurfaceTap = (event: React.MouseEvent<HTMLElement>) => {
-    if (panel !== null) return;
-    if (isInteractiveTarget(event.target)) return;
-    if (selectionActive()) return;
-    setMenuOpen((open) => !open);
-  };
   const menuItems: ReaderMenuItem[] = [
     { key: "pages", label: "页码" },
     { key: "bookmarks", label: "书签" },
@@ -333,7 +298,8 @@ export function PdfReader({
           // The reflow face reads the typography ladder; the canvas
           // face's page is its own geometry (纸就是纸).
           "--original-size": FONT_STEPS[typography.fontStep],
-          "--reader-margin": MARGIN_STEPS[typography.marginStep],
+          "--reader-margin":
+            MARGIN_STEPS[typography.marginStep]?.[0] ?? MARGIN_STEPS[2]![0],
           "--reader-leading": showIpa ? "2" : LINE_STEPS[typography.lineStep],
         } as React.CSSProperties
       }

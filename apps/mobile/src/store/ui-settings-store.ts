@@ -19,7 +19,14 @@ export type ThemePreference = "paper" | "white" | "night" | "system";
 // 3 档默认宽、行距 3 档默认 1.75). Steps are stored as indices; the
 // values live here once — the Aa panel renders from the same constants.
 export const FONT_STEPS = ["1rem", "1.15rem", "1.3rem", "1.45rem", "1.6rem"];
-export const MARGIN_STEPS = ["12%", "17%", "22%"];
+// The margin ladder carries its labels beside its values — a parallel
+// label array indexed by position was the review's Primitive Obsession
+// catch (a fourth step would have rendered undefined).
+export const MARGIN_STEPS = [
+  ["12%", "窄"],
+  ["17%", "适中"],
+  ["22%", "宽"],
+] as const;
 export const LINE_STEPS = ["1.5", "1.75", "2"];
 export const DEFAULT_TYPOGRAPHY = {
   fontStep: 1, // 1.15rem — today's --original-size fallback

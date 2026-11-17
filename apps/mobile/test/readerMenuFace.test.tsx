@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { ReaderPage } from "../src/reader/ReaderPage";
 import { dismissMenu, summonMenu } from "./reader-picker";
@@ -234,7 +240,7 @@ describe("EPUB anchor independence (redesign 02 acceptance)", () => {
       toJSON: () => ({}),
     }) as DOMRect;
 
-  it("the planted bookmark's block is the same with the menu hidden and with it open", async () => {
+  it("the planted block is the walk's answer and idempotent across plants — the anchor is a menu-independent constant", async () => {
     const bookmarks = createMemoryBookmarkStore();
     const learning = createMemoryLearningSettingsStore();
     render(
@@ -431,15 +437,90 @@ describe("排版全组合矩阵 (redesign 02, jsdom 半场)", () => {
 // flips, zoom steps, 返回). An empty describe would fail the run ("No
 // test found in suite"), so the coverage map lives here in prose.
 
-describe("PDF 双视图矩阵 (redesign 02)", () => {
-  it.each(["canvas", "reflow"] as const)(
-    "menu / edge flip / 返回 all work in the %s view",
-    async (view) => {
-      // The PDF harness: this suite has no PDF mocks — the flip and
-      // menu contracts are pinned in the PDF suites; here only the
-      // reflow view's ladder vars are asserted (canvas keeps its own
-      // fit geometry).
-      void view;
-    }
-  );
+// PDF 双视图矩阵 (redesign 02): canvas and reflow each carry the
+// menu/edge-flip/返回 contracts in their own suites — pdfReflow (the
+// reflow face's menu, strip flips, 返回, zoom ladder visibility) and
+// pdfReaderBookmarks/pdfReaderNotes (the canvas face's menu, strip
+// flips, zoom steps, 返回). The contracts live where their harnesses
+// are; a namesake test asserting nothing here would only stay green
+// while that coverage rotted (the dual-axis review's hard finding).
+
+describe("EPUB 目录面板 — 章节进度滑杆与重开位置 (redesign 02)", () => {
+  it("the slider scrubs chapter indexes with the percent readout (评审 10)", async () => {
+    await openBook();
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "目录" }));
+    const dialog = await screen.findByRole("dialog", { name: "目录" });
+    const slider = within(dialog).getByRole("slider", {
+      name: "章节进度滑杆",
+    });
+    expect(slider).toHaveAttribute("min", "1");
+    expect(slider).toHaveAttribute("max", "2");
+    expect(slider).toHaveAttribute("value", "1");
+    expect(within(dialog).getByText("50%")).toBeInTheDocument();
+    fireEvent.change(slider, { target: { value: "2" } });
+    expect(await screen.findByText("More")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "目录" })).toBeNull();
+  });
+
+  it("menu open/close never moves the saved reading progress; a typography change survives the reopen", async () => {
+    const library = createMemoryLibraryStore();
+    const learning = createMemoryLearningSettingsStore();
+    const uiSettings = createMemoryUiSettingsStore();
+    render(
+      <ReaderPage
+        store={createVocabularyStore(
+          new OfflineDictionary(FIXTURE_DICT),
+          memoryBackend()
+        )}
+        library={library}
+        notes={createMemoryNotesStore()}
+        pdfNotes={createMemoryPdfNotesStore()}
+        pdfPositions={createMemoryPdfPositionStore()}
+        pdfBytes={createPdfBytesStore(createMemoryPdfBytesBackend())}
+        translations={createMemoryTranslationStore()}
+        settings={createMemoryTranslateSettingsStore()}
+        bookmarks={createMemoryBookmarkStore()}
+        registry={createChapterTaskRegistry()}
+        learning={learning}
+        uiSettings={uiSettings}
+      />
+    );
+    await pickFile(
+      new File([(await SAMPLE_EPUB()) as BlobPart], "book.epub", {
+        type: "application/epub+zip",
+      })
+    );
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+    const progressOf = async () =>
+      (await library.exportProgress())["doc:Skeleton Book"];
+    // Flip to chapter two (a progress fact), then toggle the menu both
+    // ways: the saved progress must not flinch.
+    fireEvent.click(screen.getByRole("button", { name: "下一章" }));
+    await screen.findByText("More");
+    const before = await progressOf();
+    await summonMenu();
+    await dismissMenu();
+    await summonMenu();
+    await dismissMenu();
+    expect(await progressOf()).toEqual(before);
+    // A typography pick persists and the reopened book returns to the
+    // same chapter (排版调整后重开位置正确 — the parent spec's clause).
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "Aa" }));
+    fireEvent.click(await screen.findByRole("button", { name: "增大字号" }));
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "返回" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Skeleton Book" })
+    );
+    await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
+    expect(await screen.findByText("More")).toBeInTheDocument();
+    expect(await progressOf()).toEqual(before);
+    await summonMenu();
+    expect(document.querySelector(".reader-menu-progress")?.textContent).toBe(
+      "2 / 2"
+    );
+  });
 });

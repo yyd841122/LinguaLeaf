@@ -52,8 +52,9 @@ import {
 import { createNativeSpeaker } from "../speak/native-tts";
 import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
 import { AaPanel } from "./AaPanel";
+import { useReaderMenu } from "./useReaderMenu";
+import { useLearningToggles } from "./useLearningToggles";
 import type { LearningSettingsStore } from "../store/learning-settings-store";
-import { isInteractiveTarget, selectionActive } from "./tapZones";
 import {
   FONT_STEPS,
   LINE_STEPS,
@@ -200,48 +201,23 @@ export function EpubReader({
   const [lookup, setLookup] = useState<WordClick | null>(null);
   // The translation face (ticket 04): settled 译文行 per block index for
   // the current chapter (null until the read lands), the running task's
-  // percent (null when none), the display 开关, and the failure flag.
-  const [showTranslation, setShowTranslation] = useState(true);
-  // 逐书学习开关 (redesign 02): both toggles default to the old global
-  // values (on) and load per book on mount; every flip persists at once.
-  const [showIpa, setShowIpa] = useState(true);
-  useEffect(() => {
-    let cancelled = false;
-    learning
-      .load(docId)
-      .then((toggles) => {
-        if (cancelled) return;
-        setShowIpa(toggles.ipa);
-        setShowTranslation(toggles.translation);
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [learning, docId]);
-  const toggleIpa = () => {
-    setShowIpa((shown) => {
-      void learning.save(docId, { ipa: !shown });
-      return !shown;
-    });
-  };
-  const toggleTranslation = () => {
-    setShowTranslation((shown) => {
-      void learning.save(docId, { translation: !shown });
-      return !shown;
-    });
-  };
-  // The summonable menu (redesign 02): hidden while reading (零常驻
-  // chrome), bars on a background tap, one panel at a time.
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [panel, setPanel] = useState<
-    "toc" | "bookmarks" | "readaloud" | "aa" | null
-  >(null);
-  const openPanel = (next: NonNullable<typeof panel>) => {
-    setMenuOpen(false);
-    setPanel(next);
-  };
-  const closePanel = () => setPanel(null);
+  // percent (null when none), the failure flag — the display 开关 itself
+  // moved into the per-book learning hook below (redesign 02).
+  // 逐书学习开关 (redesign 02): the shared per-book hook — both toggles
+  // default to the old global values (on) and persist on flip.
+  const learningToggles = useLearningToggles(learning, docId, [
+    "ipa",
+    "translation",
+  ] as const);
+  const showIpa = learningToggles.toggles.ipa;
+  const showTranslation = learningToggles.toggles.translation;
+  const toggleIpa = () => learningToggles.toggle("ipa");
+  const toggleTranslation = () => learningToggles.toggle("translation");
+  // The summonable menu (redesign 02): the shared state machine — hidden
+  // while reading (零常驻 chrome), bars on a background tap, one panel at
+  // a time (this face's panels: toc/bookmarks/readaloud/aa).
+  const { menuOpen, panel, openPanel, closePanel, onSurfaceTap, flipGuard } =
+    useReaderMenu();
   const [chapterTranslations, setChapterTranslations] = useState<Record<
     number,
     string
@@ -765,24 +741,6 @@ export function EpubReader({
       openPanel(key);
     }
   };
-  // 点按分区 (redesign 02, spec review finding 13): a tap on the
-  // reading surface summons or dismisses the menu — but only a
-  // BACKGROUND tap. Words, pens and controls win (isInteractiveTarget);
-  // an active text selection is the reader's, not the menu's; and while
-  // a panel is up its veil owns every tap.
-  // 选择文字期间禁翻 (spec review finding 13): an active selection
-  // swallows the flip — the reader is mid-gesture, not navigating.
-  const flipGuard = (flip: () => void) => () => {
-    if (selectionActive()) return;
-    flip();
-  };
-
-  const onSurfaceTap = (event: React.MouseEvent<HTMLElement>) => {
-    if (panel !== null) return;
-    if (isInteractiveTarget(event.target)) return;
-    if (selectionActive()) return;
-    setMenuOpen((open) => !open);
-  };
 
   // The leading contract (spec review finding 11): the ladder owns the
   // PURE-TEXT line; with 音标 on, the kernel's double leading is the
@@ -797,8 +755,11 @@ export function EpubReader({
       onClick={onSurfaceTap}
       style={
         {
-          "--original-size": FONT_STEPS[typography.fontStep],
-          "--reader-margin": MARGIN_STEPS[typography.marginStep],
+          // The store bounds-checks the indices; ?? keeps noUnchecked
+          // indexed access honest with the ladder defaults.
+          "--original-size": FONT_STEPS[typography.fontStep] ?? FONT_STEPS[1],
+          "--reader-margin":
+            MARGIN_STEPS[typography.marginStep]?.[0] ?? MARGIN_STEPS[2]![0],
           "--reader-leading": leading,
         } as React.CSSProperties
       }
@@ -813,7 +774,7 @@ export function EpubReader({
       */}
       <ReaderMenu
         open={menuOpen}
-        title={book.title}
+        title={chapter ? `${book.title} · ${chapter.title}` : book.title}
         progress={`${chapterIndex + 1} / ${book.chapters.length}`}
         items={menuItems}
         onBack={() => {
@@ -1004,6 +965,30 @@ export function EpubReader({
               返回
             </button>
             <h2 className="overlay-title">目录</h2>
+            {/* 章节进度滑杆 (spec review finding 10): spine 百分比不可
+                得(拆章即丢), the slider scrubs chapter indexes — drag to
+                chapter N of M; the note guard applies (a dirty draft
+                blocks the jump, same as a list click). */}
+            <div className="aa-row" role="group" aria-label="章节进度">
+              <input
+                type="range"
+                min={1}
+                max={book.chapters.length}
+                step={1}
+                value={chapterIndex + 1}
+                aria-label="章节进度滑杆"
+                onChange={(event) => {
+                  const target = Number(event.target.value) - 1;
+                  if (target !== chapterIndex) {
+                    closePanel();
+                    goChapter(target);
+                  }
+                }}
+              />
+              <span className="aa-value">
+                {Math.round(((chapterIndex + 1) / book.chapters.length) * 100)}%
+              </span>
+            </div>
             <nav className="reader-toc" aria-label="章节列表">
               <ol>
                 {book.chapters.map((entry, index) => (

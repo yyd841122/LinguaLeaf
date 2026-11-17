@@ -57,14 +57,14 @@ export function AaPanel({
         </button>
       </div>
       <div className="aa-row" role="group" aria-label="边距">
-        {MARGIN_STEPS.map((value, index) => (
+        {MARGIN_STEPS.map(([value, label], index) => (
           <button
             type="button"
             key={value}
             aria-pressed={typography.marginStep === index}
             onClick={() => onTypography({ marginStep: index })}
           >
-            {["窄", "适中", "宽"][index]}
+            {label}
           </button>
         ))}
       </div>

@@ -117,3 +117,19 @@ Blocked by: 01
   - 待办(caller):双轴 + Codex 审核 → verify 补跑;**视觉半场归 04 票
     真机矩阵**(180 态 jsdom 只钉变量接线,不撞行/不溢出/长音标/窄屏
     需真机);触摸拖动/长按的真机行为同归 04。
+- 2026-11-17 双轴评审(/implement 内置,Standards/Spec 并行):Standards
+  1 硬 + 4 判,Spec 1 真缺口 + 2 小项,全修于本 commit:
+  ①**章节进度滑杆**(Spec 真缺口,原被无声丢)→ 目录面板补 range 滑杆
+  (章节索引百分比,评审 10 口径,拖动即跳章带脏稿守卫)+ 滑杆/百分比
+  断言测试;②空壳 it.each「PDF 双视图矩阵」删(双轴共识;真覆盖在
+  pdfReflow/pdfReader* 三套件,prose 记录覆盖图);③菜单状态机抽
+  useReaderMenu、逐书开关抽 useLearningToggles(save 移出 setState
+  更新器,StrictMode 双发隐患);④MARGIN_STEPS 改 [值,标签] 元组(位置
+  并行数组消失);⑤顶栏补书名·章节名;⑥锚点测试改名为实际钉的事实,
+  补「呼出/收起不改阅读进度」+「排版调整后重开位置正确」半场(菜单
+  双向开关前后 exportProgress 不动;改字号 → 返回重开 → 章节与进度
+  复原);⑦reader.css 过时 head 注释更新。
+  修笔中引入又修掉:**keys 进 effect deps = 无限 load→setState→重渲
+  循环**(字面量数组每渲染新 identity;全量套件 5000ms 超时三处,单跑
+  复现后 stash 二分定位)——deps 注释钉死教训。修后全 mobile 48 文件
+  471 过 1 skip,tsc/eslint 零告警。

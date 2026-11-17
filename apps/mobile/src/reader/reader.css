@@ -196,12 +196,10 @@ body {
    the reading position only if the 书签 button never forces a scroll
    back to the chapter top. The ground is the theme's own paper token,
    so the stuck head masks the text scrolling under it in every theme. */
-/* Stacked rows (mobile-ipa-buttons 02): the EPUB head carries three
-   children (title, 听书 row, tools row) — the old single-line flex
-   squeezed the title into a glyph column and pushed the 听书 group
-   off-screen at phone widths. Rows stack like the PDF shell's head
-   (round 12); readingAnchorTop() measures the head's bottom live, so
-   progress/bookmark anchors adapt on their own. */
+/* The landing's head (redesign 02): the reading faces lost their
+   resident heads to the summonable menu; the shelf keeps this one for
+   its title + 设置 entry. Reading anchors no longer measure it — the
+   walk's anchor is the READING_ANCHOR_PX constant (EpubReader). */
 .reader-head {
   position: sticky;
   top: 0;
