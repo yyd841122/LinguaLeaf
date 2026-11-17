@@ -12,6 +12,9 @@ body {
     Roboto,
     "Noto Sans SC",
     sans-serif;
+  /* The app's reading rhythm (was reader.css's body rule, whose font
+     half never beat this sheet in bundle order — redesign 02 收口). */
+  line-height: 1.7;
 }
 
 /* Touch floor (ticket 06): every control clears a 44px minimum height —

@@ -171,6 +171,13 @@ export function PdfReader({
   // 点按分区 (spec review finding 13): a background tap summons or
   // dismisses; words/pens/controls win; a selection is the reader's; a
   // panel's veil owns everything.
+  // 选择文字期间禁翻 (spec review finding 13): an active selection
+  // swallows the flip — the reader is mid-gesture, not navigating.
+  const flipGuard = (flip: () => void) => () => {
+    if (selectionActive()) return;
+    flip();
+  };
+
   const onSurfaceTap = (event: React.MouseEvent<HTMLElement>) => {
     if (panel !== null) return;
     if (isInteractiveTarget(event.target)) return;
@@ -346,14 +353,14 @@ export function PdfReader({
             className="reader-edge reader-edge-left"
             aria-label="上一页"
             disabled={page <= 1}
-            onClick={() => navigate(() => onPage(page - 1))}
+            onClick={flipGuard(() => navigate(() => onPage(page - 1)))}
           />
           <button
             type="button"
             className="reader-edge reader-edge-right"
             aria-label="下一页"
             disabled={page >= session.pageCount}
-            onClick={() => navigate(() => onPage(page + 1))}
+            onClick={flipGuard(() => navigate(() => onPage(page + 1)))}
           />
         </>
       ) : null}

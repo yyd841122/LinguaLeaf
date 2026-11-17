@@ -109,10 +109,13 @@
 * {
   box-sizing: border-box;
 }
+/* No font-family here: the shell sheet (style.css) loads after this one
+   in the bundle and its system-ui body rule always won — the Georgia
+   declaration was dead from day one (redesign 01's find). The face's
+   1.7 leading moved to the shell body with it; only the THEME ground
+   stays (the tokens live in this sheet). */
 body {
   margin: 0;
-  font-family: Georgia, "Times New Roman", "Songti SC", serif;
-  line-height: 1.7;
   background: var(--paper);
   color: var(--ink);
 }

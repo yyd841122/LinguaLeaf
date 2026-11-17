@@ -770,6 +770,13 @@ export function EpubReader({
   // BACKGROUND tap. Words, pens and controls win (isInteractiveTarget);
   // an active text selection is the reader's, not the menu's; and while
   // a panel is up its veil owns every tap.
+  // 选择文字期间禁翻 (spec review finding 13): an active selection
+  // swallows the flip — the reader is mid-gesture, not navigating.
+  const flipGuard = (flip: () => void) => () => {
+    if (selectionActive()) return;
+    flip();
+  };
+
   const onSurfaceTap = (event: React.MouseEvent<HTMLElement>) => {
     if (panel !== null) return;
     if (isInteractiveTarget(event.target)) return;
@@ -854,14 +861,14 @@ export function EpubReader({
             className="reader-edge reader-edge-left"
             aria-label="上一章"
             disabled={chapterIndex === 0}
-            onClick={() => goChapter(chapterIndex - 1)}
+            onClick={flipGuard(() => goChapter(chapterIndex - 1))}
           />
           <button
             type="button"
             className="reader-edge reader-edge-right"
             aria-label="下一章"
             disabled={chapterIndex === book.chapters.length - 1}
-            onClick={() => goChapter(chapterIndex + 1)}
+            onClick={flipGuard(() => goChapter(chapterIndex + 1))}
           />
         </>
       ) : null}
