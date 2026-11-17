@@ -75,6 +75,8 @@ import {
 import { createCapacitorBackupFileAdapter } from "../backup/backup-file";
 import {
   createUiSettingsStore,
+  DEFAULT_TYPOGRAPHY,
+  type Typography,
   type UiSettingsStore,
 } from "../store/ui-settings-store";
 import { useThemePreference } from "../theme";
@@ -221,8 +223,31 @@ export function ReaderPage({
   );
   // The manual theme mechanism (redesign 01): one hook for the whole
   // app — the resolved theme stamps <html data-theme> for every face
-  // (shelf, EPUB, PDF, popups); ticket 02's Aa panel drives the choice.
-  useThemePreference(uiSettings);
+  // (shelf, EPUB, PDF, popups); the Aa panel drives the choice through
+  // the hook's own save (redesign 02).
+  const theme = useThemePreference(uiSettings);
+  // The typography ladder (redesign 02): one global choice in
+  // ui-settings, held here so every face reads the same steps; the Aa
+  // panel's picks apply live and persist at once.
+  const [typography, setTypography] = useState<Typography>({
+    ...DEFAULT_TYPOGRAPHY,
+  });
+  useEffect(() => {
+    let cancelled = false;
+    uiSettings
+      .load()
+      .then((value) => {
+        if (!cancelled) setTypography(value.typography);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [uiSettings]);
+  const stepTypography = (steps: Partial<Typography>) => {
+    setTypography((current) => ({ ...current, ...steps }));
+    void uiSettings.saveTypography(steps);
+  };
   // 逐书学习开关 (redesign 02): one seam on the same storage; the
   // faces load and save per book through it.
   const learning = useMemo(
@@ -535,6 +560,9 @@ export function ReaderPage({
           book={state.book}
           chapterIndex={state.chapterIndex}
           learning={learning}
+          typography={typography}
+          onTypography={stepTypography}
+          theme={theme}
           {...(readAloudSpeaker ? { readAloudSpeaker } : {})}
           resolvedStore={resolvedStore}
           notes={notes}

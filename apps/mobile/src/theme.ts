@@ -21,7 +21,12 @@ export function resolveTheme(
   return preference;
 }
 
-export function useThemePreference(settings: UiSettingsStore): void {
+export function useThemePreference(settings: UiSettingsStore): {
+  preference: ThemePreference;
+  // The Aa panel (ticket 02) drives the choice live: save pins the
+  // preference, applies it immediately, and persists it.
+  save: (next: ThemePreference) => void;
+} {
   const [preference, setPreference] = useState<ThemePreference>("system");
 
   // One-shot read, plain cancelled flag (not the settle channel): the
@@ -55,4 +60,10 @@ export function useThemePreference(settings: UiSettingsStore): void {
     media.addEventListener("change", onChange);
     return () => media.removeEventListener("change", onChange);
   }, [preference]);
+
+  const save = (next: ThemePreference) => {
+    setPreference(next);
+    void settings.saveTheme(next);
+  };
+  return { preference, save };
 }

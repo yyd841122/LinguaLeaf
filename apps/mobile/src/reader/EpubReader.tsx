@@ -53,6 +53,13 @@ import { createNativeSpeaker } from "../speak/native-tts";
 import { ReaderMenu, type ReaderMenuItem } from "./ReaderMenu";
 import type { LearningSettingsStore } from "../store/learning-settings-store";
 import { isInteractiveTarget, selectionActive } from "./tapZones";
+import {
+  FONT_STEPS,
+  LINE_STEPS,
+  MARGIN_STEPS,
+  type ThemePreference,
+  type Typography,
+} from "../store/ui-settings-store";
 
 // The settled-failure copy (ticket 04): a chapter whose every sentence
 // came back null. The Translator contract reports wrong key and network
@@ -126,6 +133,9 @@ export function EpubReader({
   docId,
   book,
   chapterIndex,
+  typography,
+  onTypography,
+  theme,
   resolvedStore,
   notes,
   library,
@@ -149,6 +159,14 @@ export function EpubReader({
   // defaults per book and saves every flip — the page-global ipa state
   // is gone with the resident toolbar.
   learning: LearningSettingsStore;
+  // The typography ladder + theme choice (redesign 02): held by the
+  // host, driven by the Aa panel, applied through CSS vars below.
+  typography: Typography;
+  onTypography: (steps: Partial<Typography>) => void;
+  theme: {
+    preference: ThemePreference;
+    save: (next: ThemePreference) => void;
+  };
   resolvedStore: VocabularyStore | null;
   notes: NotesStore;
   library: LibraryStore;
@@ -758,8 +776,25 @@ export function EpubReader({
     setMenuOpen((open) => !open);
   };
 
+  // The leading contract (spec review finding 11): the ladder owns the
+  // PURE-TEXT line; with 音标 on, the kernel's double leading is the
+  // minimum effective value — the absolute transcription band must fit
+  // under every wrapped line, at every ladder step.
+  const leading = showIpa ? "2" : LINE_STEPS[typography.lineStep];
+
   return (
-    <main className="reader" aria-label="扩展阅读页" onClick={onSurfaceTap}>
+    <main
+      className="reader"
+      aria-label="扩展阅读页"
+      onClick={onSurfaceTap}
+      style={
+        {
+          "--original-size": FONT_STEPS[typography.fontStep],
+          "--reader-margin": MARGIN_STEPS[typography.marginStep],
+          "--reader-leading": leading,
+        } as React.CSSProperties
+      }
+    >
       {/*
         The summonable chrome (redesign 02): no resident header — a
         background tap (the container's onClick below) summons the bars;
@@ -1062,12 +1097,90 @@ export function EpubReader({
       ) : null}
       {panel === "aa" ? (
         <div className="overlay-veil" role="dialog" aria-label="排版与主题">
-          <div className="overlay-card">
+          <div className="overlay-card aa-card">
             <h2 className="overlay-title">排版与主题</h2>
-            {/* Slice C lands the ladders (字号/边距/行距) and the theme
-                picker here — the menu shell ships first so the face's
-                chrome contract settles early. */}
-            <p className="reader-hint">排版与主题设置即将上线。</p>
+            {/* 字号: a stepper over the five-step ladder (spec round 2
+                #4); the readout names the current size. */}
+            <div className="aa-row" role="group" aria-label="字号">
+              <button
+                type="button"
+                aria-label="减小字号"
+                disabled={typography.fontStep === 0}
+                onClick={() =>
+                  onTypography({
+                    fontStep: Math.max(0, typography.fontStep - 1),
+                  })
+                }
+              >
+                A－
+              </button>
+              <span className="aa-value">
+                {FONT_STEPS[typography.fontStep]}
+              </span>
+              <button
+                type="button"
+                aria-label="增大字号"
+                disabled={typography.fontStep === FONT_STEPS.length - 1}
+                onClick={() =>
+                  onTypography({
+                    fontStep: Math.min(
+                      FONT_STEPS.length - 1,
+                      typography.fontStep + 1
+                    ),
+                  })
+                }
+              >
+                A＋
+              </button>
+            </div>
+            {/* 边距/行距: the reference image's wide margin and 1.75
+                leading are the defaults (档 2 / 档 1). */}
+            <div className="aa-row" role="group" aria-label="边距">
+              {MARGIN_STEPS.map((value, index) => (
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={typography.marginStep === index}
+                  onClick={() => onTypography({ marginStep: index })}
+                >
+                  {["窄", "适中", "宽"][index]}
+                </button>
+              ))}
+            </div>
+            <div className="aa-row" role="group" aria-label="行距">
+              {LINE_STEPS.map((value, index) => (
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={typography.lineStep === index}
+                  onClick={() => onTypography({ lineStep: index })}
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            {/* 主题 (redesign 01's mechanism, driven live): the resolved
+                theme follows the pick immediately; 跟随系统 keeps the
+                system's word. */}
+            <div className="aa-row" role="group" aria-label="主题">
+              {(
+                [
+                  ["system", "跟随系统"],
+                  ["paper", "暖纸"],
+                  ["white", "白"],
+                  ["night", "夜间"],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  aria-pressed={theme.preference === value}
+                  onClick={() => theme.save(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <div className="overlay-actions">
               <button type="button" onClick={closePanel}>
                 关闭

@@ -23,6 +23,10 @@ import {
   createMemoryLearningSettingsStore,
   type LearningSettingsStore,
 } from "../src/store/learning-settings-store";
+import {
+  createMemoryUiSettingsStore,
+  type UiSettingsStore,
+} from "../src/store/ui-settings-store";
 import { OfflineDictionary } from "../src/dict/offline-dictionary";
 
 // Redesign 02's EPUB interaction slice: the summonable menu, the tap
@@ -59,8 +63,9 @@ const face = () =>
 
 async function openBook(
   learning: LearningSettingsStore = createMemoryLearningSettingsStore(),
-  file?: File
-): Promise<LearningSettingsStore> {
+  file?: File,
+  uiSettings: UiSettingsStore = createMemoryUiSettingsStore()
+): Promise<{ learning: LearningSettingsStore; uiSettings: UiSettingsStore }> {
   render(
     <ReaderPage
       store={createVocabularyStore(
@@ -77,6 +82,7 @@ async function openBook(
       bookmarks={createMemoryBookmarkStore()}
       registry={createChapterTaskRegistry()}
       learning={learning}
+      uiSettings={uiSettings}
     />
   );
   await pickFile(
@@ -86,8 +92,16 @@ async function openBook(
       })
   );
   await screen.findAllByRole("button", { name: /写笔记|编辑笔记/ });
-  return learning;
+  return { learning, uiSettings };
 }
+
+const openAa = async () => {
+  await summonMenu();
+  fireEvent.click(screen.getByRole("button", { name: "Aa" }));
+  return screen.findByRole("dialog", { name: "排版与主题" });
+};
+
+const faceVar = (name: string): string => face().style.getPropertyValue(name);
 
 const menuBars = () =>
   ({
@@ -159,7 +173,7 @@ describe("EPUB menu + tap zones (redesign 02)", () => {
 
 describe("EPUB 逐书学习开关 (redesign 02)", () => {
   it("each book remembers its own toggles across a shelf round-trip; a fresh book keeps the defaults", async () => {
-    const learning = await openBook();
+    const { learning } = await openBook();
     await summonMenu();
     fireEvent.click(screen.getByRole("button", { name: "音标" }));
     await waitFor(() =>
@@ -273,5 +287,75 @@ describe("EPUB anchor independence (redesign 02 acceptance)", () => {
       await screen.findByRole("button", { name: "在当前位置打书签" })
     );
     expect(await bookmarks.list("doc:Skeleton Book")).toHaveLength(1);
+  });
+});
+
+describe("Aa 面板 — 排版档位与主题 (redesign 02)", () => {
+  it("the ladders apply live through CSS vars and persist to ui-settings", async () => {
+    const { uiSettings } = await openBook();
+    await openAa();
+    // Defaults per the reference image: 1.15rem / 22% / 1.75.
+    expect(faceVar("--original-size")).toBe("1.15rem");
+    expect(faceVar("--reader-margin")).toBe("22%");
+    expect(faceVar("--reader-leading")).toBe("2");
+
+    fireEvent.click(screen.getByRole("button", { name: "增大字号" }));
+    expect(faceVar("--original-size")).toBe("1.3rem");
+    fireEvent.click(screen.getByRole("button", { name: "减小字号" }));
+    fireEvent.click(screen.getByRole("button", { name: "减小字号" }));
+    expect(faceVar("--original-size")).toBe("1rem");
+    expect(screen.getByRole("button", { name: "减小字号" })).toBeDisabled();
+
+    fireEvent.click(screen.getByText("窄"));
+    expect(faceVar("--reader-margin")).toBe("12%");
+
+    fireEvent.click(screen.getByText("1.5"));
+    // 音标 defaults ON: the kernel's double leading is the minimum
+    // effective value — the ladder's 1.5 must NOT reach the line
+    // (spec review finding 11).
+    expect(faceVar("--reader-leading")).toBe("2");
+
+    await waitFor(() =>
+      expect(uiSettings.load()).resolves.toMatchObject({
+        typography: { fontStep: 0, marginStep: 0, lineStep: 0 },
+      })
+    );
+  });
+
+  it("the ladder owns the pure-text line once 音标 is off", async () => {
+    await openBook();
+    await summonMenu();
+    fireEvent.click(screen.getByRole("button", { name: "音标" }));
+    await waitFor(() => expect(faceVar("--reader-leading")).toBe("1.75"));
+    await openAa();
+    fireEvent.click(screen.getByText("1.5"));
+    expect(faceVar("--reader-leading")).toBe("1.5");
+  });
+
+  it("the theme picker switches <html data-theme> live and persists", async () => {
+    const { uiSettings } = await openBook();
+    await openAa();
+    fireEvent.click(screen.getByRole("button", { name: "夜间" }));
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("night")
+    );
+    await waitFor(() =>
+      expect(uiSettings.load()).resolves.toMatchObject({ theme: "night" })
+    );
+    // No matchMedia in jsdom: 跟随系统 resolves light (暖纸).
+    fireEvent.click(screen.getByRole("button", { name: "跟随系统" }));
+    await waitFor(() =>
+      expect(document.documentElement.dataset.theme).toBe("paper")
+    );
+  });
+
+  it("the chapter opens with the centered number and the full-width title (仿参照图)", async () => {
+    await openBook();
+    expect(screen.getByText("第 1 章")).toBeInTheDocument();
+    const opening = document.querySelector(".chapter-opening")!;
+    expect(opening).not.toBeNull();
+    expect(opening.querySelector(".chapter-title")?.textContent).toBe(
+      "Chapter One"
+    );
   });
 });

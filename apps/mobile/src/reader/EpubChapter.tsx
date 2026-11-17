@@ -123,7 +123,12 @@ export function EpubChapter({
         aria-label={chapter.title}
         {...createWordHandlers(onWordClick)}
       >
-        <h2>{chapter.title}</h2>
+        {/* 章首版式 (redesign 02, 仿参照图): centered chapter number in
+            small type, the title across the full column below it. */}
+        <header className="chapter-opening">
+          <span className="chapter-number">第 {chapterIndex + 1} 章</span>
+          <h2 className="chapter-title">{chapter.title}</h2>
+        </header>
         {chapter.blocks.map((block, index) => (
           <div
             key={index}

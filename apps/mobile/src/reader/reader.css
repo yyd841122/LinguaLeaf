@@ -120,9 +120,45 @@ body {
   max-width: var(--reader-max);
   margin: 0 auto;
   /* Ticket 06: the insets pad past notch/gesture bar wherever they
-     exist; max() keeps the base rhythm where they read zero. */
-  padding: max(1.5rem, env(safe-area-inset-top)) 1rem
+     exist; max() keeps the base rhythm where they read zero. The side
+     padding is the margin ladder (redesign 02) — the Aa panel steps it
+     12/17/22%, default wide per the reference image; the edge strips
+     read the same var so the flip bands are exactly as wide as the
+     margins. */
+  padding: max(1.5rem, env(safe-area-inset-top)) var(--reader-margin, 17%)
     max(4rem, env(safe-area-inset-bottom));
+  /* 音标 ~0.72× (redesign 02): the kernel's transcription chip reads
+     this var; em keeps it relative to the font ladder. */
+  --ipa-size: 0.72em;
+}
+/* The reading line's leading (redesign 02): the ladder owns the pure
+   text; the face pins --reader-leading (音标开 forces the kernel's
+   double band as the minimum effective value — spec review finding 11). */
+.reader .original-line {
+  line-height: var(--reader-leading, 2);
+}
+.reader .ipa-line {
+  font-size: 0.72em;
+}
+/* 译文 muted (redesign 02): the translation line reads as secondary. */
+.reader .translation-line {
+  color: var(--muted);
+}
+/* 章首版式 (redesign 02, 仿参照图): centered chapter number in small
+   type, the title across the full column below it. */
+.chapter-opening {
+  text-align: center;
+  margin: 0 0 var(--space-5);
+}
+.chapter-opening .chapter-number {
+  display: block;
+  font-size: var(--text-xs);
+  color: var(--muted);
+  margin-bottom: var(--space-1);
+}
+.chapter-opening .chapter-title {
+  font-size: var(--text-l);
+  margin: 0;
 }
 .reader-entry {
   display: flex;
@@ -1057,6 +1093,19 @@ body {
 }
 .reader-edge-left {
   left: 0;
+}
+/* The Aa panel's rows (redesign 02): one ladder per row, the current
+   step pressed. */
+.aa-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+}
+.aa-row .aa-value {
+  min-width: 3.5em;
+  text-align: center;
+  color: var(--muted);
 }
 .reader-edge-right {
   right: 0;

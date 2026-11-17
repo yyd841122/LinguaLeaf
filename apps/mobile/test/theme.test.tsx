@@ -68,21 +68,24 @@ describe("useThemePreference", () => {
     unmount();
   });
 
-  it("follows the system while the preference is 跟随系统, stops when pinned", async () => {
+  it("follows the system while the preference is 跟随系统; the Aa panel's save pins it live (stops following)", async () => {
     const media = installMatchMedia(true);
     const settings = createMemoryUiSettingsStore();
-    const { unmount } = renderHook(() => useThemePreference(settings));
+    const { result, unmount } = renderHook(() => useThemePreference(settings));
     await waitFor(() => expect(themeOf()).toBe("night"));
-    await settings.saveTheme("paper");
-    // The hook reads the store once per mount; the pin arrives through
-    // a remount (ticket 02's Aa panel will drive it live).
-    unmount();
-    renderHook(() => useThemePreference(settings));
+    // The Aa panel (ticket 02) drives the choice through the hook's own
+    // save — no remount: the pin applies immediately and stops the
+    // system follow.
+    act(() => result.current.save("paper"));
     await waitFor(() => expect(themeOf()).toBe("paper"));
+    await waitFor(() =>
+      expect(settings.load()).resolves.toMatchObject({ theme: "paper" })
+    );
     // Pinned means pinned: a later system flip must NOT move the theme
     // (the probe for the mutant "pinned preference keeps following").
     act(() => media.flip(true));
     expect(themeOf()).toBe("paper");
+    unmount();
   });
 
   it("re-resolves when the system scheme flips under 跟随系统", async () => {
