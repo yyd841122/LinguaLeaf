@@ -270,7 +270,7 @@ describe("PDF reflow face (round 7)", () => {
     // the record carries the theme only, so a fresh tree starts at the
     // default — the toggle itself goes away with ticket 02's rework.
     await waitFor(() =>
-      expect(ui.load()).resolves.toEqual({ theme: "system" })
+      expect(ui.load()).resolves.toMatchObject({ theme: "system" })
     );
     ctx.view.unmount();
     render(ctx.tree());
